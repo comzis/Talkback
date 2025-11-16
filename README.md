@@ -5,7 +5,8 @@ A **100% local, privacy-focused** Retrieval-Augmented Generation (RAG) chatbot w
 ## ✨ Features
 
 - 🔒 **100% Local** - All data processing happens on your machine
-- 💬 **Modern Web Interface** - Beautiful, responsive chatbot UI
+- 💬 **Modern Web Interface** - Beautiful Apple Liquid Glass design with glassmorphism
+- 🌙 **Automatic Dark Mode** - Adapts to your system preferences
 - 📤 **Drag & Drop Upload** - Easy document management
 - 📚 **30+ File Formats** - PDF, Word, Excel, PowerPoint, code files, JSON, XML, EPUB, and more
 - 🎯 **Source Citations** - AI responses include document references
@@ -13,6 +14,8 @@ A **100% local, privacy-focused** Retrieval-Augmented Generation (RAG) chatbot w
 - 🤖 **Flexible LLM** - Use any Ollama-compatible model
 - 💻 **Code Analysis** - Upload and query source code
 - 📊 **Data Processing** - Handle spreadsheets and data files
+- 🎨 **SF Symbols Icons** - Apple-style iconography throughout
+- ✨ **Smooth Animations** - Spring physics for natural interactions
 
 ## 🚀 Quick Start
 
@@ -60,10 +63,10 @@ http://localhost:8001
 
 ### 4. Upload Documents and Chat!
 
-1. Drag & drop files into the upload area (30+ formats supported)
-2. Click "📤 Upload Files"
-3. Click "⚡ Process Documents"
-4. Start asking questions!
+1. Drag & drop files into the glass-style upload area (30+ formats supported)
+2. Click "Upload Files" button
+3. Click "Process Documents" button
+4. Start asking questions in the beautiful chat interface!
 
 ## 📁 Supported File Formats
 

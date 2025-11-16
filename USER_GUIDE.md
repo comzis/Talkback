@@ -24,7 +24,7 @@ The Secure RAG (Retrieval-Augmented Generation) Chatbot is a privacy-focused sys
 
 **Key Features:**
 - 🔒 **100% Local Processing** - All data stays on your machine
-- 💬 **Interactive Chatbot** - Modern web interface for easy interaction
+- 💬 **Interactive Chatbot** - Modern web interface with Apple Liquid Glass design
 - 📤 **Drag & Drop Upload** - Upload documents directly from your browser
 - 📚 **30+ Document Formats** - Support for PDF, Word, Excel, PowerPoint, code files, eBooks, and more
 - 🎯 **Source Citations** - Responses include references to source documents
@@ -32,6 +32,7 @@ The Secure RAG (Retrieval-Augmented Generation) Chatbot is a privacy-focused sys
 - 🤖 **Customizable LLM** - Use any Ollama-compatible model
 - 💻 **Code Analysis** - Upload and query source code files
 - 📊 **Data Processing** - Handle spreadsheets, CSV, JSON, and XML files
+- 🎨 **Apple Design System** - Beautiful Liquid Glass UI with automatic dark mode support
 
 ---
 
@@ -186,18 +187,27 @@ Upload course materials, textbooks (EPUB), lecture slides (PPTX), and study note
 
 ### Overview
 
-The chatbot interface consists of two main panels:
+The chatbot interface features a modern **Apple Liquid Glass design** with:
+- **Glassmorphism effects** - Translucent, frosted glass panels with backdrop blur
+- **Automatic dark mode** - Adapts to your system preferences
+- **Smooth animations** - Spring physics for natural interactions
+- **SF Symbols icons** - Apple-style iconography throughout
+- **San Francisco typography** - Native Apple font system
+
+The interface consists of two main panels:
 
 1. **Left Panel: Document Management**
-   - File upload area (drag & drop or click)
-   - List of uploaded files
-   - Process documents button
-   - Status messages
+   - Glass-style file upload area (drag & drop or click)
+   - List of uploaded files with file type badges
+   - Process documents button with lightning icon
+   - Status messages with glass effects
+   - Real-time status indicators (API Server, LLM)
 
 2. **Right Panel: Chat Interface**
-   - Chat history display
-   - Message input box
-   - Send button
+   - Glass-style chat history display
+   - Message bubbles with glass effects
+   - Message input box with rounded design
+   - Send button with smooth animations
 
 ### Step-by-Step Guide
 
@@ -257,20 +267,25 @@ This makes the chatbot incredibly versatile:
 #### 2. Upload Files to Server
 
 After selecting files:
-1. Click the **"📤 Upload Files"** button
+1. Click the **"Upload Files"** button (with upload icon)
 2. Wait for the upload to complete
-3. You'll see a success message: "Successfully uploaded X file(s)"
+3. You'll see a success message with glass-style notification: "Successfully uploaded X file(s)"
+4. Uploaded files will appear in the file list with type badges and file size
 
 #### 3. Process Documents
 
 Once files are uploaded:
-1. Click the **"⚡ Process Documents"** button
-2. Wait while the system:
+1. Click the **"Process Documents"** button (with lightning icon)
+2. Watch the progress bar with glass-style design:
+   - Progress percentage updates in real-time
+   - Status messages show current processing stage
+   - Smooth animations indicate activity
+3. Wait while the system:
    - Reads all documents from the data folder
    - Generates embeddings using AI
    - Stores them in ChromaDB
-3. You'll see: "Successfully ingested X documents"
-4. The chat input will become active
+4. You'll see: "Successfully ingested X documents" with success notification
+5. The chat input will become active and ready for questions
 
 **Note:** Processing time depends on:
 - Number of documents
@@ -280,10 +295,16 @@ Once files are uploaded:
 #### 4. Ask Questions
 
 Now you can chat with your documents:
-1. Type your question in the input box
-2. Press **Enter** or click the **Send button**
-3. Wait for the AI to generate a response (you'll see a loading animation)
-4. View the response with source citations
+1. Type your question in the rounded input box (glass-style design)
+2. Press **Enter** or click the **Send button** (with send icon)
+3. Watch smooth animations:
+   - Your message slides in with spring physics
+   - Loading dots appear while processing
+   - Bot response animates in naturally
+4. View the response with source citations:
+   - Glass-style message bubbles
+   - Source documents listed with file icons
+   - Smooth scrolling to new messages
 
 **Example Questions:**
 
@@ -1020,6 +1041,12 @@ docker compose down -v --rmi all
 
 **Frontend:**
 - HTML5, CSS3, JavaScript (Vanilla)
+- **Apple Liquid Glass Design System** (2025)
+- Glassmorphism with backdrop-filter blur effects
+- San Francisco typography system
+- SF Symbols iconography
+- Automatic dark mode support
+- Spring physics animations
 - Responsive design with CSS Grid/Flexbox
 - Drag & Drop File API
 - Fetch API for HTTP requests
@@ -1108,24 +1135,36 @@ To add support for additional file types, you can:
 
 ### Customizing the UI
 
-The chatbot interface can be customized by editing:
+The chatbot interface uses **Apple Liquid Glass Design System** and can be customized by editing:
 
 **Colors and Styling:**
-Edit `/app/static/style.css` and modify CSS variables:
+Edit `/app/static/style.css` and modify Apple system colors:
 ```css
 :root {
-    --primary-color: #4f46e5;      /* Change primary color */
-    --success-color: #10b981;       /* Change success color */
-    --bg-color: #f9fafb;           /* Change background */
+    --system-blue: #007AFF;         /* Apple system blue */
+    --system-green: #34C759;        /* Apple system green */
+    --system-red: #FF3B30;          /* Apple system red */
+    --glass-bg: rgba(255, 255, 255, 0.7);  /* Glass background */
+    --glass-border: rgba(255, 255, 255, 0.18); /* Glass border */
 }
+```
+
+**Dark Mode:**
+The interface automatically adapts to your system's dark mode preference. To customize dark mode colors, edit the `@media (prefers-color-scheme: dark)` section in `style.css`.
+
+**Glass Effects:**
+Adjust glassmorphism intensity:
+```css
+backdrop-filter: blur(40px) saturate(180%);  /* Change blur/saturation */
 ```
 
 **Behavior:**
 Edit `/app/static/script.js` to modify:
-- Auto-scroll behavior
-- Loading animations
-- Status messages
+- Auto-scroll behavior (smooth scrolling with spring physics)
+- Loading animations (bounce effects)
+- Status messages (glass-style notifications)
 - File validation rules
+- Message entrance animations
 
 ### Changing Upload Directory
 
@@ -1210,5 +1249,14 @@ If you encounter issues not covered in this guide:
 
 ---
 
-**Version:** 2.0 (with Chatbot Interface)  
+**Version:** 2.1 (Apple Liquid Glass Design)  
 **Last Updated:** November 2025
+
+### What's New in Version 2.1
+
+- ✨ **Apple Liquid Glass Design** - Modern glassmorphism UI with translucent panels
+- 🌙 **Automatic Dark Mode** - Adapts to your system preferences
+- 🎨 **SF Symbols Icons** - Apple-style iconography throughout
+- 📱 **Enhanced Animations** - Smooth spring physics for natural interactions
+- 🎯 **Improved Accessibility** - ARIA labels and semantic HTML
+- 💎 **Glass Effects** - Beautiful backdrop blur and transparency effects
