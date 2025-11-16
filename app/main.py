@@ -10,12 +10,13 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict
 import asyncio
+import mimetypes
 
 from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
     StorageContext,
-    Settings
+    Settings,
 )
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.query_engine import CitationQueryEngine
@@ -72,7 +73,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # Serve static files (HTML, CSS, JS)
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 
-# Global state for ingestion progress
+# Global state for ingestion progress and cached index
 ingestion_status: Dict = {
     "status": "idle",  # idle, processing, completed, error
     "progress": 0,      # 0-100
@@ -81,6 +82,10 @@ ingestion_status: Dict = {
     "message": "",      # status message
     "error": None       # error message if any
 }
+
+# Cached index built from the persistent Chroma vector store.
+# This avoids recreating the index on every query and is refreshed after ingestion.
+cached_index: VectorStoreIndex | None = None
 
 class QueryRequest(BaseModel):
     query: str
@@ -109,15 +114,36 @@ try:
     
 except Exception as e:
     logger.error(f"Error connecting to ChromaDB: {e}")
-    raise RuntimeError(f"Failed to connect to ChromaDB at {os.getenv('CHROMA_HOST')}:{os.getenv('CHROMA_PORT')}. "
-                      f"Ensure ChromaDB service is running. Error: {e}")
+    raise RuntimeError(
+        f"Failed to connect to ChromaDB at {os.getenv('CHROMA_HOST')}:{os.getenv('CHROMA_PORT')}. "
+        f"Ensure ChromaDB service is running. Error: {e}"
+    )
+    
+# --- Helper functions ---
+
+def get_or_create_cached_index() -> VectorStoreIndex:
+    """
+    Return the cached VectorStoreIndex if available, otherwise create it from the
+    existing vector store and storage context, cache it, and return it.
+    """
+    global cached_index
+
+    if cached_index is not None:
+        return cached_index
+
+    logger.info("Creating VectorStoreIndex from existing vector store for query")
+    cached_index = VectorStoreIndex.from_vector_store(
+        vector_store,
+        storage_context=storage_context,
+    )
+    return cached_index
     
 # --- API Endpoints ---
 def process_ingestion():
     """
     Background task to process document ingestion with progress tracking.
     """
-    global ingestion_status
+    global ingestion_status, cached_index
     
     try:
         # Update status to processing
@@ -145,11 +171,14 @@ def process_ingestion():
         ingestion_status["progress"] = 40
         
         # This creates the index and stores embeddings in ChromaDB
-        VectorStoreIndex.from_documents(
+        new_index = VectorStoreIndex.from_documents(
             documents,
             storage_context=storage_context,
             show_progress=True
         )
+
+        # Update cached index so subsequent queries can reuse it efficiently
+        cached_index = new_index
         
         # Update to completed
         ingestion_status["status"] = "completed"
@@ -216,11 +245,17 @@ async def query_index(request: QueryRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
     
     try:
-        # 1. Load the index from the persistent ChromaDB store
-        index = VectorStoreIndex.from_vector_store(
-            vector_store,
-            storage_context=storage_context
-        )
+        # Check if we have any documents indexed
+        collection_count = chroma_collection.count()
+        if collection_count == 0:
+            return {
+                "response": "I don't have any documents indexed yet. Please upload files and click 'Process Documents' first.",
+                "sources": []
+            }
+        
+        # 1. Load or create the index from the persistent ChromaDB store,
+        # using the in-memory cache for performance.
+        index = get_or_create_cached_index()
         
         # 2. Fulfill "Citing sources" requirement
         # We will use a CitationQueryEngine
@@ -306,3 +341,110 @@ async def upload_files(files: List[UploadFile] = File(...)):
     except Exception as e:
         logger.error(f"Error during file upload: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+def get_file_type(filename: str) -> str:
+    """
+    Determine file type category from extension.
+    Returns: 'document', 'code', 'data', 'image', 'other'
+    """
+    ext = Path(filename).suffix.lower()
+    
+    # Documents
+    doc_exts = {'.pdf', '.doc', '.docx', '.odt', '.txt', '.md', '.rst', '.rtf', '.epub'}
+    # Code files
+    code_exts = {'.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.sh', '.bash', '.zsh', '.yaml', '.yml', '.json', '.xml', '.html', '.css', '.scss', '.less'}
+    # Data/Spreadsheet
+    data_exts = {'.xlsx', '.xls', '.csv', '.json', '.xml'}
+    # Images
+    image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp'}
+    # Presentations
+    pres_exts = {'.pptx', '.ppt', '.odp'}
+    
+    if ext in doc_exts or ext in pres_exts:
+        return 'document'
+    elif ext in code_exts:
+        return 'code'
+    elif ext in data_exts:
+        return 'data'
+    elif ext in image_exts:
+        return 'image'
+    else:
+        return 'other'
+
+@app.get("/files")
+async def list_uploaded_files():
+    """
+    List all files currently in the data directory, sorted by file type.
+    """
+    try:
+        files = []
+        if UPLOAD_DIR.exists():
+            for file_path in UPLOAD_DIR.rglob("*"):
+                if file_path.is_file():
+                    # Get relative path from UPLOAD_DIR for cleaner display
+                    rel_path = file_path.relative_to(UPLOAD_DIR)
+                    filename = rel_path.name
+                    file_type = get_file_type(filename)
+                    
+                    files.append({
+                        "name": str(rel_path),
+                        "filename": filename,
+                        "size": file_path.stat().st_size,
+                        "modified": file_path.stat().st_mtime,
+                        "type": file_type,
+                        "extension": Path(filename).suffix.lower()
+                    })
+        
+        # Sort by type first, then by name within each type
+        type_order = {'document': 0, 'code': 1, 'data': 2, 'image': 3, 'other': 4}
+        files_sorted = sorted(files, key=lambda x: (type_order.get(x["type"], 99), x["name"].lower()))
+        
+        return {
+            "files": files_sorted,
+            "count": len(files),
+            "by_type": {
+                file_type: len([f for f in files if f["type"] == file_type])
+                for file_type in ['document', 'code', 'data', 'image', 'other']
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error listing files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/llm/status")
+async def get_llm_status():
+    """
+    Check if the LLM (Ollama) is running and responding.
+    """
+    try:
+        # Try to make a simple request to Ollama
+        import httpx
+        ollama_url = f"http://ollama:11434/api/tags"
+        
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(ollama_url)
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                model_name = os.getenv("OLLAMA_MODEL", "unknown")
+                model_available = any(m.get("name", "").startswith(model_name) for m in models)
+                
+                return {
+                    "status": "online",
+                    "available": True,
+                    "model_configured": model_name,
+                    "model_available": model_available,
+                    "models_installed": [m.get("name", "") for m in models]
+                }
+            else:
+                return {
+                    "status": "error",
+                    "available": False,
+                    "error": f"Ollama returned status {response.status_code}"
+                }
+    except Exception as e:
+        logger.error(f"Error checking LLM status: {e}")
+        return {
+            "status": "offline",
+            "available": False,
+            "error": str(e)
+        }
