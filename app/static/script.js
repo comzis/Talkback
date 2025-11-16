@@ -17,6 +17,15 @@ let isProcessingQuery = false;
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     checkHealth();
+    checkLLMStatus();
+    loadServerFiles(); // Load files from server on startup
+    checkIndexStatus(); // Check if index exists and enable chat if ready
+    
+    // Periodically check status (every 30 seconds)
+    setInterval(() => {
+        checkHealth();
+        checkLLMStatus();
+    }, 30000);
 });
 
 // Setup Event Listeners
@@ -50,11 +59,177 @@ async function checkHealth() {
     try {
         const response = await fetch('/health');
         const data = await response.json();
+        const apiStatusDot = document.getElementById('apiStatusDot');
         if (data.status === 'ok') {
-            showStatus('API is running and ready! 🟢', 'success');
+            apiStatusDot.className = 'status-dot online';
+            apiStatusDot.title = 'API Server is online';
+        } else {
+            apiStatusDot.className = 'status-dot warning';
+            apiStatusDot.title = 'API Server has issues';
         }
     } catch (error) {
-        showStatus('Unable to connect to API', 'error');
+        const apiStatusDot = document.getElementById('apiStatusDot');
+        apiStatusDot.className = 'status-dot';
+        apiStatusDot.title = 'API Server is offline';
+    }
+}
+
+// Check LLM Status
+async function checkLLMStatus() {
+    try {
+        const response = await fetch('/llm/status');
+        const data = await response.json();
+        const llmStatusDot = document.getElementById('llmStatusDot');
+        
+        if (data.available && data.status === 'online') {
+            if (data.model_available) {
+                llmStatusDot.className = 'status-dot online';
+                llmStatusDot.title = `LLM is online (${data.model_configured})`;
+            } else {
+                llmStatusDot.className = 'status-dot warning';
+                llmStatusDot.title = `LLM is online but model '${data.model_configured}' not found. Available: ${data.models_installed.join(', ') || 'none'}`;
+            }
+        } else {
+            llmStatusDot.className = 'status-dot';
+            llmStatusDot.title = `LLM is offline: ${data.error || 'Unknown error'}`;
+        }
+    } catch (error) {
+        const llmStatusDot = document.getElementById('llmStatusDot');
+        llmStatusDot.className = 'status-dot';
+        llmStatusDot.title = 'LLM status check failed';
+    }
+}
+
+// Get file icon based on type (SF Symbols style SVG)
+function getFileIcon(fileType, extension) {
+    const icons = {
+        'document': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>',
+        'code': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
+        'data': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
+        'image': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
+        'other': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>'
+    };
+    return icons[fileType] || icons['other'];
+}
+
+// Load files from server
+async function loadServerFiles() {
+    try {
+        const response = await fetch('/files');
+        const data = await response.json();
+        
+        if (data.files && data.files.length > 0) {
+            updateServerFileList(data.files, data.by_type);
+        } else {
+            fileList.innerHTML = '<li style="color: var(--text-secondary); font-style: italic; padding: 20px; text-align: center;">No files uploaded yet</li>';
+            updateFileStats({});
+        }
+    } catch (error) {
+        console.error('Error loading server files:', error);
+        // Don't show error to user, just log it
+    }
+}
+
+// Update file statistics display
+function updateFileStats(byType) {
+    const fileStats = document.getElementById('fileStats');
+    if (!byType || Object.keys(byType).length === 0) {
+        fileStats.innerHTML = '';
+        return;
+    }
+    
+    const stats = [];
+    if (byType.document > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg> ${byType.document}`);
+    if (byType.code > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> ${byType.code}`);
+    if (byType.data > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> ${byType.data}`);
+    if (byType.image > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> ${byType.image}`);
+    if (byType.other > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg> ${byType.other}`);
+    
+    fileStats.innerHTML = stats.map(stat => 
+        `<span class="file-stat-item">${stat}</span>`
+    ).join('');
+}
+
+// Update server file list display
+function updateServerFileList(files, byType) {
+    fileList.innerHTML = '';
+    
+    // Update statistics
+    updateFileStats(byType);
+    
+    // Group files by type for better organization
+    const filesByType = {};
+    files.forEach(file => {
+        if (!filesByType[file.type]) {
+            filesByType[file.type] = [];
+        }
+        filesByType[file.type].push(file);
+    });
+    
+    // Display files grouped by type
+    const typeOrder = ['document', 'code', 'data', 'image', 'other'];
+    typeOrder.forEach(type => {
+        if (filesByType[type] && filesByType[type].length > 0) {
+            filesByType[type].forEach(file => {
+                const li = document.createElement('li');
+                const icon = getFileIcon(file.type, file.extension);
+                li.innerHTML = `
+                    <span class="file-icon">${icon}</span>
+                    <div class="file-info">
+                        <div class="file-name">${escapeHtml(file.filename || file.name)}</div>
+                        <div class="file-meta">
+                            <span class="file-type-badge ${file.type}">${file.type}</span>
+                            <span>${formatFileSize(file.size)}</span>
+                        </div>
+                    </div>
+                `;
+                // Add smooth entrance animation
+                li.style.opacity = '0';
+                li.style.transform = 'translateY(8px)';
+                fileList.appendChild(li);
+                // Trigger animation
+                requestAnimationFrame(() => {
+                    li.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+                    li.style.opacity = '1';
+                    li.style.transform = 'translateY(0)';
+                });
+            });
+        }
+    });
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Check if index exists and enable chat if ready
+async function checkIndexStatus() {
+    try {
+        // Try a simple query to see if index exists
+        // The backend will return a helpful message if no index
+        // For now, just enable the chat - backend handles empty index gracefully
+        queryInput.disabled = false;
+        sendBtn.disabled = false;
+        
+        // Remove welcome message if chat is enabled
+        const welcomeMsg = chatMessages.querySelector('.welcome-message');
+        if (welcomeMsg) {
+            welcomeMsg.innerHTML = `
+                <h2>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px;">
+                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                    </svg>
+                    Ready to chat!
+                </h2>
+                <p>You can ask questions now. If no documents are indexed yet, I'll let you know.</p>
+                <p>Upload files and click "Process Documents" to index them for better answers.</p>
+            `;
+        }
+    } catch (error) {
+        console.error('Error checking index status:', error);
     }
 }
 
@@ -153,11 +328,13 @@ async function uploadFiles() {
             selectedFiles = [];
             updateFileList();
             fileInput.value = '';
+            // Reload server file list to show newly uploaded files
+            setTimeout(() => loadServerFiles(), 500);
         } else {
-            showStatus('Upload failed: ' + data.detail, 'error');
+            showStatus('Upload failed: ' + (data.detail || 'Unknown error'), 'error', true);
         }
     } catch (error) {
-        showStatus('Upload error: ' + error.message, 'error');
+        showStatus('Upload error: ' + error.message, 'error', true);
     } finally {
         uploadBtn.disabled = false;
     }
@@ -179,11 +356,11 @@ async function ingestDocuments() {
             // Start polling for status
             pollIngestionStatus();
         } else {
-            showStatus('Failed to start processing: ' + (data.message || 'Unknown error'), 'error');
+            showStatus('Failed to start processing: ' + (data.message || 'Unknown error'), 'error', true);
             ingestBtn.disabled = false;
         }
     } catch (error) {
-        showStatus('Processing error: ' + error.message, 'error');
+        showStatus('Processing error: ' + error.message, 'error', true);
         ingestBtn.disabled = false;
     }
 }
@@ -217,7 +394,7 @@ async function pollIngestionStatus() {
                 showStatus(status.message + ' ✅', 'success');
                 ingestBtn.disabled = false;
                 
-                // Enable chat interface
+                // Enable chat interface (should already be enabled, but ensure it)
                 queryInput.disabled = false;
                 sendBtn.disabled = false;
                 
@@ -227,19 +404,25 @@ async function pollIngestionStatus() {
                     welcomeMsg.remove();
                 }
                 
-                addBotMessage('Documents processed successfully! You can now ask me questions. 🤖');
+                addBotMessage('Documents processed successfully! You can now ask me questions.');
+                
+                // Reload server files to show current state
+                loadServerFiles();
             } else if (status.status === 'error') {
                 clearInterval(statusPollInterval);
                 statusPollInterval = null;
                 hideProgressBar();
-                showStatus('Processing failed: ' + (status.error || status.message), 'error');
+                showStatus('Processing failed: ' + (status.error || status.message), 'error', true);
                 ingestBtn.disabled = false;
+                
+                // Reload server files in case some were processed
+                loadServerFiles();
             }
         } catch (error) {
             clearInterval(statusPollInterval);
             statusPollInterval = null;
             hideProgressBar();
-            showStatus('Status check error: ' + error.message, 'error');
+            showStatus('Status check error: ' + error.message, 'error', true);
             ingestBtn.disabled = false;
         }
     }, 500);
@@ -330,7 +513,7 @@ async function sendQuery() {
         if (response.ok) {
             addBotMessage(data.response, data.sources);
         } else {
-            addBotMessage('Sorry, I encountered an error: ' + data.detail);
+            addBotMessage('Sorry, I encountered an error: ' + (data.detail || 'Unknown error'));
         }
     } catch (error) {
         removeLoadingMessage(loadingId);
@@ -352,7 +535,16 @@ function addUserMessage(text) {
             ${escapeHtml(text)}
         </div>
     `;
+    // Add smooth entrance animation
+    messageDiv.style.opacity = '0';
+    messageDiv.style.transform = 'translateY(12px) scale(0.95)';
     chatMessages.appendChild(messageDiv);
+    // Trigger animation
+    requestAnimationFrame(() => {
+        messageDiv.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+        messageDiv.style.opacity = '1';
+        messageDiv.style.transform = 'translateY(0) scale(1)';
+    });
     scrollToBottom();
 }
 
@@ -365,10 +557,22 @@ function addBotMessage(text, sources = []) {
     if (sources && sources.length > 0) {
         sourcesHtml = `
             <div class="message-sources">
-                <h4>📚 Sources:</h4>
+                <h4>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 6px;">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    Sources:
+                </h4>
                 ${sources.map(source => `
                     <div class="source-item">
-                        <span class="source-file">📄 ${escapeHtml(source.file)}</span>
+                        <span class="source-file">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 4px;">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                            ${escapeHtml(source.file)}
+                        </span>
                         <span class="source-text">${escapeHtml(truncateText(source.text, 150))}</span>
                     </div>
                 `).join('')}
@@ -382,7 +586,16 @@ function addBotMessage(text, sources = []) {
             ${sourcesHtml}
         </div>
     `;
+    // Add smooth entrance animation
+    messageDiv.style.opacity = '0';
+    messageDiv.style.transform = 'translateY(12px) scale(0.95)';
     chatMessages.appendChild(messageDiv);
+    // Trigger animation
+    requestAnimationFrame(() => {
+        messageDiv.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+        messageDiv.style.opacity = '1';
+        messageDiv.style.transform = 'translateY(0) scale(1)';
+    });
     scrollToBottom();
 }
 
@@ -415,21 +628,28 @@ function removeLoadingMessage(loadingId) {
 }
 
 // Show Status Message
-function showStatus(message, type) {
+function showStatus(message, type, persistent = false) {
     statusMessage.textContent = message;
     statusMessage.className = 'status-message ' + type;
     
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-        if (statusMessage.textContent === message) {
-            statusMessage.className = 'status-message';
-        }
-    }, 5000);
+    // Auto-hide after 5 seconds unless it's a persistent error
+    if (!persistent) {
+        setTimeout(() => {
+            if (statusMessage.textContent === message) {
+                statusMessage.className = 'status-message';
+            }
+        }, 5000);
+    }
+    // Persistent errors stay visible until user takes action or new status appears
 }
 
 // Utility Functions
 function scrollToBottom() {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    // Smooth scroll with Apple-style easing
+    chatMessages.scrollTo({
+        top: chatMessages.scrollHeight,
+        behavior: 'smooth'
+    });
 }
 
 function escapeHtml(text) {
