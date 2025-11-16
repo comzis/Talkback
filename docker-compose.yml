@@ -1,0 +1,38 @@
+
+
+services:
+  # Service 1: The Local LLM (Ollama + Granite)
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    container_name: ollama_service
+
+  # Service 2: The RAG API (FastAPI + LlamaIndex)
+  rag-api:
+    build: ./app
+    ports:
+      - "8001:8001"
+    depends_on:
+      - ollama
+      - chromadb
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data  # Map local data folder into the container
+    container_name: rag_api_service
+
+  # Service 3: The Persistent Vector DB
+  chromadb:
+    image: chromadb/chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent storage for vector embeddings
+      - ./chroma_data:/chroma/chroma 
+    container_name: chromadb_service
+
+volumes:
+  ollama_data:  # Docker volume for Ollama models
