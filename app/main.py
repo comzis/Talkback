@@ -51,16 +51,25 @@ if missing_vars:
 
 # --- Global Settings (LlamaIndex) ---
 # Use local models for 100% data privacy
-# 1. Local LLM (Your preferred Granite model)
+# 1. Local LLM - Optimized for M1 MAX 64GB
 Settings.llm = Ollama(
     model=os.getenv("OLLAMA_MODEL"),
     base_url="http://ollama:11434", # Use Docker service name
-    request_timeout=120.0
+    request_timeout=600.0,  # 10 minutes for complex queries
+    timeout=600.0,
+    temperature=0.7,
+    # M1 MAX Optimizations:
+    context_window=8192,    # Larger context for more document chunks
+    num_predict=2048,       # Allow longer, more detailed responses
 )
 # 2. Local Embedding Model
 Settings.embed_model = HuggingFaceEmbedding(
     model_name="BAAI/bge-small-en-v1.5"
 )
+
+# High-performance chunk settings for M1 MAX
+Settings.chunk_size = 1024      # Larger chunks for better context
+Settings.chunk_overlap = 128    # More overlap for continuity
 
 # --- FastAPI App ---
 app = FastAPI(title="Secure Local RAG API")
@@ -240,7 +249,7 @@ async def query_index(request: QueryRequest):
 
         query_engine = CitationQueryEngine.from_args(
             index,
-            similarity_top_k=3,
+            similarity_top_k=5,  # Increased for M1 MAX 64GB - use more context
             # Fulfill RAG Logic: Retrieval -> Augmentation -> Generation
             citation_qa_template=qa_template,
         )
