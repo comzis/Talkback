@@ -229,14 +229,15 @@ The interface consists of:
 
 #### 0. Monitor System Status
 
-At the top of the interface, you'll see the **Pulse Metrics Dashboard** with four live status cards:
+At the top of the interface, you'll see the **Pulse Metrics Dashboard** with live status cards:
 
 - **API**: Shows if the API server is online
 - **LLM**: Displays current model name, status, and response time
 - **Database**: Shows ChromaDB connection status and collection count
-- **Alarms**: Displays any system warnings or errors (shows "All Clear" when everything is healthy)
+- **Embeddings**: Real-time progress bar with current file, speed, ETA, CPU, and memory usage
+- **LangChain Monitoring**: Optional telemetry tracking (enable with LangSmith API key)
 
-These metrics update automatically every 3 seconds, giving you real-time visibility into your system's health.
+These metrics update automatically every 2-5 seconds, giving you real-time visibility into your system's health.
 
 #### 1. Select or Add LLM Model
 
@@ -345,21 +346,32 @@ Once files are uploaded:
    - Progress percentage updates in real-time
    - Status messages show current processing stage
    - Smooth animations indicate activity
-3. Monitor the **Pulse Metrics Dashboard**:
+3. Watch the **Enhanced Embedding Status Bar** for detailed real-time feedback:
+   - **Current File Display**: Shows which file is being processed (e.g., "Python_Basics.pdf")
+   - **File Counter**: Displays progress like "File 2 of 5"
+   - **Progress Bar**: Animated gradient with percentage inside (e.g., "45%")
+   - **Processing Speed**: Real-time chunks/second (e.g., "12.5 chunks/s")
+   - **Estimated Time**: Smart ETA (e.g., "2m 30s" or "45s")
+   - **CPU Usage**: Live CPU percentage from your system
+   - **Memory Usage**: Live memory percentage from your system
+   - **Gradient Animation**: Progress bar flows through blue → purple → green with pulsing effect
+4. Monitor the **Pulse Metrics Dashboard**:
    - Database status will update as collections are created
-   - Alarms will show if any errors occur during processing
-4. Wait while the system:
+   - Traffic light indicators: 🟢 Green (ready), 🟠 Orange (processing), 🔴 Red (error)
+5. Wait while the system:
    - Reads all documents from the data folder
-   - Generates embeddings using AI
+   - Generates embeddings using AI (you'll see progress for each file)
    - Stores them in ChromaDB
-5. You'll see: "Successfully ingested X documents" with success notification
-6. The chat input will become active and ready for questions
-7. The Database metric card will show the updated collection count
+6. You'll see: "Successfully ingested X chunks" with success notification
+7. The embedding card will show completion with final stats (speed, CPU, memory)
+8. The chat input will become active and ready for questions
+9. The Database metric card will show the updated collection count
 
 **Note:** Processing time depends on:
-- Number of documents
+- Number of documents and chunks
 - Size of documents
-- Your computer's processing power
+- Your computer's processing power (watch the real CPU/Memory metrics!)
+- The embedding model's performance
 
 #### 6. Ask Questions
 
@@ -509,7 +521,37 @@ curl http://localhost:8001/system/status
 
 ---
 
-### 2b. LLM Models Management
+### 2b. System Resources (Real-time Metrics)
+
+**Endpoint:** `GET /system/resources`
+
+**Description:** Get real-time CPU and memory usage from the system (powered by `psutil`).
+
+**Example:**
+```bash
+curl http://localhost:8001/system/resources
+```
+
+**Response:**
+```json
+{
+  "cpu_percent": 45.3,
+  "memory_percent": 62.1,
+  "timestamp": 1700000100.5
+}
+```
+
+**Use Cases:**
+- Monitor system resource usage in real-time
+- Track CPU load during embedding or query operations
+- Check memory consumption
+- Build custom dashboards with system metrics
+
+**Note:** This endpoint is used by the frontend to display real CPU/Memory metrics in the Embeddings status card.
+
+---
+
+### 2c. LLM Models Management
 
 **List Models:**
 **Endpoint:** `GET /llm/models`
@@ -708,6 +750,81 @@ print(response.json())
   "message": "No documents found to ingest."
 }
 ```
+
+**Note:** This endpoint runs as a background task. Use the `/ingest/status` endpoint (below) to monitor progress.
+
+---
+
+### 4a. Ingestion Status (Enhanced with Real-time Metrics)
+
+**Endpoint:** `GET /ingest/status`
+
+**Description:** Get detailed real-time status of document ingestion including file progress, processing speed, CPU/Memory usage, and ETA.
+
+**Example:**
+```bash
+curl http://localhost:8001/ingest/status
+```
+
+**Response (Idle):**
+```json
+{
+  "status": "idle",
+  "progress": 0,
+  "current": 0,
+  "total": 0,
+  "message": "",
+  "error": null,
+  "current_file": null,
+  "total_files": 0,
+  "processed_files": 0,
+  "start_time": null,
+  "chunks_per_second": 0.0,
+  "cpu_percent": 0.0,
+  "memory_percent": 0.0,
+  "estimated_time_remaining": 0
+}
+```
+
+**Response (Processing):**
+```json
+{
+  "status": "processing",
+  "progress": 45,
+  "current": 150,
+  "total": 335,
+  "message": "Generating embeddings...",
+  "error": null,
+  "current_file": "Python_Basics.pdf",
+  "total_files": 5,
+  "processed_files": 2,
+  "start_time": 1700000000.0,
+  "chunks_per_second": 12.5,
+  "cpu_percent": 65.2,
+  "memory_percent": 58.3,
+  "estimated_time_remaining": 150
+}
+```
+
+**Response Fields:**
+- `status`: `idle`, `processing`, `completed`, or `error`
+- `current`: Current chunk being processed
+- `total`: Total chunks to process
+- `current_file`: Name of file currently being embedded (NEW in v2.5)
+- `total_files`: Total number of files to process (NEW in v2.5)
+- `processed_files`: Number of files completed (NEW in v2.5)
+- `chunks_per_second`: Real-time processing speed (NEW in v2.5)
+- `cpu_percent`: Real CPU usage from system (NEW in v2.5)
+- `memory_percent`: Real memory usage from system (NEW in v2.5)
+- `estimated_time_remaining`: ETA in seconds (NEW in v2.5)
+
+**Use Cases:**
+- Monitor embedding progress in real-time
+- Display progress bars with accurate percentages
+- Show current file being processed
+- Calculate and display ETA to users
+- Track system resource consumption during processing
+- Build custom monitoring dashboards
 
 ---
 
@@ -1583,8 +1700,20 @@ If you encounter issues not covered in this guide:
 
 ---
 
-**Version:** 2.4 (Model Selection & Defaults)  
+**Version:** 2.5 (Enhanced Embedding Status Bar)  
 **Last Updated:** November 2025
+
+### What's New in Version 2.5 (Enhanced Embedding Status Bar)
+
+- 📊 **Real System Metrics** - Live CPU and memory usage powered by `psutil` (no more simulated data)
+- 📄 **Current File Display** - See exactly which file is being processed during embedding
+- 🔢 **File Progress Counter** - Shows "File X of Y" so you know how many files remain
+- 📈 **Progress Percentage** - Visible percentage (0-100%) directly inside the progress bar
+- ⚡ **Processing Speed** - Displays real-time chunks/second during embedding
+- ⏱️ **Estimated Time Remaining** - Smart ETA calculation (shows seconds, minutes, or hours)
+- 🎨 **Animated Progress Bar** - Beautiful gradient animation (blue → purple → green) with pulsing effect
+- 🎯 **Enhanced Visual Feedback** - File badge, processing stats section, and better spacing
+- 🔌 **New API Endpoint** - `/system/resources` for real-time CPU/Memory monitoring
 
 ### What's New in Version 2.4 (Model Selection & Defaults)
 

@@ -90,6 +90,14 @@ const elements = {
     embeddingLight: document.getElementById('embeddingLight'),
     embeddingProgress: document.getElementById('embeddingProgress'),
     embeddingProgressText: document.getElementById('embeddingProgressText'),
+    progressPercentage: document.getElementById('progressPercentage'),
+    currentFileDisplay: document.getElementById('currentFileDisplay'),
+    currentFileName: document.getElementById('currentFileName'),
+    fileProgress: document.getElementById('fileProgress'),
+    fileProgressText: document.getElementById('fileProgressText'),
+    processingStats: document.getElementById('processingStats'),
+    processingSpeed: document.getElementById('processingSpeed'),
+    etaDisplay: document.getElementById('etaDisplay'),
     cpuUsage: document.getElementById('cpuUsage'),
     memoryUsage: document.getElementById('memoryUsage'),
     monitoringStatus: document.getElementById('monitoringStatus'),
@@ -393,6 +401,13 @@ function getSuperheroJoke() {
 }
 
 // Update Embedding Status
+// Helper function to format seconds to human-readable time
+function formatTime(seconds) {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
 function updateEmbeddingStatus(status) {
     if (!status) return;
     
@@ -405,47 +420,107 @@ function updateEmbeddingStatus(status) {
         elements.embeddingStatus.textContent = 'Processing';
         setTrafficLight(elements.embeddingLight, 'orange');
         
-        // Update progress bar
+        // Update progress bar with percentage
         const progress = status.total > 0 ? (status.current / status.total) * 100 : 0;
         elements.embeddingProgress.style.width = `${progress}%`;
+        elements.progressPercentage.textContent = `${Math.round(progress)}%`;
         elements.embeddingProgressText.textContent = `${status.current} / ${status.total} chunks`;
+        
+        // Add processing animation class
+        elements.embeddingProgress.classList.add('processing');
+        
+        // Show and update current file display
+        if (status.current_file) {
+            elements.currentFileDisplay.style.display = 'flex';
+            elements.currentFileName.textContent = status.current_file;
+        } else {
+            elements.currentFileDisplay.style.display = 'none';
+        }
+        
+        // Show and update file progress
+        if (status.total_files > 0) {
+            elements.fileProgress.style.display = 'block';
+            elements.fileProgressText.textContent = 
+                `File ${status.processed_files + 1} of ${status.total_files}`;
+        } else {
+            elements.fileProgress.style.display = 'none';
+        }
+        
+        // Show and update processing stats
+        if (status.chunks_per_second > 0) {
+            elements.processingStats.style.display = 'flex';
+            elements.processingSpeed.textContent = 
+                `${status.chunks_per_second.toFixed(1)} chunks/s`;
+        } else {
+            elements.processingStats.style.display = 'none';
+        }
+        
+        // Show and update ETA
+        if (status.estimated_time_remaining > 0) {
+            elements.etaDisplay.textContent = formatTime(status.estimated_time_remaining);
+        } else {
+            elements.etaDisplay.textContent = '--';
+        }
+        
+        // Update real CPU/Memory from backend
+        if (status.cpu_percent !== undefined) {
+            elements.cpuUsage.textContent = `${status.cpu_percent.toFixed(1)}%`;
+        }
+        if (status.memory_percent !== undefined) {
+            elements.memoryUsage.textContent = `${status.memory_percent.toFixed(1)}%`;
+        }
+        
     } else if (status.status === 'completed') {
         elements.embeddingStatus.textContent = 'Completed';
         setTrafficLight(elements.embeddingLight, 'green');
         elements.embeddingProgress.style.width = '100%';
+        elements.progressPercentage.textContent = '100%';
         elements.embeddingProgressText.textContent = `${status.total} / ${status.total} chunks`;
+        
+        // Remove processing animation
+        elements.embeddingProgress.classList.remove('processing');
+        
+        // Hide extra elements
+        elements.currentFileDisplay.style.display = 'none';
+        elements.fileProgress.style.display = 'none';
+        elements.processingStats.style.display = 'none';
+        
+        // Show final CPU/Memory if available
+        if (status.cpu_percent !== undefined) {
+            elements.cpuUsage.textContent = `${status.cpu_percent.toFixed(1)}%`;
+        }
+        if (status.memory_percent !== undefined) {
+            elements.memoryUsage.textContent = `${status.memory_percent.toFixed(1)}%`;
+        }
         
         // Reset after 3 seconds
         setTimeout(() => {
             elements.embeddingStatus.textContent = 'Idle';
             elements.embeddingProgress.style.width = '0%';
+            elements.progressPercentage.textContent = '0%';
             elements.embeddingProgressText.textContent = '0 / 0 chunks';
         }, 3000);
     } else if (status.status === 'error') {
         elements.embeddingStatus.textContent = 'Error';
         setTrafficLight(elements.embeddingLight, 'red');
+        
+        // Hide extra elements on error
+        elements.currentFileDisplay.style.display = 'none';
+        elements.fileProgress.style.display = 'none';
+        elements.processingStats.style.display = 'none';
+        elements.embeddingProgress.classList.remove('processing');
     } else {
         elements.embeddingStatus.textContent = 'Idle';
         setTrafficLight(elements.embeddingLight, 'green');
         elements.embeddingProgress.style.width = '0%';
+        elements.progressPercentage.textContent = '0%';
         elements.embeddingProgressText.textContent = '0 / 0 chunks';
-    }
-}
-
-// Mock CPU and Memory monitoring (in a real scenario, this would come from the backend)
-function updateSystemResources() {
-    if (state.embeddingProgress.isProcessing) {
-        // Simulate higher usage during processing
-        const cpu = (60 + Math.random() * 30).toFixed(1);
-        const memory = (50 + Math.random() * 20).toFixed(1);
-        elements.cpuUsage.textContent = `${cpu}%`;
-        elements.memoryUsage.textContent = `${memory}%`;
-    } else {
-        // Idle usage
-        const cpu = (5 + Math.random() * 15).toFixed(1);
-        const memory = (20 + Math.random() * 10).toFixed(1);
-        elements.cpuUsage.textContent = `${cpu}%`;
-        elements.memoryUsage.textContent = `${memory}%`;
+        
+        // Hide extra elements when idle
+        elements.currentFileDisplay.style.display = 'none';
+        elements.fileProgress.style.display = 'none';
+        elements.processingStats.style.display = 'none';
+        elements.embeddingProgress.classList.remove('processing');
     }
 }
 
@@ -710,11 +785,9 @@ async function checkIngestionStatus() {
 function startStatusMonitoring() {
     checkSystemStatus();
     checkIngestionStatus();
-    updateSystemResources();
     
     setInterval(checkSystemStatus, 5000);
-    setInterval(checkIngestionStatus, 2000);  // Check embedding status more frequently
-    setInterval(updateSystemResources, 1000);  // Update CPU/Memory every second
+    setInterval(checkIngestionStatus, 2000);  // Check embedding status more frequently (now includes real CPU/Memory)
 }
 
 // Refresh All

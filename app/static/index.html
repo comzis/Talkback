@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Secure RAG Studio</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.2">
+    <link rel="stylesheet" href="/static/style.css?v=4.3">
 </head>
 <body>
     <div class="app-container">
@@ -67,12 +67,42 @@
                             <div class="traffic-light green" id="embeddingLight"></div>
                         </div>
                         <div class="pulse-status" id="embeddingStatus">Idle</div>
+                        
+                        <!-- Current file display -->
+                        <div class="current-file-display" id="currentFileDisplay" style="display: none;">
+                            <span class="file-icon">📄</span>
+                            <span class="file-name" id="currentFileName">--</span>
+                        </div>
+                        
+                        <!-- File progress counter -->
+                        <div class="file-progress" id="fileProgress" style="display: none;">
+                            <span id="fileProgressText">File 0 of 0</span>
+                        </div>
+                        
                         <div class="embedding-progress">
                             <div class="progress-bar">
-                                <div class="progress-fill" id="embeddingProgress" style="width: 0%"></div>
+                                <div class="progress-fill" id="embeddingProgress" style="width: 0%">
+                                    <!-- Percentage inside bar -->
+                                    <span class="progress-percentage" id="progressPercentage">0%</span>
+                                </div>
                             </div>
                             <div class="progress-text" id="embeddingProgressText">0 / 0 chunks</div>
                         </div>
+                        
+                        <!-- Processing speed and ETA -->
+                        <div class="processing-stats" id="processingStats" style="display: none;">
+                            <div class="stat-item">
+                                <span class="stat-icon">⚡</span>
+                                <span class="stat-label">Speed:</span>
+                                <span class="stat-value" id="processingSpeed">-- chunks/s</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-icon">⏱️</span>
+                                <span class="stat-label">ETA:</span>
+                                <span class="stat-value" id="etaDisplay">--</span>
+                            </div>
+                        </div>
+                        
                         <div class="system-stats">
                             <div class="stat-item">
                                 <span class="stat-icon">🧠</span>
@@ -257,6 +287,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.2"></script>
+    <script src="/static/script.js?v=4.3"></script>
 </body>
 </html>
