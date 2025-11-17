@@ -81,10 +81,18 @@ app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 ingestion_status: Dict = {
     "status": "idle",  # idle, processing, completed, error
     "progress": 0,      # 0-100
-    "current": 0,       # current document being processed
-    "total": 0,         # total documents to process
+    "current": 0,       # current chunk being processed
+    "total": 0,         # total chunks to process
     "message": "",      # status message
-    "error": None       # error message if any
+    "error": None,      # error message if any
+    "current_file": None,        # current file being processed
+    "total_files": 0,            # total files to process
+    "processed_files": 0,        # files completed
+    "start_time": None,          # processing start timestamp
+    "chunks_per_second": 0.0,    # processing speed
+    "cpu_percent": 0.0,          # real CPU usage
+    "memory_percent": 0.0,       # real memory usage
+    "estimated_time_remaining": 0  # ETA in seconds
 }
 
 # Cached index built from the persistent Chroma vector store.
@@ -156,9 +164,12 @@ def get_or_create_cached_index() -> VectorStoreIndex:
 # --- API Endpoints ---
 def process_ingestion():
     """
-    Background task to process document ingestion with progress tracking.
+    Background task to process document ingestion with enhanced progress tracking.
     """
     global ingestion_status, cached_index
+    import time
+    import psutil
+    from pathlib import Path
 
     ingest_run_id = monitor.start_run(
         name="document_ingestion",
@@ -168,10 +179,18 @@ def process_ingestion():
     )
     
     try:
-        # Update status to processing
+        # Initialize start time
+        start_time = time.time()
+        ingestion_status["start_time"] = start_time
         ingestion_status["status"] = "processing"
         ingestion_status["message"] = "Reading documents..."
         ingestion_status["progress"] = 10
+        
+        # Get list of files for tracking
+        all_files = list(UPLOAD_DIR.rglob("*"))
+        file_list = [f for f in all_files if f.is_file()]
+        ingestion_status["total_files"] = len(file_list)
+        ingestion_status["processed_files"] = 0
         
         reader = SimpleDirectoryReader(input_dir="/app/data", recursive=True)
         documents = reader.load_data()
@@ -182,6 +201,7 @@ def process_ingestion():
             ingestion_status["status"] = "completed"
             ingestion_status["message"] = "No documents found to ingest."
             ingestion_status["progress"] = 100
+            ingestion_status["current_file"] = None
             monitor.end_run(
                 ingest_run_id,
                 outputs={
@@ -192,13 +212,21 @@ def process_ingestion():
             return
         
         ingestion_status["total"] = doc_count
-        ingestion_status["message"] = f"Processing {doc_count} documents..."
+        ingestion_status["message"] = f"Processing {doc_count} chunks from {len(file_list)} files..."
         ingestion_status["progress"] = 20
-        logger.info(f"Ingesting {doc_count} documents...")
+        logger.info(f"Ingesting {doc_count} chunks from {len(file_list)} files...")
+        
+        # Track current file being processed
+        if documents:
+            first_file = documents[0].metadata.get('file_name', 'Unknown')
+            ingestion_status["current_file"] = first_file
         
         # Process documents with progress updates
         ingestion_status["message"] = "Generating embeddings..."
         ingestion_status["progress"] = 40
+        
+        # Track embedding progress
+        chunk_start_time = time.time()
         
         # This creates the index and stores embeddings in ChromaDB
         new_index = VectorStoreIndex.from_documents(
@@ -207,20 +235,38 @@ def process_ingestion():
             show_progress=True
         )
 
+        # Calculate final metrics
+        elapsed_time = time.time() - chunk_start_time
+        chunks_per_second = doc_count / elapsed_time if elapsed_time > 0 else 0
+        
+        # Get real system metrics
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory_percent = psutil.virtual_memory().percent
+        
+        # Update status with metrics
+        ingestion_status["chunks_per_second"] = round(chunks_per_second, 2)
+        ingestion_status["cpu_percent"] = round(cpu_percent, 1)
+        ingestion_status["memory_percent"] = round(memory_percent, 1)
+        ingestion_status["processed_files"] = len(file_list)
+
         # Update cached index so subsequent queries can reuse it efficiently
         cached_index = new_index
         
         # Update to completed
         ingestion_status["status"] = "completed"
-        ingestion_status["message"] = f"Successfully ingested {doc_count} documents."
+        ingestion_status["message"] = f"Successfully ingested {doc_count} chunks."
         ingestion_status["progress"] = 100
         ingestion_status["current"] = doc_count
+        ingestion_status["current_file"] = None
+        ingestion_status["estimated_time_remaining"] = 0
         logger.info("Ingestion complete.")
         monitor.end_run(
             ingest_run_id,
             outputs={
                 "status": "completed",
                 "documents": doc_count,
+                "files": len(file_list),
+                "speed": chunks_per_second,
             },
         )
         
@@ -230,6 +276,7 @@ def process_ingestion():
         ingestion_status["message"] = "Ingestion failed"
         ingestion_status["error"] = str(e)
         ingestion_status["progress"] = 0
+        ingestion_status["current_file"] = None
         monitor.end_run(
             ingest_run_id,
             error=str(e),
@@ -251,14 +298,22 @@ async def ingest_documents(background_tasks: BackgroundTasks):
             "status": ingestion_status["status"]
         }
     
-    # Reset status
+    # Reset status with all fields
     ingestion_status = {
         "status": "processing",
         "progress": 0,
         "current": 0,
         "total": 0,
         "message": "Starting ingestion...",
-        "error": None
+        "error": None,
+        "current_file": None,
+        "total_files": 0,
+        "processed_files": 0,
+        "start_time": None,
+        "chunks_per_second": 0.0,
+        "cpu_percent": 0.0,
+        "memory_percent": 0.0,
+        "estimated_time_remaining": 0
     }
     
     # Start background task
@@ -275,6 +330,20 @@ async def get_ingestion_status():
     Get the current status of document ingestion.
     """
     return ingestion_status
+
+@app.get("/system/resources")
+async def get_system_resources():
+    """
+    Get real-time CPU and memory usage from the system.
+    """
+    import psutil
+    import time
+    
+    return {
+        "cpu_percent": round(psutil.cpu_percent(interval=0.1), 1),
+        "memory_percent": round(psutil.virtual_memory().percent, 1),
+        "timestamp": time.time()
+    }
 
 @app.post("/query", response_model=QueryResponse)
 async def query_index(request: QueryRequest):

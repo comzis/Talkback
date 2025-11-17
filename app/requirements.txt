@@ -20,3 +20,4 @@ beautifulsoup4  # For HTML parsing (already installed via llama-index-readers-fi
 lxml  # For XML parsing (already installed via llama-index-readers-file)
 httpx  # For async HTTP requests (LLM status check)
 langsmith>=0.1.28  # LangChain / LangSmith monitoring client
+psutil>=5.9.0  # For real-time CPU and memory monitoring
