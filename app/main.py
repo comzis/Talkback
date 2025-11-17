@@ -55,9 +55,10 @@ if missing_vars:
 # --- Global Settings (LlamaIndex) ---
 # Use local models for 100% data privacy
 # 1. Local LLM (Default: gemma2:2b - fast, efficient, privacy-focused)
+# Using host Ollama for better performance
 Settings.llm = Ollama(
     model=os.getenv("OLLAMA_MODEL", "gemma2:2b"),
-    base_url="http://ollama:11434", # Use Docker service name
+    base_url=os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),  # Connect to host Ollama
     request_timeout=300.0  # Increased to 5 minutes to handle concurrent embedding load
 )
 # 2. Local Embedding Model
@@ -661,7 +662,8 @@ async def list_llm_models():
     """
     try:
         import httpx
-        ollama_url = "http://ollama:11434/api/tags"
+        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_url = f"{ollama_base}/api/tags"
         
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(ollama_url)
@@ -697,7 +699,8 @@ async def select_llm_model(request: LLMSelectRequest):
     try:
         import httpx
         # First verify the model exists
-        ollama_url = "http://ollama:11434/api/tags"
+        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_url = f"{ollama_base}/api/tags"
         
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(ollama_url)
@@ -713,9 +716,10 @@ async def select_llm_model(request: LLMSelectRequest):
                 
                 # Update the global LLM settings
                 global Settings
+                ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
                 Settings.llm = Ollama(
                     model=request.model,
-                    base_url="http://ollama:11434",
+                    base_url=ollama_base,
                     request_timeout=300.0  # Increased to 5 minutes
                 )
                 
@@ -747,7 +751,8 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
     """
     try:
         import httpx
-        ollama_url = f"http://ollama:11434/api/pull"
+        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_url = f"{ollama_base}/api/pull"
         
         # Start the pull in background
         async def pull_model():
@@ -784,7 +789,8 @@ async def get_llm_status():
     try:
         import httpx
         import time
-        ollama_url = f"http://ollama:11434/api/tags"
+        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_url = f"{ollama_base}/api/tags"
         
         start_time = time.time()
         async with httpx.AsyncClient(timeout=5.0) as client:
