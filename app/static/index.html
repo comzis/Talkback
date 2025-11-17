@@ -3,139 +3,260 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure RAG Chatbot</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>Secure RAG Studio</title>
+    <link rel="stylesheet" href="/static/style.css?v=4.2">
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <h1>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px;">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                </svg>
-                Secure RAG Chatbot
-            </h1>
-            <p class="subtitle">Ask questions about your documents - 100% Local & Private</p>
-            <!-- Status Indicators -->
-            <div class="status-indicators">
-                <div class="status-indicator" id="apiStatus" role="status" aria-live="polite">
-                    <span class="status-dot" id="apiStatusDot" aria-label="API Server status"></span>
-                    <span class="status-label">API Server</span>
+    <div class="app-container">
+        <!-- Top Banner -->
+        <div class="top-banner">
+            <span class="banner-label">APPLE DESIGN TIPS · PRIVATE AI</span>
+        </div>
+
+        <!-- Hero Section -->
+        <header class="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">Secure RAG Studio</h1>
+                <p class="hero-description">A beautifully crafted, privacy-first research companion. Curate your library, ground responses, and chat freely—even before documents are uploaded.</p>
+                <div class="hero-badges">
+                    <span class="badge">Library: <span id="docCount">0</span> docs</span>
+                    <span class="badge" id="systemMode">Private Mode</span>
                 </div>
-                <div class="status-indicator" id="llmStatus" role="status" aria-live="polite">
-                    <span class="status-dot" id="llmStatusDot" aria-label="LLM status"></span>
-                    <span class="status-label">LLM</span>
+            </div>
+            
+            <!-- System Pulse -->
+            <div class="system-pulse">
+                <h3 class="pulse-title">SYSTEM PULSE</h3>
+                <div class="pulse-grid">
+                    <div class="pulse-card" id="apiCard">
+                        <div class="pulse-header">
+                            <div class="pulse-label">API</div>
+                            <div class="traffic-light green" id="apiLight"></div>
+                        </div>
+                        <div class="pulse-status" id="apiStatus">Online</div>
+                        <div class="pulse-detail">FastAPI health</div>
+                    </div>
+                    <div class="pulse-card" id="databaseCard">
+                        <div class="pulse-header">
+                            <div class="pulse-label">DATABASE</div>
+                            <div class="traffic-light green" id="dbLight"></div>
+                        </div>
+                        <div class="pulse-status" id="dbStatus">Connected</div>
+                        <div class="pulse-detail" id="dbDetail">0 documents</div>
+                    </div>
+                    <div class="pulse-card" id="ingestionCard">
+                        <div class="pulse-header">
+                            <div class="pulse-label">INGESTION</div>
+                            <div class="traffic-light green" id="ingestionLight"></div>
+                        </div>
+                        <div class="pulse-status" id="ingestionStatus">Ready</div>
+                        <div class="pulse-detail">Background tasks</div>
+                    </div>
+                    <div class="pulse-card" id="llmCard">
+                        <div class="pulse-header">
+                            <div class="pulse-label">LLM</div>
+                            <div class="traffic-light green" id="llmLight"></div>
+                        </div>
+                        <div class="pulse-status" id="llmStatus">Ready</div>
+                        <div class="pulse-detail" id="llmModel">Ollama · llama3-8b</div>
+                        <button class="pulse-btn" id="changeModelBtn">Change Model</button>
+                    </div>
+                    <div class="pulse-card pulse-card-wide" id="embeddingCard">
+                        <div class="pulse-header">
+                            <div class="pulse-label">EMBEDDINGS</div>
+                            <div class="traffic-light green" id="embeddingLight"></div>
+                        </div>
+                        <div class="pulse-status" id="embeddingStatus">Idle</div>
+                        <div class="embedding-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="embeddingProgress" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text" id="embeddingProgressText">0 / 0 chunks</div>
+                        </div>
+                        <div class="system-stats">
+                            <div class="stat-item">
+                                <span class="stat-icon">🧠</span>
+                                <span class="stat-label">CPU:</span>
+                                <span class="stat-value" id="cpuUsage">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-icon">💾</span>
+                                <span class="stat-label">Memory:</span>
+                                <span class="stat-value" id="memoryUsage">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pulse-card pulse-card-wide" id="monitoringCard">
+                        <div class="pulse-header">
+                            <div class="pulse-label">LANGCHAIN MONITORING</div>
+                            <div class="traffic-light red" id="monitoringLight"></div>
+                        </div>
+                        <div class="pulse-status" id="monitoringStatus">Disabled</div>
+                        <div class="monitoring-config">
+                            <input type="text" id="langsmithApiKey" class="config-input" placeholder="LangSmith API Key (ls__...)" />
+                            <input type="text" id="langsmithProject" class="config-input" placeholder="Project Name (optional)" value="Secure RAG Monitoring" />
+                            <button class="pulse-btn" id="enableMonitoringBtn">Enable Monitoring</button>
+                        </div>
+                        <div class="monitoring-links">
+                            <a href="https://docs.smith.langchain.com/overview" target="_blank" class="monitoring-link">📚 Docs</a>
+                            <a href="https://smith.langchain.com/" target="_blank" class="monitoring-link">🔗 Dashboard</a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </header>
 
+        <!-- Feature Cards -->
+        <div class="feature-cards">
+            <div class="feature-card">
+                <div class="feature-icon">📁</div>
+                <h3 class="feature-title">Curated Uploads</h3>
+                <p class="feature-text">Files are auto-sorted into Document, Data, Code, and Media vaults with duplicate protection.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">💬</div>
+                <h3 class="feature-title">Ambient Chat</h3>
+                <p class="feature-text">Start conversations instantly. The assistant gracefully falls back to general knowledge when needed.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3 class="feature-title">Local & Private</h3>
+                <p class="feature-text">Everything runs on-device with Ollama + ChromaDB. No cloud calls, ever.</p>
+            </div>
+        </div>
+
         <!-- Main Content -->
-        <div class="main-content">
-            <!-- Left Panel: File Upload & Management -->
-            <aside class="sidebar">
-                <div class="upload-section">
-                    <h2>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px;">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                            <polyline points="10 9 9 9 8 9"></polyline>
-                        </svg>
-                        Document Management
-                    </h2>
-                    
-                    <!-- File Upload -->
-                    <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-label="Upload files">
-                        <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.odt,.txt,.md,.rst,.rtf,.pptx,.xlsx,.csv,.json,.xml,.html,.htm,.py,.js,.ts,.jsx,.tsx,.java,.cpp,.go,.rs,.epub" hidden aria-label="File input">
-                        <div class="upload-prompt">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Click or drag files here</p>
-                            <small>PDF, Word, Excel, Text, Code, and more</small>
-                        </div>
-                    </div>
-                    
-                    <button class="btn btn-primary" id="uploadBtn" aria-label="Upload selected files">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="17 8 12 3 7 8"></polyline>
-                            <line x1="12" y1="3" x2="12" y2="15"></line>
-                        </svg>
-                        <span>Upload Files</span>
+        <div class="main-layout">
+            <!-- Left: Library Curator -->
+            <aside class="library-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">LIBRARY CURATOR</h2>
+                    <button class="btn-refresh" id="refreshBtn">Refresh</button>
+                </div>
+                <h3 class="section-heading">Manage Your Documents</h3>
+                
+                <!-- Drop Zone -->
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-icon">📂</div>
+                    <h4 class="drop-title">Drop files anywhere</h4>
+                    <p class="drop-text">We'll auto-sort them by type and prevent duplicates.</p>
+                </div>
+                <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.py,.js,.ts,.png,.jpg,.jpeg,.gif,.bmp,.svg,.webp,.ico,.tiff,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v" hidden>
+                
+                <!-- Action Buttons -->
+                <div class="action-row">
+                    <button class="btn btn-primary" id="uploadBtn">Upload Files</button>
+                    <button class="btn btn-secondary" id="processBtn">
+                        <span>⚡</span> Process Library
                     </button>
-                    
-                    <!-- Uploaded Files List -->
-                    <div class="uploaded-files" id="uploadedFilesList">
-                        <div class="files-header">
-                            <h3>Uploaded Files</h3>
-                            <div class="file-stats" id="fileStats"></div>
-                        </div>
-                        <div class="file-list-container">
-                            <ul id="fileList"></ul>
-                        </div>
+                </div>
+
+                <!-- File Type Stats -->
+                <div class="file-stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-label">Documents</div>
+                        <div class="stat-value" id="docFiles">0</div>
+                        <div class="stat-sub">Awaiting files</div>
                     </div>
-                    
-                    <!-- Ingest Button -->
-                    <button class="btn btn-success" id="ingestBtn" aria-label="Process and index documents">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                        </svg>
-                        <span>Process Documents</span>
-                    </button>
-                    
-                    <!-- Status Messages -->
-                    <div class="status-message" id="statusMessage"></div>
+                    <div class="stat-box">
+                        <div class="stat-label">Sheets</div>
+                        <div class="stat-value" id="sheetFiles">0</div>
+                        <div class="stat-sub">Awaiting files</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Slides</div>
+                        <div class="stat-value" id="slideFiles">0</div>
+                        <div class="stat-sub">Awaiting files</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Data</div>
+                        <div class="stat-value" id="dataFiles">0</div>
+                        <div class="stat-sub">Awaiting files</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Code</div>
+                        <div class="stat-value" id="codeFiles">0</div>
+                        <div class="stat-sub">Awaiting files</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Images</div>
+                        <div class="stat-value" id="imageFiles">0</div>
+                        <div class="stat-sub">Awaiting files</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Videos</div>
+                        <div class="stat-value" id="videoFiles">0</div>
+                        <div class="stat-sub">Awaiting files</div>
+                    </div>
+                </div>
+
+                <!-- Upload Queue -->
+                <div class="upload-queue">
+                    <div class="queue-header">
+                        <span class="queue-title">Upload Queue</span>
+                        <span class="queue-count" id="queueCount">0 selected</span>
+                    </div>
+                    <div class="queue-list" id="queueList">
+                        <!-- Files will be added here -->
+                    </div>
                 </div>
             </aside>
 
-            <!-- Right Panel: Chat Interface -->
-            <main class="chat-section">
-                <div class="chat-container">
-                    <!-- Chat Messages -->
-                    <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-label="Chat messages">
-                        <div class="welcome-message">
-                            <h2>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px;">
-                                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
-                                </svg>
-                                Welcome!
-                            </h2>
-                            <p>Start by uploading documents, then click "Process Documents" to index them.</p>
-                            <p>Once processed, you can ask questions about your documents!</p>
-                        </div>
-                    </div>
-
-                    <!-- Chat Input -->
-                    <div class="chat-input-container">
-                        <div class="chat-input-wrapper">
-                            <input 
-                                type="text" 
-                                id="queryInput" 
-                                class="chat-input" 
-                                placeholder="Ask a question about your documents..."
-                                aria-label="Chat input"
-                            >
-                            <button class="btn btn-send" id="sendBtn" aria-label="Send message">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                                </svg>
-                            </button>
-                        </div>
-                        <small class="input-hint">Press Enter to send</small>
-                    </div>
+            <!-- Right: Chat Studio -->
+            <section class="chat-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">CONVERSATIONAL STUDIO</h2>
+                    <span class="status-badge" id="chatStatus">Awaiting documents</span>
                 </div>
-            </main>
+                <h3 class="section-heading">Chat with Your Library</h3>
+                
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="ambient-message">
+                            <div class="ambient-icon">✨</div>
+                            <h4 class="ambient-title">Elegant, ambient intelligence</h4>
+                            <p class="ambient-text">You can talk to me right away. I'll respond from general knowledge until your documents are processed.</p>
+                            <p class="ambient-text">Add files to unlock grounded, citation-rich answers.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-area">
+                        <input 
+                            type="text" 
+                            id="chatInput" 
+                            class="chat-input" 
+                            placeholder='Ask anything — try "Summarize my Python guides"'
+                        >
+                        <button class="btn-send" id="sendBtn">Send</button>
+                    </div>
+                    <p class="input-hint">Press Enter to send · Responses cite sources when available</p>
+                </div>
+            </section>
         </div>
     </div>
 
-    <script src="/static/script.js"></script>
+    <!-- Model Selector Modal -->
+    <div class="modal" id="modelModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select Language Model</h3>
+                <button class="modal-close" id="closeModal">×</button>
+            </div>
+            <div class="modal-body">
+                <select id="modelSelect" class="model-select">
+                    <option value="">Loading models...</option>
+                </select>
+                <div class="model-add">
+                    <input type="text" id="newModelInput" class="model-input" placeholder="Model name (e.g., llama3)">
+                    <button class="btn btn-secondary" id="addModelBtn">Add Model</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/script.js?v=4.2"></script>
 </body>
 </html>
-

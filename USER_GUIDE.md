@@ -1,18 +1,18 @@
 # Secure RAG Chatbot - User Guide
 
 ## Table of Contents
-1. [Overview](#overview)
-2. [Prerequisites](#prerequisites)
-3. [Quick Start](#quick-start)
-4. [Supported File Formats (30+)](#-supported-file-formats-30)
-5. [Using the Chatbot Interface](#using-the-chatbot-interface)
-6. [API Endpoints (Advanced)](#api-endpoints-advanced)
-7. [Example Workflows](#example-workflows)
-8. [Troubleshooting](#troubleshooting)
-9. [System Architecture](#system-architecture)
-10. [Advanced Configuration](#advanced-configuration)
+1. Overview
+2. Prerequisites
+3. Quick Start
+4. Supported File Formats (30+)
+5. Using the Chatbot Interface
+6. API Endpoints (Advanced)
+7. Example Workflows
+8. Troubleshooting
+9. System Architecture
+10. Advanced Configuration
 
----
+<hr />
 
 ## Overview
 
@@ -25,6 +25,7 @@ The Secure RAG (Retrieval-Augmented Generation) Chatbot is a privacy-focused sys
 **Key Features:**
 - 🔒 **100% Local Processing** - All data stays on your machine
 - 💬 **Interactive Chatbot** - Modern web interface with Apple Liquid Glass design
+- 📈 **LangChain Monitoring (optional)** - Stream ingest/query telemetry to LangSmith
 - 📤 **Drag & Drop Upload** - Upload documents directly from your browser
 - 📚 **30+ Document Formats** - Support for PDF, Word, Excel, PowerPoint, code files, eBooks, and more
 - 🎯 **Source Citations** - Responses include references to source documents
@@ -54,22 +55,22 @@ Create a `.env` file in the project root directory:
 
 ```bash
 # Required Environment Variables
-OLLAMA_MODEL=llama2
+OLLAMA_MODEL=gemma2:2b
 CHROMA_HOST=chromadb
 CHROMA_PORT=8000
 ```
 
 **Important:** 
-- `OLLAMA_MODEL` - Specify your preferred Ollama model (e.g., `llama2`, `mistral`, `llama3`, `gemma2:2b`)
+- `OLLAMA_MODEL` - Specify your preferred Ollama model (default: `gemma2:2b` for optimal speed and privacy)
 - `CHROMA_HOST` - Use `chromadb` for Docker networking
 - `CHROMA_PORT` - Default ChromaDB port is `8000`
 
 **Available Models:**
-- `llama2` - Llama 2 7B (good balance, recommended for most users)
-- `llama3` - Llama 3 8B (newer, better quality)
-- `mistral` - Mistral 7B (high quality responses)
-- `gemma2:2b` - Gemma 2 2B (very fast, lower resource usage)
-- `phi3` - Phi-3 Mini (efficient, good for limited resources)
+- `gemma2:2b` - Gemma 2 2B (very fast, 1.6 GB, **recommended default** ⚡)
+- `llama2` - Llama 2 7B (good balance, 3.8 GB)
+- `llama3` - Llama 3 8B (newer, better quality, 4.7 GB)
+- `mistral` - Mistral 7B (high quality responses, 4.1 GB)
+- `phi3` - Phi-3 Mini (efficient, good for limited resources, 2.3 GB)
 
 ### Step 2: Start the Services
 
@@ -91,20 +92,20 @@ You should see three services running:
 Before using the system, you need to download the LLM model:
 
 ```bash
-# Download your chosen model (this may take several minutes)
-docker exec ollama_service ollama pull llama2
+# Download the default model (recommended - fast and efficient)
+docker exec ollama_service ollama pull gemma2:2b
 
 # Or use another model like:
 # docker exec ollama_service ollama pull llama3
+# docker exec ollama_service ollama pull llama2
 # docker exec ollama_service ollama pull mistral
-# docker exec ollama_service ollama pull gemma2:2b
 ```
 
 **Model Size & Performance Guide:**
-- **llama2** (3.8 GB) - Balanced performance, good for most uses ✅ Recommended
+- **gemma2:2b** (1.6 GB) - Very fast, privacy-focused ✅ **Default & Recommended**
+- **llama2** (3.8 GB) - Balanced performance, good for most uses
 - **llama3** (4.7 GB) - Better quality, slightly larger
 - **mistral** (4.1 GB) - High quality responses
-- **gemma2:2b** (1.6 GB) - Fast, great for lower-end systems
 - **phi3** (2.3 GB) - Efficient, good quality for size
 
 ### Step 4: Open the Chatbot
@@ -193,25 +194,84 @@ The chatbot interface features a modern **Apple Liquid Glass design** with:
 - **Smooth animations** - Spring physics for natural interactions
 - **SF Symbols icons** - Apple-style iconography throughout
 - **San Francisco typography** - Native Apple font system
+- **Live Pulse Metrics** - Real-time system status dashboard
+- **LLM Model Management** - Select and switch between models dynamically
+- **Enhanced File Display** - Beautiful file cards with type badges
 
-The interface consists of two main panels:
+The interface consists of:
 
-1. **Left Panel: Document Management**
+1. **Header: Pulse Metrics Dashboard**
+   - Live status cards with pulse animations
+   - API Status (online/offline, response time)
+   - LLM Status (model name, availability, response time)
+   - Database Status (connection, collection count)
+   - Alarms (error notifications, system alerts)
+   - Updates every 3 seconds automatically
+
+2. **Left Panel: Document Management & LLM Control**
+   - **LLM Model Selector**: Dropdown to select from available models, add new models
+   - **File Types Display**: Visual grid showing file counts by category
    - Glass-style file upload area (drag & drop or click)
-   - List of uploaded files with file type badges
+   - Enhanced file cards with icons, names, sizes, and type badges
    - Process documents button with lightning icon
    - Status messages with glass effects
-   - Real-time status indicators (API Server, LLM)
 
-2. **Right Panel: Chat Interface**
+3. **Right Panel: Dynamic Chat Interface**
    - Glass-style chat history display
-   - Message bubbles with glass effects
+   - Message bubbles with glass effects and timestamps
+   - Smooth message animations
+   - Expandable source citations
    - Message input box with rounded design
    - Send button with smooth animations
+   - Fully responsive for all screen sizes
 
 ### Step-by-Step Guide
 
-#### 1. Upload Documents
+#### 0. Monitor System Status
+
+At the top of the interface, you'll see the **Pulse Metrics Dashboard** with four live status cards:
+
+- **API**: Shows if the API server is online
+- **LLM**: Displays current model name, status, and response time
+- **Database**: Shows ChromaDB connection status and collection count
+- **Alarms**: Displays any system warnings or errors (shows "All Clear" when everything is healthy)
+
+These metrics update automatically every 3 seconds, giving you real-time visibility into your system's health.
+
+#### 1. Select or Add LLM Model
+
+The system defaults to **gemma2:2b** (fast, efficient, 1.6 GB). You can switch models anytime:
+
+**Select Existing Model:**
+1. In the System Pulse section, find the "LLM" card
+2. Click the **"Change Model"** button
+3. A modal will open showing all available models
+4. Select your preferred model from the dropdown (e.g., `gemma2:2b`, `llama3:8b`, `llama2:latest`)
+5. The system will switch immediately and close the modal
+6. You'll see a success toast notification
+7. The LLM card will update to show the new model (e.g., "Ollama · gemma2:2b")
+
+**Add New Model:**
+1. Click **"Change Model"** to open the modal
+2. In the "Add Model" section, type the model name (e.g., `llama3`, `mistral`, `phi3`)
+3. Click **"Add Model"** button
+4. The system will start downloading the model in the background (this may take several minutes)
+5. Check Docker logs to monitor download progress: `docker compose logs -f ollama`
+6. Once downloaded, refresh the page and the model will appear in the dropdown
+
+**Note:** Model switching happens instantly without restarting the service. The first query after switching may be slower as the new model loads into memory.
+
+#### 2. View File Types
+
+Above the upload area, you'll see a **File Types Grid** showing:
+- Visual cards for each file category (Document, Code, Data, Image, Other)
+- Count of files in each category
+- Color-coded icons for easy identification
+- Updates automatically when files are uploaded
+
+This gives you a quick overview of what types of documents you have indexed.
+
+#### 3. Upload Documents
 
 **Method 1: Drag & Drop**
 - Drag your files from your file explorer
@@ -264,15 +324,20 @@ This makes the chatbot incredibly versatile:
 - **Research**: Upload EPUB books, HTML articles, or academic papers
 - **Business**: Upload presentations, spreadsheets, and reports
 
-#### 2. Upload Files to Server
+#### 4. Upload Files to Server
 
 After selecting files:
 1. Click the **"Upload Files"** button (with upload icon)
 2. Wait for the upload to complete
 3. You'll see a success message with glass-style notification: "Successfully uploaded X file(s)"
-4. Uploaded files will appear in the file list with type badges and file size
+4. Uploaded files will appear as **beautiful file cards** in a responsive grid:
+   - Each card shows the file icon, name, type badge, and size
+   - Cards are color-coded by file type
+   - Smooth animations when files are added
+   - Hover effects for better interactivity
+5. The File Types Grid will update automatically to show new counts
 
-#### 3. Process Documents
+#### 5. Process Documents
 
 Once files are uploaded:
 1. Click the **"Process Documents"** button (with lightning icon)
@@ -280,31 +345,41 @@ Once files are uploaded:
    - Progress percentage updates in real-time
    - Status messages show current processing stage
    - Smooth animations indicate activity
-3. Wait while the system:
+3. Monitor the **Pulse Metrics Dashboard**:
+   - Database status will update as collections are created
+   - Alarms will show if any errors occur during processing
+4. Wait while the system:
    - Reads all documents from the data folder
    - Generates embeddings using AI
    - Stores them in ChromaDB
-4. You'll see: "Successfully ingested X documents" with success notification
-5. The chat input will become active and ready for questions
+5. You'll see: "Successfully ingested X documents" with success notification
+6. The chat input will become active and ready for questions
+7. The Database metric card will show the updated collection count
 
 **Note:** Processing time depends on:
 - Number of documents
 - Size of documents
 - Your computer's processing power
 
-#### 4. Ask Questions
+#### 6. Ask Questions
 
 Now you can chat with your documents:
 1. Type your question in the rounded input box (glass-style design)
 2. Press **Enter** or click the **Send button** (with send icon)
 3. Watch smooth animations:
    - Your message slides in with spring physics
+   - Message timestamp appears on hover
    - Loading dots appear while processing
    - Bot response animates in naturally
-4. View the response with source citations:
-   - Glass-style message bubbles
+4. View the response with enhanced features:
+   - Glass-style message bubbles with better spacing
    - Source documents listed with file icons
+   - **Click on source items** to expand and see full text
+   - Message timestamps for both user and bot messages
    - Smooth scrolling to new messages
+5. Monitor the **LLM Status** card in the pulse metrics:
+   - Response time updates after each query
+   - Status changes if the model becomes unavailable
 
 **Example Questions:**
 
@@ -386,6 +461,178 @@ curl http://localhost:8001/health
 ```json
 {
   "status": "ok"
+}
+```
+
+---
+
+### 2a. System Status (Comprehensive)
+
+**Endpoint:** `GET /system/status`
+
+**Description:** Get comprehensive system status including API, LLM, Database, and alarms.
+
+**Example:**
+```bash
+curl http://localhost:8001/system/status
+```
+
+**Response:**
+```json
+{
+  "timestamp": 1700000000.0,
+  "api": {
+    "status": "online",
+    "uptime": "running"
+  },
+  "llm": {
+    "status": "online",
+    "available": true,
+    "model_configured": "llama3:8b",
+    "model_available": true,
+    "response_time_ms": 45.2
+  },
+  "database": {
+    "status": "online",
+    "connected": true,
+    "collection_count": 4778
+  },
+  "alarms": []
+}
+```
+
+**Use Cases:**
+- Monitor system health in real-time
+- Check if all services are operational
+- View current LLM model and response times
+- Get notified of any system errors or warnings
+
+---
+
+### 2b. LLM Models Management
+
+**List Models:**
+**Endpoint:** `GET /llm/models`
+
+**Description:** List all available Ollama models.
+
+**Example:**
+```bash
+curl http://localhost:8001/llm/models
+```
+
+**Response:**
+```json
+{
+  "models": [
+    {
+      "name": "llama3:8b",
+      "size": 4700000000,
+      "modified": "2024-01-01T00:00:00Z"
+    },
+    {
+      "name": "mistral",
+      "size": 4100000000,
+      "modified": "2024-01-02T00:00:00Z"
+    }
+  ],
+  "count": 2
+}
+```
+
+**Select Model:**
+**Endpoint:** `POST /llm/select`
+
+**Description:** Switch to a different LLM model.
+
+**Request Body:**
+```json
+{
+  "model": "llama3:8b"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8001/llm/select \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3:8b"}'
+```
+
+**Response:**
+```json
+{
+  "message": "Successfully switched to model: llama3:8b",
+  "model": "llama3:8b"
+}
+```
+
+**Pull New Model:**
+**Endpoint:** `POST /llm/pull`
+
+**Description:** Download a new model from Ollama.
+
+**Request Body:**
+```json
+{
+  "model": "llama3"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8001/llm/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3"}'
+```
+
+**Response:**
+```json
+{
+  "message": "Started pulling model: llama3",
+  "model": "llama3",
+  "status": "pulling"
+}
+```
+
+**Note:** Model pulling happens in the background. Check Docker logs to see progress.
+
+---
+
+### 2c. File Types Statistics
+
+**Endpoint:** `GET /files/types`
+
+**Description:** Get file type statistics grouped by category.
+
+**Example:**
+```bash
+curl http://localhost:8001/files/types
+```
+
+**Response:**
+```json
+{
+  "by_type": {
+    "document": {
+      "count": 5,
+      "total_size": 5242880,
+      "files": [
+        {
+          "name": "report.pdf",
+          "size": 1048576,
+          "extension": ".pdf"
+        }
+      ]
+    },
+    "code": {
+      "count": 3,
+      "total_size": 1572864,
+      "files": [...]
+    }
+  },
+  "total_files": 11,
+  "total_size": 10485760
 }
 ```
 
@@ -539,7 +786,7 @@ cd /path/to/secure-rag-project
 
 # 3. Create .env file
 cat > .env << EOF
-OLLAMA_MODEL=llama2
+OLLAMA_MODEL=gemma2:2b
 CHROMA_HOST=chromadb
 CHROMA_PORT=8000
 EOF
@@ -547,8 +794,8 @@ EOF
 # 4. Start services
 docker compose up -d
 
-# 5. Download the model
-docker exec ollama_service ollama pull llama2
+# 5. Download the default model (fast and efficient)
+docker exec ollama_service ollama pull gemma2:2b
 
 # 6. Open browser
 open http://localhost:8001
@@ -596,16 +843,27 @@ cp /path/to/new/documents/* data/
 
 ### Workflow 4: Using a Different LLM Model
 
+**Option A: Switch via Web UI (Recommended)**
+```bash
+# 1. Open browser
+open http://localhost:8001
+
+# 2. Click "Change Model" button in the LLM card
+# 3. Select your preferred model from the dropdown
+# 4. Model switches instantly - no restart needed!
+```
+
+**Option B: Change Default Model**
 ```bash
 # 1. Update .env file with new model name
-echo "OLLAMA_MODEL=llama2" > .env
+echo "OLLAMA_MODEL=llama3" > .env
 
 # 2. Restart services
 docker compose down
 docker compose up -d
 
-# 3. Download the new model
-docker exec ollama_service ollama pull llama2
+# 3. Download the new model if not already installed
+docker exec ollama_service ollama pull llama3
 
 # 4. Open browser and test
 open http://localhost:8001
@@ -783,7 +1041,10 @@ docker compose restart rag-api
 
 **Common Models to Download:**
 ```bash
-# Fast and recommended (3.8 GB)
+# Default - Very fast, small size (1.6 GB) ⚡ RECOMMENDED
+docker exec ollama_service ollama pull gemma2:2b
+
+# Fast and balanced (3.8 GB)
 docker exec ollama_service ollama pull llama2
 
 # Better quality (4.7 GB)
@@ -791,9 +1052,6 @@ docker exec ollama_service ollama pull llama3
 
 # High quality (4.1 GB)
 docker exec ollama_service ollama pull mistral
-
-# Very fast, small size (1.6 GB)
-docker exec ollama_service ollama pull gemma2:2b
 ```
 
 ---
@@ -829,7 +1087,7 @@ docker exec ollama_service ollama pull gemma2:2b
 
 1. **Model not downloaded:**
    ```bash
-   docker exec ollama_service ollama pull granite-3.1-8b-instruct
+   docker exec ollama_service ollama pull gemma2:2b
    ```
 
 2. **Insufficient resources:**
@@ -1166,6 +1424,82 @@ Edit `/app/static/script.js` to modify:
 - File validation rules
 - Message entrance animations
 
+### Phase B: Upcoming UX Enhancements
+
+To push the Apple-inspired identity even further, consider these next-wave ideas:
+
+1. **Layout Modes**
+   - **Compact Split View:** Collapse the sidebar into an icon rail for smaller breakpoints while keeping the chat full-height.
+   - **Focus Canvas:** Dim the background and expand the chat bubble stack for presentation/demo scenarios.
+   - **Dual-Pane Compare:** Allow users to pin a file preview or metric card next to the chat thread for side-by-side analysis.
+
+2. **Micro-Interactions**
+   - Introduce **haptic-friendly cues** (via the Web Vibration API) when uploads complete or when an alarm triggers.
+   - Layer **subtle spatial audio** or chimes (SF system sounds) for send/receive events with a mute toggle in settings.
+   - Add **gesture affordances** (swipe-to-close for sources, long-press on metric cards to expand details).
+
+3. **Adaptive Pulse Metrics**
+   - Animate radial progress rings around each metric card, syncing to response times.
+   - Surface a mini timeline that shows API/LLM status changes over the past minute for quick debugging.
+
+4. **Theme Variations**
+   - Offer preset Apple palettes: **Sierra Mist**, **Monterey Twilight**, and **Night Shift** (warmer glass tints for evening work).
+   - Add a **“Pro Display”** toggle that increases density, tightens typography, and reveals numerical diagnostics.
+
+5. **Accessibility Extras**
+   - Provide a **Reduce Transparency** toggle that swaps glass cards for solid surfaces.
+   - Include a **High Contrast** overlay and color-blind friendly accents for each file type badge.
+
+Documenting these concepts now keeps Phase B organized—each bullet points to a specific area in `style.css`, `index.html`, or `script.js` that can be extended without rewriting the current experience.
+
+### LangChain Monitoring & LangSmith Integration
+
+If you want full observability for ingest and query runs, you can enable the built-in LangChain/LangSmith monitoring hook:
+
+1. **Install dependencies** – already included in `app/requirements.txt` (`langsmith>=0.1.28`). Rebuild the container if needed:  
+   ```bash
+   docker compose up --build rag-api
+   ```
+2. **Set environment variables** (you can reuse your LangSmith workspace keys):
+   ```bash
+   LANGCHAIN_MONITORING=true
+   LANGCHAIN_PROJECT="Secure RAG Monitoring"
+   LANGSMITH_API_KEY=ls__xxxxxxxxxxxxxxxx
+   LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+   ```
+3. **What gets recorded**
+   - `document_ingestion` runs capture document counts, status, and errors.
+   - `rag_query` runs log the user query, completion status, and the files cited in the answer.
+4. **Where to view data**
+   - Visit the [LangSmith dashboard](https://smith.langchain.com/) and open the project you set in `LANGCHAIN_PROJECT`.
+   - Each run is tagged (`ingestion`, `query`, `rag`) so you can filter quickly.
+
+This mirrors the guidance at [LangChain Monitoring](https://python.langchain.com/docs/guides/tracing) and keeps all telemetry optional—if `LANGCHAIN_MONITORING` is not set to `true`, the app behaves exactly as before.
+
+### Manual Smoke Test Checklist
+
+After deploying, you can run a quick end-to-end verification directly from a terminal (or CI job):
+
+```bash
+# 1. API health
+curl http://localhost:8001/health
+
+# 2. System status (LLM + DB telemetry)
+curl http://localhost:8001/system/status | jq
+
+# 3. File-type stats (verifies ingestion metadata)
+curl http://localhost:8001/files/types | jq '.total_files'
+
+# 4. Sample RAG query (ensures embeddings + LLM path)
+curl -X POST http://localhost:8001/query \
+  -H "Content-Type: application/json" \
+  -d '{"query":"Summarize available documents"}'
+```
+
+- Expect HTTP 200 responses across all endpoints.
+- `/system/status` should report `llm.available: true` and a non-zero `collection_count`.
+- The sample query should return a natural-language answer plus at least one source file.
+
 ### Changing Upload Directory
 
 To use a different directory for uploads, edit `app/main.py`:
@@ -1249,8 +1583,43 @@ If you encounter issues not covered in this guide:
 
 ---
 
-**Version:** 2.1 (Apple Liquid Glass Design)  
+**Version:** 2.4 (Model Selection & Defaults)  
 **Last Updated:** November 2025
+
+### What's New in Version 2.4 (Model Selection & Defaults)
+
+- ⚡ **New Default Model: gemma2:2b** - Fast, efficient, privacy-focused (1.6 GB)
+- 🔄 **Improved Model Selection** - "Change Model" button now works perfectly with instant switching
+- 📋 **Current Model Display** - Shows which model is active in the LLM status card
+- 🎯 **Pre-selected Model** - Modal automatically selects the current model
+- ✨ **Seamless Switching** - Change models on-the-fly without restarting services
+- 🚦 **Traffic Light Indicators** - Green (ready), Orange (loading), Red (error) for all system components
+- 📚 **Better Source Citations** - Numbered sources with excerpts in chat responses
+- 💾 **Database Status** - New dedicated database card with document count and traffic light
+
+### What's New in Version 2.3 (10/10 UX Polish)
+
+- ✨ **Toast Notifications** - Modern slide-in notifications for all user actions (upload, process, model switch)
+- 🎯 **Empty State Improvements** - "Connecting..." and "Checking..." instead of "-" placeholders
+- 🖱️ **Enhanced Micro-Interactions** - Hover effects on all cards and buttons with spring animations
+- ♿ **Perfect Touch Targets** - All interactive elements are minimum 44x44px per Apple HIG
+- 🔄 **Loading States** - Animated spinners and visual feedback during async operations
+- 💍 **Focus States** - Clear blue outline with shadow for keyboard navigation
+- 🎭 **Entrance Animations** - Smooth fadeInUp animations for metric cards and file cards
+- 📱 **Responsive Verified** - Tested at 375px, 768px, 1024px, 1440px breakpoints
+- 💡 **Helpful Tooltips** - Contextual help on hover for complex UI elements
+- 🎨 **Cross-Browser Polish** - Firefox scrollbars, IE11 fallbacks, Safari optimizations
+
+### What's New in Version 2.2
+
+- 🤖 **LLM Model Management** - Select and switch between models dynamically without restarting
+- ➕ **Add New Models** - Pull and download new Ollama models directly from the UI
+- 📊 **Pulse Metrics Dashboard** - Live system status with real-time updates (API, LLM, Database, Alarms)
+- 📁 **Enhanced File Display** - Beautiful file cards with icons, type badges, and smooth animations
+- 📈 **File Types Grid** - Visual overview of file categories with counts
+- 💬 **Dynamic Chat Window** - Message timestamps, expandable sources, improved spacing
+- 📱 **Fully Responsive** - Adapts perfectly to all browser sizes (mobile, tablet, desktop)
+- ⚡ **Real-Time Updates** - System status polls every 3 seconds automatically
 
 ### What's New in Version 2.1
 
@@ -1260,3 +1629,4 @@ If you encounter issues not covered in this guide:
 - 📱 **Enhanced Animations** - Smooth spring physics for natural interactions
 - 🎯 **Improved Accessibility** - ARIA labels and semantic HTML
 - 💎 **Glass Effects** - Beautiful backdrop blur and transparency effects
+

@@ -1,30 +1,24 @@
 
 
 services:
-  # Service 1: The Local LLM (Ollama + Granite)
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    container_name: ollama_service
-
-  # Service 2: The RAG API (FastAPI + LlamaIndex)
+  # Service 1: The RAG API (FastAPI + LlamaIndex)
+  # Now connects to host Ollama instead of containerized version
   rag-api:
     build: ./app
     ports:
       - "8001:8001"
     depends_on:
-      - ollama
       - chromadb
     env_file:
       - .env
     volumes:
       - ./data:/app/data  # Map local data folder into the container
     container_name: rag_api_service
+    # Use host network mode to access host's Ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # Service 3: The Persistent Vector DB
+  # Service 2: The Persistent Vector DB
   chromadb:
     image: chromadb/chroma
     ports:
@@ -34,5 +28,4 @@ services:
       - ./chroma_data:/chroma/chroma 
     container_name: chromadb_service
 
-volumes:
-  ollama_data:  # Docker volume for Ollama models
+# Note: Ollama service removed - using system Ollama at http://host.docker.internal:11434
