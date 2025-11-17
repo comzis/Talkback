@@ -58,7 +58,7 @@ if missing_vars:
 Settings.llm = Ollama(
     model=os.getenv("OLLAMA_MODEL", "gemma2:2b"),
     base_url="http://ollama:11434", # Use Docker service name
-    request_timeout=120.0
+    request_timeout=300.0  # Increased to 5 minutes to handle concurrent embedding load
 )
 # 2. Local Embedding Model
 Settings.embed_model = HuggingFaceEmbedding(
@@ -716,7 +716,7 @@ async def select_llm_model(request: LLMSelectRequest):
                 Settings.llm = Ollama(
                     model=request.model,
                     base_url="http://ollama:11434",
-                    request_timeout=120.0
+                    request_timeout=300.0  # Increased to 5 minutes
                 )
                 
                 # Update environment variable (in-memory, won't persist to .env file)
