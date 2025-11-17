@@ -34,7 +34,7 @@ cd secure-rag-project
 
 # Create environment file
 cat > .env << EOF
-OLLAMA_MODEL=llama2
+OLLAMA_MODEL=gemma2:2b
 CHROMA_HOST=chromadb
 CHROMA_PORT=8000
 EOF
@@ -46,8 +46,8 @@ EOF
 # Build and start all services
 docker compose up --build -d
 
-# Download the LLM model (first time only)
-docker exec ollama_service ollama pull llama2
+# Download the default LLM model (fast and efficient - 1.6 GB)
+docker exec ollama_service ollama pull gemma2:2b
 
 # Check status
 docker compose ps
@@ -105,7 +105,7 @@ ChromaDB          Ollama
 - **FastAPI**: Web framework and chatbot interface
 - **LlamaIndex**: RAG orchestration with 30+ file readers
 - **ChromaDB**: Vector database for embeddings
-- **Ollama**: Local LLM inference (llama2, mistral, etc.)
+- **Ollama**: Local LLM inference (gemma2:2b default, llama2, llama3, mistral, etc.)
 - **HuggingFace**: Embedding generation (BAAI/bge-small-en-v1.5)
 
 ## 💡 Use Cases
@@ -120,23 +120,28 @@ ChromaDB          Ollama
 
 ### Available LLM Models
 
-- `llama2` - Llama 2 7B (recommended, balanced performance)
-- `llama3` - Llama 3 8B (newer, better quality)
-- `mistral` - Mistral 7B (high quality)
-- `gemma2:2b` - Gemma 2 2B (fast, lower resources)
-- `phi3` - Phi-3 Mini (efficient)
+- `gemma2:2b` - Gemma 2 2B ⚡ **Default & Recommended** (very fast, 1.6 GB, privacy-focused)
+- `llama2` - Llama 2 7B (balanced performance, 3.8 GB)
+- `llama3` - Llama 3 8B (newer, better quality, 4.7 GB)
+- `mistral` - Mistral 7B (high quality, 4.1 GB)
+- `phi3` - Phi-3 Mini (efficient, 2.3 GB)
 
 ### Change Model
 
 ```bash
-# Update .env file
-OLLAMA_MODEL=mistral
+# Option A: Switch via Web UI (instant, no restart)
+# 1. Open http://localhost:8001
+# 2. Click "Change Model" button
+# 3. Select from dropdown
+
+# Option B: Change default in .env
+OLLAMA_MODEL=llama3
 
 # Restart services
 docker compose restart rag-api
 
-# Download new model
-docker exec ollama_service ollama pull mistral
+# Download new model if needed
+docker exec ollama_service ollama pull llama3
 ```
 
 ## 🛠️ Development
@@ -175,8 +180,8 @@ secure-rag-project/
 
 **Problem: Model not found error**
 ```bash
-# Download the model first
-docker exec ollama_service ollama pull llama2
+# Download the default model first
+docker exec ollama_service ollama pull gemma2:2b
 ```
 
 **Problem: Containers not starting**

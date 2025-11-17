@@ -19,3 +19,4 @@ ebooklib  # For EPUB files
 beautifulsoup4  # For HTML parsing (already installed via llama-index-readers-file)
 lxml  # For XML parsing (already installed via llama-index-readers-file)
 httpx  # For async HTTP requests (LLM status check)
+langsmith>=0.1.28  # LangChain / LangSmith monitoring client

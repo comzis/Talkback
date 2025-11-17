@@ -1,321 +1,187 @@
-// DOM Elements
-const fileInput = document.getElementById('fileInput');
-const uploadArea = document.getElementById('uploadArea');
-const uploadBtn = document.getElementById('uploadBtn');
-const ingestBtn = document.getElementById('ingestBtn');
-const fileList = document.getElementById('fileList');
-const statusMessage = document.getElementById('statusMessage');
-const chatMessages = document.getElementById('chatMessages');
-const queryInput = document.getElementById('queryInput');
-const sendBtn = document.getElementById('sendBtn');
+// Secure RAG Studio - JavaScript
+
+// Superhero Persona - Sentinel Spark ⚡
+const superheroPersona = {
+    name: "Sentinel Spark",
+    greetings: [
+        "⚡ Sentinel Spark here! Your friendly neighborhood AI guardian, ready to protect your privacy and supercharge your knowledge!",
+        "🦸 Greetings, citizen! Sentinel Spark reporting for duty. Let's unlock some insights together!",
+        "⚡ *WHOOSH* Sentinel Spark has arrived! Time to make your documents work harder than a caffeinated squirrel!",
+        "🦸 Hey there! Sentinel Spark at your service. I may not wear a cape, but I do wear encryption... which is basically the same thing!"
+    ],
+    jokes: [
+        "Why did the AI go to therapy? It had too many deep learning issues! 😄",
+        "I asked my neural network for a joke... it gave me a 404 error. Classic! 🤖",
+        "What's an AI's favorite snack? Microchips! 🍟",
+        "I'm not saying I'm fast, but I process information faster than you can say 'machine learning'! ⚡",
+        "Why don't AIs ever get lost? Because they always follow the right path... or gradient! 🧭"
+    ],
+    references: [
+        "With great processing power comes great responsibility! 🕷️",
+        "I am... inevitable. (At least when it comes to finding answers in your docs!) 💎",
+        "To infinity and beyond... your document collection! 🚀",
+        "May the embeddings be with you! ⭐",
+        "I could do this all day! (Processing documents, that is) 🛡️"
+    ],
+    encouragements: [
+        "You're doing amazing! Even Tony Stark would be impressed! 🦾",
+        "Keep going, hero! Your knowledge base is growing stronger! 💪",
+        "Excellent question! You're leveling up faster than Spider-Man! 🕸️",
+        "Wow! That's a great query. You're basically a superhero yourself! 🦸",
+        "Fantastic work! You're assembling knowledge like the Avengers assemble! 🎯"
+    ]
+};
 
 // State
-let selectedFiles = [];
-let isProcessingQuery = false;
+const state = {
+    files: [],
+    selectedFiles: [],
+    currentModel: null,
+    fileTypes: {
+        documents: 0,
+        sheets: 0,
+        slides: 0,
+        data: 0,
+        code: 0,
+        ebooks: 0,
+        images: 0,
+        videos: 0,
+        other: 0
+    },
+    embeddingProgress: {
+        current: 0,
+        total: 0,
+        isProcessing: false
+    }
+};
+
+// DOM Elements
+const elements = {
+    dropZone: document.getElementById('dropZone'),
+    fileInput: document.getElementById('fileInput'),
+    uploadBtn: document.getElementById('uploadBtn'),
+    processBtn: document.getElementById('processBtn'),
+    refreshBtn: document.getElementById('refreshBtn'),
+    chatInput: document.getElementById('chatInput'),
+    sendBtn: document.getElementById('sendBtn'),
+    chatMessages: document.getElementById('chatMessages'),
+    queueList: document.getElementById('queueList'),
+    queueCount: document.getElementById('queueCount'),
+    docCount: document.getElementById('docCount'),
+    changeModelBtn: document.getElementById('changeModelBtn'),
+    modelModal: document.getElementById('modelModal'),
+    closeModal: document.getElementById('closeModal'),
+    modelSelect: document.getElementById('modelSelect'),
+    addModelBtn: document.getElementById('addModelBtn'),
+    newModelInput: document.getElementById('newModelInput'),
+    toastContainer: document.getElementById('toastContainer'),
+    // Status elements
+    apiStatus: document.getElementById('apiStatus'),
+    apiLight: document.getElementById('apiLight'),
+    dbStatus: document.getElementById('dbStatus'),
+    dbDetail: document.getElementById('dbDetail'),
+    dbLight: document.getElementById('dbLight'),
+    ingestionStatus: document.getElementById('ingestionStatus'),
+    ingestionLight: document.getElementById('ingestionLight'),
+    llmStatus: document.getElementById('llmStatus'),
+    llmModel: document.getElementById('llmModel'),
+    llmLight: document.getElementById('llmLight'),
+    embeddingStatus: document.getElementById('embeddingStatus'),
+    embeddingLight: document.getElementById('embeddingLight'),
+    embeddingProgress: document.getElementById('embeddingProgress'),
+    embeddingProgressText: document.getElementById('embeddingProgressText'),
+    cpuUsage: document.getElementById('cpuUsage'),
+    memoryUsage: document.getElementById('memoryUsage'),
+    chatStatus: document.getElementById('chatStatus'),
+    // File type stats
+    docFiles: document.getElementById('docFiles'),
+    sheetFiles: document.getElementById('sheetFiles'),
+    slideFiles: document.getElementById('slideFiles'),
+    dataFiles: document.getElementById('dataFiles'),
+    codeFiles: document.getElementById('codeFiles'),
+    imageFiles: document.getElementById('imageFiles'),
+    videoFiles: document.getElementById('videoFiles')
+};
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    setupEventListeners();
-    checkHealth();
-    checkLLMStatus();
-    loadServerFiles(); // Load files from server on startup
-    checkIndexStatus(); // Check if index exists and enable chat if ready
-    
-    // Periodically check status (every 30 seconds)
-    setInterval(() => {
-        checkHealth();
-        checkLLMStatus();
-    }, 30000);
+    initializeEventListeners();
+    loadFiles();
+    loadModels();
+    startStatusMonitoring();
 });
 
-// Setup Event Listeners
-function setupEventListeners() {
-    // File upload area click
-    uploadArea.addEventListener('click', () => fileInput.click());
-    
-    // File selection
-    fileInput.addEventListener('change', handleFileSelect);
-    
-    // Drag and drop
-    uploadArea.addEventListener('dragover', handleDragOver);
-    uploadArea.addEventListener('dragleave', handleDragLeave);
-    uploadArea.addEventListener('drop', handleDrop);
+// Event Listeners
+function initializeEventListeners() {
+    // File upload
+    elements.dropZone.addEventListener('click', () => elements.fileInput.click());
+    elements.dropZone.addEventListener('dragover', handleDragOver);
+    elements.dropZone.addEventListener('dragleave', handleDragLeave);
+    elements.dropZone.addEventListener('drop', handleDrop);
+    elements.fileInput.addEventListener('change', handleFileSelect);
     
     // Buttons
-    uploadBtn.addEventListener('click', uploadFiles);
-    ingestBtn.addEventListener('click', ingestDocuments);
-    sendBtn.addEventListener('click', sendQuery);
+    elements.uploadBtn.addEventListener('click', uploadFiles);
+    elements.processBtn.addEventListener('click', processDocuments);
+    elements.refreshBtn.addEventListener('click', refreshAll);
+    elements.changeModelBtn.addEventListener('click', () => elements.modelModal.style.display = 'flex');
+    elements.closeModal.addEventListener('click', () => elements.modelModal.style.display = 'none');
+    elements.addModelBtn.addEventListener('click', addModel);
     
-    // Enter key to send
-    queryInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !isProcessingQuery) {
-            sendQuery();
-        }
-    });
-}
-
-// Check API Health
-async function checkHealth() {
-    try {
-        const response = await fetch('/health');
-        const data = await response.json();
-        const apiStatusDot = document.getElementById('apiStatusDot');
-        if (data.status === 'ok') {
-            apiStatusDot.className = 'status-dot online';
-            apiStatusDot.title = 'API Server is online';
-        } else {
-            apiStatusDot.className = 'status-dot warning';
-            apiStatusDot.title = 'API Server has issues';
-        }
-    } catch (error) {
-        const apiStatusDot = document.getElementById('apiStatusDot');
-        apiStatusDot.className = 'status-dot';
-        apiStatusDot.title = 'API Server is offline';
-    }
-}
-
-// Check LLM Status
-async function checkLLMStatus() {
-    try {
-        const response = await fetch('/llm/status');
-        const data = await response.json();
-        const llmStatusDot = document.getElementById('llmStatusDot');
-        
-        if (data.available && data.status === 'online') {
-            if (data.model_available) {
-                llmStatusDot.className = 'status-dot online';
-                llmStatusDot.title = `LLM is online (${data.model_configured})`;
-            } else {
-                llmStatusDot.className = 'status-dot warning';
-                llmStatusDot.title = `LLM is online but model '${data.model_configured}' not found. Available: ${data.models_installed.join(', ') || 'none'}`;
-            }
-        } else {
-            llmStatusDot.className = 'status-dot';
-            llmStatusDot.title = `LLM is offline: ${data.error || 'Unknown error'}`;
-        }
-    } catch (error) {
-        const llmStatusDot = document.getElementById('llmStatusDot');
-        llmStatusDot.className = 'status-dot';
-        llmStatusDot.title = 'LLM status check failed';
-    }
-}
-
-// Get file icon based on type (SF Symbols style SVG)
-function getFileIcon(fileType, extension) {
-    const icons = {
-        'document': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>',
-        'code': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
-        'data': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
-        'image': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
-        'other': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>'
-    };
-    return icons[fileType] || icons['other'];
-}
-
-// Load files from server
-async function loadServerFiles() {
-    try {
-        const response = await fetch('/files');
-        const data = await response.json();
-        
-        if (data.files && data.files.length > 0) {
-            updateServerFileList(data.files, data.by_type);
-        } else {
-            fileList.innerHTML = '<li style="color: var(--text-secondary); font-style: italic; padding: 20px; text-align: center;">No files uploaded yet</li>';
-            updateFileStats({});
-        }
-    } catch (error) {
-        console.error('Error loading server files:', error);
-        // Don't show error to user, just log it
-    }
-}
-
-// Update file statistics display
-function updateFileStats(byType) {
-    const fileStats = document.getElementById('fileStats');
-    if (!byType || Object.keys(byType).length === 0) {
-        fileStats.innerHTML = '';
-        return;
-    }
-    
-    const stats = [];
-    if (byType.document > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg> ${byType.document}`);
-    if (byType.code > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg> ${byType.code}`);
-    if (byType.data > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg> ${byType.data}`);
-    if (byType.image > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg> ${byType.image}`);
-    if (byType.other > 0) stats.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg> ${byType.other}`);
-    
-    fileStats.innerHTML = stats.map(stat => 
-        `<span class="file-stat-item">${stat}</span>`
-    ).join('');
-}
-
-// Update server file list display
-function updateServerFileList(files, byType) {
-    fileList.innerHTML = '';
-    
-    // Update statistics
-    updateFileStats(byType);
-    
-    // Group files by type for better organization
-    const filesByType = {};
-    files.forEach(file => {
-        if (!filesByType[file.type]) {
-            filesByType[file.type] = [];
-        }
-        filesByType[file.type].push(file);
+    // Chat
+    elements.sendBtn.addEventListener('click', sendMessage);
+    elements.chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
     });
     
-    // Display files grouped by type
-    const typeOrder = ['document', 'code', 'data', 'image', 'other'];
-    typeOrder.forEach(type => {
-        if (filesByType[type] && filesByType[type].length > 0) {
-            filesByType[type].forEach(file => {
-                const li = document.createElement('li');
-                const icon = getFileIcon(file.type, file.extension);
-                li.innerHTML = `
-                    <span class="file-icon">${icon}</span>
-                    <div class="file-info">
-                        <div class="file-name">${escapeHtml(file.filename || file.name)}</div>
-                        <div class="file-meta">
-                            <span class="file-type-badge ${file.type}">${file.type}</span>
-                            <span>${formatFileSize(file.size)}</span>
-                        </div>
-                    </div>
-                `;
-                // Add smooth entrance animation
-                li.style.opacity = '0';
-                li.style.transform = 'translateY(8px)';
-                fileList.appendChild(li);
-                // Trigger animation
-                requestAnimationFrame(() => {
-                    li.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
-                    li.style.opacity = '1';
-                    li.style.transform = 'translateY(0)';
-                });
-            });
-        }
-    });
+    // Model
+    elements.modelSelect.addEventListener('change', selectModel);
 }
 
-// Format file size
-function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-// Check if index exists and enable chat if ready
-async function checkIndexStatus() {
-    try {
-        // Try a simple query to see if index exists
-        // The backend will return a helpful message if no index
-        // For now, just enable the chat - backend handles empty index gracefully
-        queryInput.disabled = false;
-        sendBtn.disabled = false;
-        
-        // Remove welcome message if chat is enabled
-        const welcomeMsg = chatMessages.querySelector('.welcome-message');
-        if (welcomeMsg) {
-            welcomeMsg.innerHTML = `
-                <h2>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 8px;">
-                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
-                    </svg>
-                    Ready to chat!
-                </h2>
-                <p>You can ask questions now. If no documents are indexed yet, I'll let you know.</p>
-                <p>Upload files and click "Process Documents" to index them for better answers.</p>
-            `;
-        }
-    } catch (error) {
-        console.error('Error checking index status:', error);
-    }
-}
-
-// Handle File Selection
-function handleFileSelect(e) {
-    const files = Array.from(e.target.files);
-    addFilesToList(files);
-}
-
-// Handle Drag Over
+// Drag and Drop
 function handleDragOver(e) {
     e.preventDefault();
-    uploadArea.classList.add('drag-over');
+    elements.dropZone.style.borderColor = 'var(--accent-blue)';
+    elements.dropZone.style.background = 'rgba(10, 132, 255, 0.1)';
 }
 
-// Handle Drag Leave
 function handleDragLeave(e) {
     e.preventDefault();
-    uploadArea.classList.remove('drag-over');
+    elements.dropZone.style.borderColor = '';
+    elements.dropZone.style.background = '';
 }
 
-// Handle Drop
 function handleDrop(e) {
     e.preventDefault();
-    uploadArea.classList.remove('drag-over');
+    elements.dropZone.style.borderColor = '';
+    elements.dropZone.style.background = '';
     const files = Array.from(e.dataTransfer.files);
-    addFilesToList(files);
+    state.selectedFiles = files;
+    updateQueue();
+    showToast(`${files.length} file(s) ready to upload`, 'info');
 }
 
-// Add Files to List
-function addFilesToList(files) {
-    // Filter for supported file types
-    const supportedTypes = [
-        // Documents
-        '.pdf', '.docx', '.doc', '.odt', '.txt', '.md', '.rst', '.rtf',
-        // Presentations & Spreadsheets
-        '.pptx', '.xlsx', '.csv',
-        // Data & Web
-        '.json', '.xml', '.html', '.htm',
-        // Code files
-        '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.cpp', '.c', '.h', 
-        '.go', '.rs', '.php', '.rb', '.swift', '.kt',
-        // eBooks
-        '.epub'
-    ];
-    const validFiles = files.filter(file => {
-        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-        return supportedTypes.includes(ext);
-    });
-    
-    if (validFiles.length === 0) {
-        showStatus('Please select valid file types. See supported formats in the guide.', 'error');
-        return;
-    }
-    
-    selectedFiles = [...selectedFiles, ...validFiles];
-    updateFileList();
-    showStatus(`${validFiles.length} file(s) selected`, 'info');
+function handleFileSelect(e) {
+    const files = Array.from(e.target.files);
+    state.selectedFiles = files;
+    updateQueue();
+    showToast(`${files.length} file(s) selected`, 'info');
 }
 
-// Update File List Display
-function updateFileList() {
-    fileList.innerHTML = '';
-    selectedFiles.forEach((file, index) => {
-        const li = document.createElement('li');
-        li.textContent = file.name;
-        fileList.appendChild(li);
-    });
-}
-
-// Upload Files
+// File Upload
 async function uploadFiles() {
-    if (selectedFiles.length === 0) {
-        showStatus('Please select files first', 'error');
+    if (state.selectedFiles.length === 0) {
+        showToast('Please select files first', 'error');
         return;
     }
     
     const formData = new FormData();
-    selectedFiles.forEach(file => {
-        formData.append('files', file);
-    });
-    
-    uploadBtn.disabled = true;
-    showStatus('Uploading files...', 'info');
+    state.selectedFiles.forEach(file => formData.append('files', file));
     
     try {
+        elements.uploadBtn.disabled = true;
+        elements.uploadBtn.textContent = 'Uploading...';
+        
         const response = await fetch('/upload', {
             method: 'POST',
             body: formData
@@ -324,342 +190,502 @@ async function uploadFiles() {
         const data = await response.json();
         
         if (response.ok) {
-            showStatus(data.message + ' ✅', 'success');
-            selectedFiles = [];
-            updateFileList();
-            fileInput.value = '';
-            // Reload server file list to show newly uploaded files
-            setTimeout(() => loadServerFiles(), 500);
+            showToast(`Uploaded ${data.uploaded_count} file(s)`, 'success');
+            state.selectedFiles = [];
+            updateQueue();
+            loadFiles();
         } else {
-            showStatus('Upload failed: ' + (data.detail || 'Unknown error'), 'error', true);
+            showToast(data.error || 'Upload failed', 'error');
         }
     } catch (error) {
-        showStatus('Upload error: ' + error.message, 'error', true);
+        showToast('Upload error: ' + error.message, 'error');
     } finally {
-        uploadBtn.disabled = false;
+        elements.uploadBtn.disabled = false;
+        elements.uploadBtn.textContent = 'Upload Files';
     }
 }
 
-// Ingest Documents
-async function ingestDocuments() {
-    ingestBtn.disabled = true;
+// Load Files
+async function loadFiles() {
+    try {
+        const response = await fetch('/files');
+        const data = await response.json();
+        
+        state.files = data.files || [];
+        categorizeFiles();
+        updateFileStats();
+    } catch (error) {
+        console.error('Error loading files:', error);
+    }
+}
+
+function categorizeFiles() {
+    state.fileTypes = {
+        documents: 0,
+        sheets: 0,
+        slides: 0,
+        data: 0,
+        code: 0,
+        ebooks: 0,
+        images: 0,
+        videos: 0,
+        other: 0
+    };
+    
+    state.files.forEach(file => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (['pdf', 'doc', 'docx', 'txt', 'md', 'rtf'].includes(ext)) {
+            state.fileTypes.documents++;
+        } else if (['xls', 'xlsx', 'csv'].includes(ext)) {
+            state.fileTypes.sheets++;
+        } else if (['ppt', 'pptx'].includes(ext)) {
+            state.fileTypes.slides++;
+        } else if (['json', 'xml', 'yaml'].includes(ext)) {
+            state.fileTypes.data++;
+        } else if (['py', 'js', 'ts', 'java', 'cpp', 'go', 'rs', 'rb', 'php'].includes(ext)) {
+            state.fileTypes.code++;
+        } else if (['epub', 'mobi'].includes(ext)) {
+            state.fileTypes.ebooks++;
+        } else if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff', 'tif'].includes(ext)) {
+            state.fileTypes.images++;
+        } else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v', 'mpg', 'mpeg'].includes(ext)) {
+            state.fileTypes.videos++;
+        } else {
+            state.fileTypes.other++;
+        }
+    });
+}
+
+function updateFileStats() {
+    elements.docCount.textContent = state.files.length;
+    elements.docFiles.textContent = state.fileTypes.documents;
+    elements.sheetFiles.textContent = state.fileTypes.sheets;
+    elements.slideFiles.textContent = state.fileTypes.slides;
+    elements.dataFiles.textContent = state.fileTypes.data;
+    elements.codeFiles.textContent = state.fileTypes.code;
+    elements.imageFiles.textContent = state.fileTypes.images;
+    elements.videoFiles.textContent = state.fileTypes.videos;
+    
+    // Update sub-text
+    document.querySelectorAll('.stat-sub').forEach(el => {
+        const value = parseInt(el.previousElementSibling.textContent);
+        el.textContent = value > 0 ? 'Awaiting files' : 'Awaiting files';
+    });
+}
+
+function updateQueue() {
+    elements.queueCount.textContent = `${state.selectedFiles.length} selected`;
+    
+    if (state.selectedFiles.length === 0) {
+        elements.queueList.innerHTML = '';
+        return;
+    }
+    
+    elements.queueList.innerHTML = state.selectedFiles.map(file => `
+        <div class="queue-item">${file.name}</div>
+    `).join('');
+}
+
+// Process Documents
+async function processDocuments() {
+    if (state.files.length === 0) {
+        showToast('No files to process', 'error');
+        return;
+    }
     
     try {
-        // Start ingestion
+        elements.processBtn.disabled = true;
+        elements.processBtn.innerHTML = '<span>⚡</span> Processing...';
+        elements.ingestionStatus.textContent = 'Processing...';
+        setTrafficLight(elements.ingestionLight, 'orange');
+        
         const response = await fetch('/ingest', {
             method: 'POST'
         });
         
         const data = await response.json();
         
-        if (response.ok && data.status === 'processing') {
-            // Start polling for status
-            pollIngestionStatus();
+        if (response.ok) {
+            showToast('Documents processed successfully', 'success');
+            elements.ingestionStatus.textContent = 'Ready';
+            elements.chatStatus.textContent = 'Ready';
+            setTrafficLight(elements.ingestionLight, 'green');
         } else {
-            showStatus('Failed to start processing: ' + (data.message || 'Unknown error'), 'error', true);
-            ingestBtn.disabled = false;
+            showToast(data.error || 'Processing failed', 'error');
+            elements.ingestionStatus.textContent = 'Error';
+            setTrafficLight(elements.ingestionLight, 'red');
         }
     } catch (error) {
-        showStatus('Processing error: ' + error.message, 'error', true);
-        ingestBtn.disabled = false;
+        showToast('Processing error: ' + error.message, 'error');
+        elements.ingestionStatus.textContent = 'Error';
+        setTrafficLight(elements.ingestionLight, 'red');
+    } finally {
+        elements.processBtn.disabled = false;
+        elements.processBtn.innerHTML = '<span>⚡</span> Process Library';
     }
 }
 
-// Poll ingestion status
-let statusPollInterval = null;
-
-async function pollIngestionStatus() {
-    // Clear any existing interval
-    if (statusPollInterval) {
-        clearInterval(statusPollInterval);
-    }
-    
-    // Create or show progress bar
-    showProgressBar();
-    
-    // Poll every 500ms
-    statusPollInterval = setInterval(async () => {
-        try {
-            const response = await fetch('/ingest/status');
-            const status = await response.json();
-            
-            // Update progress bar
-            updateProgressBar(status.progress, status.message);
-            
-            // Check if completed or error
-            if (status.status === 'completed') {
-                clearInterval(statusPollInterval);
-                statusPollInterval = null;
-                hideProgressBar();
-                showStatus(status.message + ' ✅', 'success');
-                ingestBtn.disabled = false;
-                
-                // Enable chat interface (should already be enabled, but ensure it)
-                queryInput.disabled = false;
-                sendBtn.disabled = false;
-                
-                // Clear welcome message and add ready message
-                const welcomeMsg = chatMessages.querySelector('.welcome-message');
-                if (welcomeMsg) {
-                    welcomeMsg.remove();
-                }
-                
-                addBotMessage('Documents processed successfully! You can now ask me questions.');
-                
-                // Reload server files to show current state
-                loadServerFiles();
-            } else if (status.status === 'error') {
-                clearInterval(statusPollInterval);
-                statusPollInterval = null;
-                hideProgressBar();
-                showStatus('Processing failed: ' + (status.error || status.message), 'error', true);
-                ingestBtn.disabled = false;
-                
-                // Reload server files in case some were processed
-                loadServerFiles();
-            }
-        } catch (error) {
-            clearInterval(statusPollInterval);
-            statusPollInterval = null;
-            hideProgressBar();
-            showStatus('Status check error: ' + error.message, 'error', true);
-            ingestBtn.disabled = false;
-        }
-    }, 500);
-}
-
-// Show progress bar
-function showProgressBar() {
-    let progressContainer = document.getElementById('progressContainer');
-    
-    if (!progressContainer) {
-        // Create progress bar
-        progressContainer = document.createElement('div');
-        progressContainer.id = 'progressContainer';
-        progressContainer.className = 'progress-container';
-        progressContainer.innerHTML = `
-            <div class="progress-label">Processing documents...</div>
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
-            </div>
-            <div class="progress-percentage" id="progressPercentage">0%</div>
-        `;
-        
-        // Insert after ingest button
-        ingestBtn.parentNode.insertBefore(progressContainer, ingestBtn.nextSibling);
-    }
-    
-    progressContainer.style.display = 'block';
-}
-
-// Update progress bar
-function updateProgressBar(progress, message) {
-    const progressBarFill = document.getElementById('progressBarFill');
-    const progressPercentage = document.getElementById('progressPercentage');
-    const progressLabel = document.querySelector('.progress-label');
-    
-    if (progressBarFill && progressPercentage) {
-        progressBarFill.style.width = progress + '%';
-        progressPercentage.textContent = Math.round(progress) + '%';
-        
-        if (progressLabel && message) {
-            progressLabel.textContent = message;
-        }
-    }
-}
-
-// Hide progress bar
-function hideProgressBar() {
-    const progressContainer = document.getElementById('progressContainer');
-    if (progressContainer) {
-        setTimeout(() => {
-            progressContainer.style.display = 'none';
-        }, 1000);
-    }
-}
-
-// Send Query
-async function sendQuery() {
-    const query = queryInput.value.trim();
-    
-    if (!query || isProcessingQuery) {
-        return;
-    }
+// Chat
+async function sendMessage() {
+    const query = elements.chatInput.value.trim();
+    if (!query) return;
     
     // Add user message
-    addUserMessage(query);
-    queryInput.value = '';
+    addMessage(query, 'user');
+    elements.chatInput.value = '';
     
     // Show loading
-    const loadingId = addLoadingMessage();
-    isProcessingQuery = true;
-    sendBtn.disabled = true;
-    queryInput.disabled = true;
+    const loadingId = addMessage('Thinking...', 'assistant', true);
     
     try {
         const response = await fetch('/query', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query })
         });
         
         const data = await response.json();
         
         // Remove loading message
-        removeLoadingMessage(loadingId);
+        removeMessage(loadingId);
         
         if (response.ok) {
-            addBotMessage(data.response, data.sources);
+            addMessage(data.response || data.answer, 'assistant', false, data.sources);
         } else {
-            addBotMessage('Sorry, I encountered an error: ' + (data.detail || 'Unknown error'));
+            addMessage(data.detail || data.error || 'Query failed', 'assistant');
         }
     } catch (error) {
-        removeLoadingMessage(loadingId);
-        addBotMessage('Sorry, I encountered an error: ' + error.message);
-    } finally {
-        isProcessingQuery = false;
-        sendBtn.disabled = false;
-        queryInput.disabled = false;
-        queryInput.focus();
+        removeMessage(loadingId);
+        addMessage('Error: ' + error.message, 'assistant');
     }
 }
 
-// Add User Message
-function addUserMessage(text) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message message-user';
-    messageDiv.innerHTML = `
-        <div class="message-content">
-            ${escapeHtml(text)}
-        </div>
-    `;
-    // Add smooth entrance animation
-    messageDiv.style.opacity = '0';
-    messageDiv.style.transform = 'translateY(12px) scale(0.95)';
-    chatMessages.appendChild(messageDiv);
-    // Trigger animation
-    requestAnimationFrame(() => {
-        messageDiv.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
-        messageDiv.style.opacity = '1';
-        messageDiv.style.transform = 'translateY(0) scale(1)';
-    });
-    scrollToBottom();
+// Superhero Persona Functions
+function getRandomItem(array) {
+    return array[Math.floor(Math.random() * array.length)];
 }
 
-// Add Bot Message
-function addBotMessage(text, sources = []) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message message-bot';
+function addSuperheroFlair(message) {
+    // Add superhero greeting or encouragement randomly (20% chance)
+    if (Math.random() < 0.2) {
+        const flair = Math.random() < 0.5 
+            ? getRandomItem(superheroPersona.encouragements)
+            : getRandomItem(superheroPersona.references);
+        return `${message}\n\n_${flair}_`;
+    }
+    return message;
+}
+
+function getSuperheroGreeting() {
+    return getRandomItem(superheroPersona.greetings);
+}
+
+function getSuperheroJoke() {
+    return getRandomItem(superheroPersona.jokes);
+}
+
+// Update Embedding Status
+function updateEmbeddingStatus(status) {
+    if (!status) return;
     
-    let sourcesHtml = '';
+    state.embeddingProgress.current = status.current || 0;
+    state.embeddingProgress.total = status.total || 0;
+    state.embeddingProgress.isProcessing = status.status === 'processing';
+    
+    // Update status text
+    if (status.status === 'processing') {
+        elements.embeddingStatus.textContent = 'Processing';
+        setTrafficLight(elements.embeddingLight, 'orange');
+        
+        // Update progress bar
+        const progress = status.total > 0 ? (status.current / status.total) * 100 : 0;
+        elements.embeddingProgress.style.width = `${progress}%`;
+        elements.embeddingProgressText.textContent = `${status.current} / ${status.total} chunks`;
+    } else if (status.status === 'completed') {
+        elements.embeddingStatus.textContent = 'Completed';
+        setTrafficLight(elements.embeddingLight, 'green');
+        elements.embeddingProgress.style.width = '100%';
+        elements.embeddingProgressText.textContent = `${status.total} / ${status.total} chunks`;
+        
+        // Reset after 3 seconds
+        setTimeout(() => {
+            elements.embeddingStatus.textContent = 'Idle';
+            elements.embeddingProgress.style.width = '0%';
+            elements.embeddingProgressText.textContent = '0 / 0 chunks';
+        }, 3000);
+    } else if (status.status === 'error') {
+        elements.embeddingStatus.textContent = 'Error';
+        setTrafficLight(elements.embeddingLight, 'red');
+    } else {
+        elements.embeddingStatus.textContent = 'Idle';
+        setTrafficLight(elements.embeddingLight, 'green');
+        elements.embeddingProgress.style.width = '0%';
+        elements.embeddingProgressText.textContent = '0 / 0 chunks';
+    }
+}
+
+// Mock CPU and Memory monitoring (in a real scenario, this would come from the backend)
+function updateSystemResources() {
+    if (state.embeddingProgress.isProcessing) {
+        // Simulate higher usage during processing
+        const cpu = (60 + Math.random() * 30).toFixed(1);
+        const memory = (50 + Math.random() * 20).toFixed(1);
+        elements.cpuUsage.textContent = `${cpu}%`;
+        elements.memoryUsage.textContent = `${memory}%`;
+    } else {
+        // Idle usage
+        const cpu = (5 + Math.random() * 15).toFixed(1);
+        const memory = (20 + Math.random() * 10).toFixed(1);
+        elements.cpuUsage.textContent = `${cpu}%`;
+        elements.memoryUsage.textContent = `${memory}%`;
+    }
+}
+
+function addMessage(text, role, isLoading = false, sources = []) {
+    const messageId = `msg-${Date.now()}`;
+    const avatar = role === 'user' ? 'U' : '⚡';  // Superhero icon for assistant
+    
+    // Remove ambient message if it exists
+    const ambient = elements.chatMessages.querySelector('.ambient-message');
+    if (ambient) ambient.remove();
+    
+    // Add superhero flair to assistant messages
+    let finalText = text;
+    if (role === 'assistant' && !isLoading) {
+        finalText = addSuperheroFlair(text);
+    }
+    
+    let sourcesHTML = '';
     if (sources && sources.length > 0) {
-        sourcesHtml = `
+        sourcesHTML = `
             <div class="message-sources">
-                <h4>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 6px;">
-                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                    </svg>
-                    Sources:
-                </h4>
-                ${sources.map(source => `
+                <div class="sources-title">📚 Sources Referenced</div>
+                ${sources.map((source, index) => `
                     <div class="source-item">
-                        <span class="source-file">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline-block; vertical-align: middle; margin-right: 4px;">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                            </svg>
-                            ${escapeHtml(source.file)}
-                        </span>
-                        <span class="source-text">${escapeHtml(truncateText(source.text, 150))}</span>
+                        <div class="source-number">${index + 1}</div>
+                        <div class="source-text">
+                            <strong>${source.source || 'Unknown'}</strong>
+                            ${source.text ? `<br><span style="font-size: 12px; color: rgba(255,255,255,0.5);">${source.text.substring(0, 150)}...</span>` : ''}
+                        </div>
                     </div>
                 `).join('')}
             </div>
         `;
     }
     
-    messageDiv.innerHTML = `
-        <div class="message-content">
-            ${escapeHtml(text)}
-            ${sourcesHtml}
-        </div>
-    `;
-    // Add smooth entrance animation
-    messageDiv.style.opacity = '0';
-    messageDiv.style.transform = 'translateY(12px) scale(0.95)';
-    chatMessages.appendChild(messageDiv);
-    // Trigger animation
-    requestAnimationFrame(() => {
-        messageDiv.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
-        messageDiv.style.opacity = '1';
-        messageDiv.style.transform = 'translateY(0) scale(1)';
-    });
-    scrollToBottom();
-}
-
-// Add Loading Message
-function addLoadingMessage() {
-    const loadingId = 'loading-' + Date.now();
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message message-bot';
-    messageDiv.id = loadingId;
-    messageDiv.innerHTML = `
-        <div class="message-content">
-            <div class="message-loading">
-                <div class="loading-dot"></div>
-                <div class="loading-dot"></div>
-                <div class="loading-dot"></div>
+    const messageHTML = `
+        <div class="message ${role}" id="${messageId}">
+            <div class="message-avatar">${avatar}</div>
+            <div class="message-content">
+                ${isLoading ? '⚡ Sentinel Spark is analyzing...' : finalText}
+                ${sourcesHTML}
             </div>
         </div>
     `;
-    chatMessages.appendChild(messageDiv);
-    scrollToBottom();
-    return loadingId;
-}
-
-// Remove Loading Message
-function removeLoadingMessage(loadingId) {
-    const loadingElement = document.getElementById(loadingId);
-    if (loadingElement) {
-        loadingElement.remove();
-    }
-}
-
-// Show Status Message
-function showStatus(message, type, persistent = false) {
-    statusMessage.textContent = message;
-    statusMessage.className = 'status-message ' + type;
     
-    // Auto-hide after 5 seconds unless it's a persistent error
-    if (!persistent) {
-        setTimeout(() => {
-            if (statusMessage.textContent === message) {
-                statusMessage.className = 'status-message';
+    elements.chatMessages.insertAdjacentHTML('beforeend', messageHTML);
+    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+    
+    return messageId;
+}
+
+function removeMessage(messageId) {
+    const message = document.getElementById(messageId);
+    if (message) message.remove();
+}
+
+// Models
+async function loadModels() {
+    try {
+        const response = await fetch('/llm/models');
+        const data = await response.json();
+        
+        if (data.models && data.models.length > 0) {
+            elements.modelSelect.innerHTML = data.models.map(model => 
+                `<option value="${model.name}">${model.name}</option>`
+            ).join('');
+            
+            if (data.current_model) {
+                elements.modelSelect.value = data.current_model;
+                state.currentModel = data.current_model;
             }
-        }, 5000);
+        } else {
+            elements.modelSelect.innerHTML = '<option value="">No models available</option>';
+        }
+    } catch (error) {
+        console.error('Error loading models:', error);
     }
-    // Persistent errors stay visible until user takes action or new status appears
 }
 
-// Utility Functions
-function scrollToBottom() {
-    // Smooth scroll with Apple-style easing
-    chatMessages.scrollTo({
-        top: chatMessages.scrollHeight,
-        behavior: 'smooth'
-    });
+async function selectModel() {
+    const model = elements.modelSelect.value;
+    if (!model) return;
+    
+    try {
+        const response = await fetch('/llm/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: model })
+        });
+        
+        if (response.ok) {
+            state.currentModel = model;
+            elements.llmModel.textContent = `Ollama · ${model}`;
+            elements.modelModal.style.display = 'none';
+            showToast(`Model switched to ${model}`, 'success');
+        } else {
+            showToast('Failed to switch model', 'error');
+        }
+    } catch (error) {
+        showToast('Error switching model', 'error');
+    }
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+async function addModel() {
+    const modelName = elements.newModelInput.value.trim();
+    if (!modelName) {
+        showToast('Please enter a model name', 'error');
+        return;
+    }
+    
+    try {
+        elements.addModelBtn.disabled = true;
+        elements.addModelBtn.textContent = 'Adding...';
+        
+        const response = await fetch('/llm/pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelName })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showToast(`Model ${modelName} added successfully`, 'success');
+            elements.newModelInput.value = '';
+            loadModels();
+        } else {
+            showToast(data.error || 'Failed to add model', 'error');
+        }
+    } catch (error) {
+        showToast('Error adding model', 'error');
+    } finally {
+        elements.addModelBtn.disabled = false;
+        elements.addModelBtn.textContent = 'Add Model';
+    }
 }
 
-function truncateText(text, maxLength) {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
+// System Status
+async function checkSystemStatus() {
+    try {
+        const response = await fetch('/system/status');
+        const data = await response.json();
+        
+        // API Status
+        if (data.api?.status === 'online') {
+            elements.apiStatus.textContent = 'Online';
+            setTrafficLight(elements.apiLight, 'green');
+        } else {
+            elements.apiStatus.textContent = 'Offline';
+            setTrafficLight(elements.apiLight, 'red');
+        }
+        
+        // Database Status
+        if (data.database?.connected) {
+            const count = data.database.collection_count || 0;
+            elements.dbStatus.textContent = 'Connected';
+            elements.dbDetail.textContent = `${count} documents`;
+            setTrafficLight(elements.dbLight, 'green');
+            elements.chatStatus.textContent = count > 0 ? 'Ready' : 'Awaiting documents';
+        } else {
+            elements.dbStatus.textContent = 'Disconnected';
+            elements.dbDetail.textContent = 'No connection';
+            setTrafficLight(elements.dbLight, 'red');
+        }
+        
+        // Ingestion Status
+        setTrafficLight(elements.ingestionLight, 'green');
+        
+        // LLM Status
+        if (data.llm?.available) {
+            elements.llmStatus.textContent = 'Ready';
+            elements.llmModel.textContent = `Ollama · ${data.llm.model_configured || 'llama3-8b'}`;
+            setTrafficLight(elements.llmLight, 'green');
+        } else {
+            elements.llmStatus.textContent = 'Not loaded';
+            setTrafficLight(elements.llmLight, 'red');
+        }
+    } catch (error) {
+        console.error('Error checking system status:', error);
+        setTrafficLight(elements.apiLight, 'red');
+        setTrafficLight(elements.dbLight, 'red');
+        setTrafficLight(elements.llmLight, 'red');
+    }
 }
 
+function setTrafficLight(element, color) {
+    if (!element) return;
+    element.className = `traffic-light ${color}`;
+}
+
+async function checkIngestionStatus() {
+    try {
+        const response = await fetch('/ingest/status');
+        const data = await response.json();
+        updateEmbeddingStatus(data);
+    } catch (error) {
+        console.error('Error checking ingestion status:', error);
+    }
+}
+
+function startStatusMonitoring() {
+    checkSystemStatus();
+    checkIngestionStatus();
+    updateSystemResources();
+    
+    setInterval(checkSystemStatus, 5000);
+    setInterval(checkIngestionStatus, 2000);  // Check embedding status more frequently
+    setInterval(updateSystemResources, 1000);  // Update CPU/Memory every second
+}
+
+// Refresh All
+async function refreshAll() {
+    elements.refreshBtn.disabled = true;
+    elements.refreshBtn.textContent = 'Refreshing...';
+    
+    await Promise.all([
+        loadFiles(),
+        loadModels(),
+        checkSystemStatus()
+    ]);
+    
+    elements.refreshBtn.disabled = false;
+    elements.refreshBtn.textContent = 'Refresh';
+    showToast('Refreshed', 'success');
+}
+
+// Toast Notifications
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    
+    elements.toastContainer.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Add slideOut animation
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideOut {
+        to {
+            opacity: 0;
+            transform: translateX(100%);
+        }
+    }
+`;
+document.head.appendChild(style);
