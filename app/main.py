@@ -103,6 +103,11 @@ class LLMSelectRequest(BaseModel):
 class LLMPullRequest(BaseModel):
     model: str
 
+class MonitoringConfigRequest(BaseModel):
+    api_key: str = ""
+    project: str = "Secure RAG Monitoring"
+    enabled: bool = True
+
 # --- ChromaDB Connection ---
 try:
     # Connect to ChromaDB container
@@ -445,6 +450,55 @@ async def get_system_status():
     }
     
     return status
+
+@app.post("/monitoring/configure")
+async def configure_monitoring(request: MonitoringConfigRequest):
+    """
+    Enable or disable LangChain monitoring with API key configuration.
+    """
+    try:
+        global monitor
+        
+        if request.enabled:
+            # Enable monitoring
+            if not request.api_key:
+                raise HTTPException(status_code=400, detail="API key is required to enable monitoring")
+            
+            # Set environment variables
+            os.environ["LANGCHAIN_MONITORING"] = "true"
+            os.environ["LANGCHAIN_PROJECT"] = request.project
+            os.environ["LANGSMITH_API_KEY"] = request.api_key
+            os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
+            
+            # Reinitialize monitor
+            monitor = LangChainMonitor()
+            
+            if not monitor.enabled:
+                raise HTTPException(status_code=500, detail="Failed to initialize monitoring. Check your API key.")
+            
+            logger.info(f"LangChain monitoring enabled for project: {request.project}")
+            
+            return {
+                "message": "Monitoring enabled successfully",
+                "enabled": True,
+                "project": request.project
+            }
+        else:
+            # Disable monitoring
+            os.environ["LANGCHAIN_MONITORING"] = "false"
+            monitor = LangChainMonitor()
+            
+            logger.info("LangChain monitoring disabled")
+            
+            return {
+                "message": "Monitoring disabled",
+                "enabled": False
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error configuring monitoring: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/files/types")
 async def get_file_types():

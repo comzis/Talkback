@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Secure RAG Studio</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.0">
+    <link rel="stylesheet" href="/static/style.css?v=4.1">
 </head>
 <body>
     <div class="app-container">
@@ -84,6 +84,22 @@
                                 <span class="stat-label">Memory:</span>
                                 <span class="stat-value" id="memoryUsage">--</span>
                             </div>
+                        </div>
+                    </div>
+                    <div class="pulse-card pulse-card-wide" id="monitoringCard">
+                        <div class="pulse-header">
+                            <div class="pulse-label">LANGCHAIN MONITORING</div>
+                            <div class="traffic-light red" id="monitoringLight"></div>
+                        </div>
+                        <div class="pulse-status" id="monitoringStatus">Disabled</div>
+                        <div class="monitoring-config">
+                            <input type="text" id="langsmithApiKey" class="config-input" placeholder="LangSmith API Key (ls__...)" />
+                            <input type="text" id="langsmithProject" class="config-input" placeholder="Project Name (optional)" value="Secure RAG Monitoring" />
+                            <button class="pulse-btn" id="enableMonitoringBtn">Enable Monitoring</button>
+                        </div>
+                        <div class="monitoring-links">
+                            <a href="https://docs.smith.langchain.com/overview" target="_blank" class="monitoring-link">📚 Docs</a>
+                            <a href="https://smith.langchain.com/" target="_blank" class="monitoring-link">🔗 Dashboard</a>
                         </div>
                     </div>
                 </div>
@@ -241,6 +257,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.0"></script>
+    <script src="/static/script.js?v=4.1"></script>
 </body>
 </html>
