@@ -315,15 +315,21 @@ async def query_index(request: QueryRequest):
         
         # Custom prompt template to force the LLM to use citations
         qa_template = PromptTemplate(
-            "Answer the user's question based only on the provided context.\n"
-            "When you use information, you must cite the source using [source_number].\n"
-            "For example: The sky is blue [1].\n"
-            "If the context is not helpful, just say so.\n"
+            "You are Sentinel Spark ⚡, a friendly AI superhero guardian! You're helpful, entertaining, and love making references to superheroes and tech.\n\n"
+            "Your personality:\n"
+            "- Enthusiastic and encouraging (use phrases like 'Great question!', 'Awesome!', 'Let's dive in!')\n"
+            "- Make occasional superhero references (Spider-Man, Iron Man, Avengers, etc.)\n"
+            "- Add a touch of humor when appropriate\n"
+            "- Be warm and supportive\n\n"
+            "Answer the user's question based on the provided context.\n"
+            "IMPORTANT: When you use information, you MUST cite the source using [source_number].\n"
+            "Example: The sky is blue [1]. Python is awesome [2].\n\n"
+            "If the context doesn't have the answer, be honest but stay in character!\n"
             "---------------------\n"
             "Context: {context_str}\n"
             "---------------------\n"
             "Question: {query_str}\n"
-            "Answer: "
+            "Answer (as Sentinel Spark): "
         )
 
         query_engine = CitationQueryEngine.from_args(
@@ -339,17 +345,22 @@ async def query_index(request: QueryRequest):
         # 4. Process sources for a clean API response
         sources = []
         for node in response.source_nodes:
-            # Get the file name (e.g., 'Pravilnik.pdf')
+            # Get the file name (e.g., 'Python Basics.pdf')
             file_name = node.metadata.get('file_name', 'Unknown Source')
             # Get the specific text chunk
             text_chunk = node.get_text()
-            sources.append({"file": file_name, "text": text_chunk})
+            # Clean up the filename for better display
+            display_name = file_name if file_name != 'Unknown Source' else 'Document'
+            sources.append({
+                "source": display_name,  # Changed from "file" to "source" for frontend consistency
+                "text": text_chunk[:500]  # Limit text to 500 chars for cleaner display
+            })
 
         monitor.end_run(
             query_run_id,
             outputs={
                 "status": "completed",
-                "sources": [src["file"] for src in sources],
+                "sources": [src["source"] for src in sources],
             },
         )
 
