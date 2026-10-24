@@ -1,4 +1,6 @@
 # 🚀 M1 MAX Optimization Guide
+
+> Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
 ## MacBook Pro M1 MAX 64GB - High Performance Configuration
 
 Your MacBook Pro M1 MAX is a **powerhouse**! Let's configure the RAG chatbot to use its full potential.
@@ -49,7 +51,7 @@ Disk image size: 100 GB (if you plan to use multiple models)
 Ollama automatically uses Metal (Apple's GPU framework) on M1 Macs. Verify:
 
 ```bash
-docker exec ollama_service ollama run llama2 "Test" --verbose
+ollama run llama2 "Test" --verbose
 # Look for "Metal" in the output
 ```
 
@@ -63,12 +65,12 @@ With your hardware, you can use much better models:
 
 ```bash
 # Download a high-quality model
-docker exec ollama_service ollama pull llama3:8b
+ollama pull llama3:8b
 # OR for even better quality:
-docker exec ollama_service ollama pull mixtral:8x7b
+ollama pull mixtral:8x7b
 
 # Update .env file
-cat > /Users/comzis/Projects/secure-rag-project/.env << 'EOF'
+cat > Talkback/.env << 'EOF'
 # High Performance Configuration for M1 MAX
 OLLAMA_MODEL=llama3:8b
 CHROMA_HOST=chromadb
@@ -76,7 +78,7 @@ CHROMA_PORT=8000
 EOF
 
 # Restart services
-cd /Users/comzis/Projects/secure-rag-project
+cd Talkback
 docker compose restart rag-api
 ```
 
@@ -91,7 +93,7 @@ docker compose restart rag-api
 
 ### Option B: Optimize Current Configuration
 
-Edit `/Users/comzis/Projects/secure-rag-project/app/main.py`:
+Edit `Talkback/app/main.py`:
 
 **1. Increase LLM Configuration:**
 
@@ -243,7 +245,7 @@ Quality: ⭐⭐⭐⭐⭐ (for code)
 
 ```bash
 #!/bin/bash
-cd /Users/comzis/Projects/secure-rag-project
+cd Talkback
 
 echo "🚀 Optimizing for M1 MAX 64GB..."
 
@@ -253,7 +255,7 @@ docker compose down
 # Download best model for your hardware
 docker compose up -d ollama
 sleep 5
-docker exec ollama_service ollama pull llama3:8b
+ollama pull llama3:8b
 
 # Update .env
 cat > .env << 'EOF'
@@ -306,7 +308,7 @@ chmod +x optimize_m1_max.sh
 docker stats
 
 # Ollama specific
-docker exec ollama_service ollama ps
+ollama ps
 
 # Check GPU usage (if available)
 sudo powermetrics --samplers gpu_power -i 1000 -n 1
@@ -328,9 +330,9 @@ With 64GB RAM, you can keep multiple models ready:
 
 ```bash
 # Download multiple models
-docker exec ollama_service ollama pull llama3:8b
-docker exec ollama_service ollama pull codellama:13b
-docker exec ollama_service ollama pull mistral:7b
+ollama pull llama3:8b
+ollama pull codellama:13b
+ollama pull mistral:7b
 
 # Switch between them by updating .env
 echo "OLLAMA_MODEL=codellama:13b" > .env
@@ -371,7 +373,7 @@ docker compose restart rag-api
 
 ### If still slow:
 1. Check Docker Desktop has 32GB memory allocated
-2. Verify GPU is being used: `docker logs ollama_service | grep -i metal`
+2. Verify GPU is being used: `ollama ps`
 3. Try mistral:7b for fastest responses
 4. Check system isn't thermal throttling
 

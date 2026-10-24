@@ -1,5 +1,7 @@
 # 🧪 COMPREHENSIVE SYSTEM TEST RESULTS
 
+> Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
+
 ## Test Date: November 16, 2025
 
 ---
@@ -38,7 +40,7 @@
 ### Services Status
 ```
 ✅ chromadb_service - Up and running (port 8000)
-✅ ollama_service - Up and running (port 11434)
+✅ host Ollama - expected on port 11434 (not a container)
 ✅ rag_api_service - Up and running (port 8001)
 ```
 

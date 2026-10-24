@@ -12,9 +12,8 @@ The chat window is the main view. The library, system status, and upload area si
 - Adds a file in one step. Drop a file on the library panel, or click the drop area and choose one. Talkback saves it and starts indexing. Uploading the same name replaces that file only.
 - Leaves files that have not changed in the index. New and changed files are embedded. Removed files drop their chunks.
 - Answers greetings and general questions with no sources. A question that names a library file is answered from that file. Each cited claim keeps its source number, with the page and excerpt beside it.
-- Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in model name. Embeddings default to `BAAI/bge-small-en-v1.5`, which you can change with `EMBED_MODEL`. The embedding model downloads once, on first start, and only when `OFFLINE_MODE=false`.
-
-LangSmith monitoring is off unless you turn it on. When it is enabled, traces leave the machine.
+- Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in model name. Embeddings default to `BAAI/bge-small-en-v1.5`, which you can change with `EMBED_MODEL`. The embedding model downloads once, and only when `OFFLINE_MODE=false`.
+- Streams the reply into the chat, then shows the folder, file, and page for each source the answer used. The **Stop** button cancels the stream. `POST /query` still returns the full answer in one response.
 
 ## Quick start
 
@@ -46,7 +45,7 @@ docker compose ps
 
 `ollama pull` reads the name from your shell. If the variable is only in `.env`, pass the same name explicitly.
 
-The API image is large because it includes a CPU build of PyTorch. The first start also downloads the embedding model into `./hf_cache`.
+The API image is large because it includes a CPU build of PyTorch. With `OFFLINE_MODE=true` (the default) the embedding model loads only from `./hf_cache`. Download it once with `OFFLINE_MODE=false`, then turn offline mode back on. See the demo checklist.
 
 ### 3. Open Talkback
 
@@ -85,10 +84,11 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
 | `EMBED_MODEL` | Local embedding model | `BAAI/bge-small-en-v1.5` |
 | `EMBED_BATCH` | Chunks per embedding batch. Progress updates after each batch | `16` |
+| `OFFLINE_MODE` | Load embeddings from the local cache and refuse `/llm/pull` | `true` |
+| `LIBRARY_READ_ONLY` | Treat the data directory as a read-only mount | `false` |
+| `REINDEX_INTERVAL_MINUTES` | Repeat incremental indexing. Unset or `0` keeps it off | off |
 | `CHROMA_HOST` | Chroma service name on the Docker network | `chromadb` |
 | `CHROMA_PORT` | Chroma port on the Docker network | `8000` |
-| `LANGCHAIN_MONITORING` | Send traces to LangSmith | off |
-| `LANGCHAIN_PROJECT` | LangSmith project name | `Talkback` |
 
 Pilot models must be Apache 2.0 or MIT licensed. Check the model card before you set `OLLAMA_MODEL`.
 
@@ -122,6 +122,8 @@ Talkback/
 ├── chroma_data/          # Vector store (gitignored)
 ├── hf_cache/             # Embedding model cache (gitignored)
 ├── docker-compose.yml
+├── .env.example          # Copy to .env and set OLLAMA_MODEL
+├── SECURITY.md           # What runs where, and what may leave the machine
 └── .env                  # Local config (gitignored)
 ```
 
@@ -146,8 +148,9 @@ cd app && python3 -m unittest tests.test_library
 - `GET /files` lists the library
 - `DELETE /files/{filename}` deletes one file and its chunks
 - `POST /query` answers one question. The body is `{"query": "..."}`. The response is `{"response": "...", "sources": [...]}`
+- `POST /query/stream` sends the same answer as server-sent events: `token`, then `sources` (or `replace` when the reply is not grounded), then `done`
 - `GET /health` is the API health check
-- `GET /llm/models`, `POST /llm/select`, and `POST /llm/pull` manage Ollama models
+- `GET /llm/models` and `POST /llm/select` manage host Ollama models. `POST /llm/pull` is refused while `OFFLINE_MODE=true`
 
 `POST /query` has no conversation memory. Each question is answered on its own.
 
@@ -175,11 +178,22 @@ docker compose logs -f rag-api
 
 **A file uploaded and nothing is searchable.** Indexing runs in the background after the upload. Watch Ingestion and Embeddings in System Pulse. If the status stays on an error, read `docker compose logs rag-api`.
 
+## Demo checklist
+
+Use this for the on-prem proof of concept. The promise is that no library text or chat leaves the machine.
+
+1. Pick a pilot model whose model card says Apache 2.0 or MIT. Pull it on the host with `ollama pull`, and set that name as `OLLAMA_MODEL` in `.env`.
+2. Set `OFFLINE_MODE=false`, start the stack, and wait until the embedding model is cached in `./hf_cache`. Set `OFFLINE_MODE=true` and run `docker compose up -d --build rag-api`.
+3. Mount a curated sample folder read-only. In `docker-compose.yml`, replace `./data:/app/data` with a line such as `- /path/to/sample:/app/data:ro`, and set `LIBRARY_READ_ONLY=true`. Upload and delete stay hidden.
+4. Pre-index that folder while the network is still up: open Talkback and click **Re-index now**, or `curl -X POST http://localhost:8001/ingest`.
+5. Disconnect the network.
+6. Open http://localhost:8001 and ask a question. Tokens should appear as they are generated, then the folder, file, and page. `curl -X POST http://localhost:8001/llm/pull -H 'Content-Type: application/json' -d '{"model":"test"}'` returns 403.
+
+`SECURITY.md` lists the processes and ports.
+
 ## Privacy
 
-Documents, chunks, and chat requests stay on this machine and go to the local Ollama process. Embeddings are computed in the API container.
-
-Turning on LangSmith monitoring sends query and indexing traces to LangSmith. Leave it off for a fully local demo.
+Documents, chunks, and chat requests stay on this machine and go to the host Ollama process. Embeddings are computed in the API container. There is no LangSmith client and no telemetry endpoint. The only outbound calls are one-off model downloads during setup, and only when `OFFLINE_MODE=false`.
 
 ## License
 

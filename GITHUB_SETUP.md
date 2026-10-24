@@ -1,5 +1,7 @@
 # 🚀 Publishing to Private GitHub Repository
 
+> Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
+
 This guide will walk you through publishing your Secure RAG Chatbot to a private GitHub repository.
 
 ## 📋 Prerequisites
@@ -59,7 +61,7 @@ gh repo create secure-rag-chatbot --private --description "Private RAG chatbot w
 Open your terminal and navigate to your project directory:
 
 ```bash
-cd /Users/comzis/Projects/secure-rag-project
+cd Talkback
 
 # Initialize git repository
 git init
@@ -167,7 +169,7 @@ EOF
 docker compose up --build -d
 
 # Download model
-docker exec ollama_service ollama pull llama2
+ollama pull llama2
 
 # Open browser to http://localhost:8001
 ```

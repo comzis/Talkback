@@ -1,5 +1,7 @@
 # Secure RAG Chatbot - User Guide
 
+> Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
+
 ## Table of Contents
 1. Overview
 2. Prerequisites
@@ -25,7 +27,7 @@ The Secure RAG (Retrieval-Augmented Generation) Chatbot is a privacy-focused sys
 **Key Features:**
 - 🔒 **100% Local Processing** - All data stays on your machine
 - 💬 **Interactive Chatbot** - Modern web interface with Apple Liquid Glass design
-- 📈 **LangChain Monitoring (optional)** - Stream ingest/query telemetry to LangSmith
+- 📈 **Local logs only** - Ingest and query events stay in the API logs. LangSmith has been removed.
 - 📤 **Drag & Drop Upload** - Upload documents directly from your browser
 - 📚 **30+ Document Formats** - Support for PDF, Word, Excel, PowerPoint, code files, eBooks, and more
 - 🎯 **Source Citations** - Responses include references to source documents
@@ -54,14 +56,13 @@ Before starting, ensure you have:
 Create a `.env` file in the project root directory:
 
 ```bash
-# Required Environment Variables
-OLLAMA_MODEL=gemma2:2b
-CHROMA_HOST=chromadb
-CHROMA_PORT=8000
+cp .env.example .env
+# Then set OLLAMA_MODEL to a model you pulled on the host.
+# Pilot models must be Apache 2.0 or MIT licensed. Check the model card.
 ```
 
 **Important:** 
-- `OLLAMA_MODEL` - Specify your preferred Ollama model (default: `gemma2:2b` for optimal speed and privacy)
+- `OLLAMA_MODEL` - Required. Talkback has no built-in model name.
 - `CHROMA_HOST` - Use `chromadb` for Docker networking
 - `CHROMA_PORT` - Default ChromaDB port is `8000`
 
@@ -84,7 +85,7 @@ docker compose ps
 
 You should see three services running:
 - `chromadb_service` on port 8000
-- `ollama_service` on port 11434
+- host Ollama on port 11434 (not a Docker container)
 - `rag_api_service` on port 8001
 
 ### Step 3: Download the LLM Model
@@ -92,13 +93,13 @@ You should see three services running:
 Before using the system, you need to download the LLM model:
 
 ```bash
-# Download the default model (recommended - fast and efficient)
-docker exec ollama_service ollama pull gemma2:2b
+# Pull the model named in .env, on the host
+ollama pull <model-from-the-model-card>
 
 # Or use another model like:
-# docker exec ollama_service ollama pull llama3
-# docker exec ollama_service ollama pull llama2
-# docker exec ollama_service ollama pull mistral
+# ollama pull llama3
+# ollama pull llama2
+# ollama pull mistral
 ```
 
 **Model Size & Performance Guide:**
@@ -235,13 +236,13 @@ At the top of the interface, you'll see the **Pulse Metrics Dashboard** with liv
 - **LLM**: Displays current model name, status, and response time
 - **Database**: Shows ChromaDB connection status and collection count
 - **Embeddings**: Real-time progress bar with current file, speed, ETA, CPU, and memory usage
-- **LangChain Monitoring**: Optional telemetry tracking (enable with LangSmith API key)
+- **Logs**: Ingest and query events are written locally. There is no LangSmith panel.
 
 These metrics update automatically every 2-5 seconds, giving you real-time visibility into your system's health.
 
 #### 1. Select or Add LLM Model
 
-The system defaults to **gemma2:2b** (fast, efficient, 1.6 GB). You can switch models anytime:
+The chat model is whatever you set as `OLLAMA_MODEL`. You can switch models anytime:
 
 **Select Existing Model:**
 1. In the System Pulse section, find the "LLM" card
@@ -899,7 +900,7 @@ for source in result["sources"]:
 # 1. Start Docker Desktop
 
 # 2. Navigate to project directory
-cd /path/to/secure-rag-project
+cd Talkback
 
 # 3. Create .env file
 cat > .env << EOF
@@ -912,7 +913,7 @@ EOF
 docker compose up -d
 
 # 5. Download the default model (fast and efficient)
-docker exec ollama_service ollama pull gemma2:2b
+ollama pull gemma2:2b
 
 # 6. Open browser
 open http://localhost:8001
@@ -980,7 +981,7 @@ docker compose down
 docker compose up -d
 
 # 3. Download the new model if not already installed
-docker exec ollama_service ollama pull llama3
+ollama pull llama3
 
 # 4. Open browser and test
 open http://localhost:8001
@@ -1147,10 +1148,10 @@ The model hasn't been downloaded yet. Download it first:
 
 ```bash
 # Check what models you have
-docker exec ollama_service ollama list
+ollama list
 
 # Download the model specified in your .env file
-docker exec ollama_service ollama pull llama2
+ollama pull llama2
 
 # Then restart the API
 docker compose restart rag-api
@@ -1159,16 +1160,16 @@ docker compose restart rag-api
 **Common Models to Download:**
 ```bash
 # Default - Very fast, small size (1.6 GB) ⚡ RECOMMENDED
-docker exec ollama_service ollama pull gemma2:2b
+ollama pull gemma2:2b
 
 # Fast and balanced (3.8 GB)
-docker exec ollama_service ollama pull llama2
+ollama pull llama2
 
 # Better quality (4.7 GB)
-docker exec ollama_service ollama pull llama3
+ollama pull llama3
 
 # High quality (4.1 GB)
-docker exec ollama_service ollama pull mistral
+ollama pull mistral
 ```
 
 ---
@@ -1204,7 +1205,7 @@ docker exec ollama_service ollama pull mistral
 
 1. **Model not downloaded:**
    ```bash
-   docker exec ollama_service ollama pull gemma2:2b
+   ollama pull gemma2:2b
    ```
 
 2. **Insufficient resources:**
@@ -1234,7 +1235,7 @@ docker exec ollama_service ollama pull mistral
 2. **Use a smaller model:**
    ```bash
    # Try a lighter model
-   docker exec ollama_service ollama pull llama2:7b
+   ollama pull llama2:7b
    ```
 
 3. **Reduce similarity_top_k** (see Advanced Configuration)
@@ -1569,29 +1570,9 @@ To push the Apple-inspired identity even further, consider these next-wave ideas
 
 Documenting these concepts now keeps Phase B organized—each bullet points to a specific area in `style.css`, `index.html`, or `script.js` that can be extended without rewriting the current experience.
 
-### LangChain Monitoring & LangSmith Integration
+### Monitoring
 
-If you want full observability for ingest and query runs, you can enable the built-in LangChain/LangSmith monitoring hook:
-
-1. **Install dependencies** – already included in `app/requirements.txt` (`langsmith>=0.1.28`). Rebuild the container if needed:  
-   ```bash
-   docker compose up --build rag-api
-   ```
-2. **Set environment variables** (you can reuse your LangSmith workspace keys):
-   ```bash
-   LANGCHAIN_MONITORING=true
-   LANGCHAIN_PROJECT="Secure RAG Monitoring"
-   LANGSMITH_API_KEY=ls__xxxxxxxxxxxxxxxx
-   LANGSMITH_ENDPOINT=https://api.smith.langchain.com
-   ```
-3. **What gets recorded**
-   - `document_ingestion` runs capture document counts, status, and errors.
-   - `rag_query` runs log the user query, completion status, and the files cited in the answer.
-4. **Where to view data**
-   - Visit the [LangSmith dashboard](https://smith.langchain.com/) and open the project you set in `LANGCHAIN_PROJECT`.
-   - Each run is tagged (`ingestion`, `query`, `rag`) so you can filter quickly.
-
-This mirrors the guidance at [LangChain Monitoring](https://python.langchain.com/docs/guides/tracing) and keeps all telemetry optional—if `LANGCHAIN_MONITORING` is not set to `true`, the app behaves exactly as before.
+LangSmith has been removed. Ingest and query events are written to the API logs on this machine. See `SECURITY.md`.
 
 ### Manual Smoke Test Checklist
 

@@ -1,5 +1,7 @@
 # 🔧 Timeout Error - Root Cause & Solutions
 
+> Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
+
 ## 🚨 Problem Identified
 
 **Ollama is timing out on RAG queries** even though the model (llama2) is loaded.
@@ -35,7 +37,7 @@ docker compose down
 
 # Download a faster model
 docker compose up -d ollama
-docker exec ollama_service ollama pull gemma2:2b
+ollama pull gemma2:2b
 
 # Update .env file
 cat > .env << 'EOF'
@@ -140,7 +142,7 @@ If using Docker Desktop:
    ```bash
    docker compose down
    docker compose up -d ollama
-   docker exec ollama_service ollama pull gemma2:2b
+   ollama pull gemma2:2b
    echo "OLLAMA_MODEL=gemma2:2b" > .env
    echo "CHROMA_HOST=chromadb" >> .env
    echo "CHROMA_PORT=8000" >> .env
@@ -211,11 +213,11 @@ Your system may not have enough resources for local LLM inference. Consider:
 **Quick Fix Command (Copy & Paste):**
 
 ```bash
-cd /Users/comzis/Projects/secure-rag-project && \
+cd Talkback && \
 docker compose down && \
 docker compose up -d ollama && \
 sleep 5 && \
-docker exec ollama_service ollama pull gemma2:2b && \
+ollama pull gemma2:2b && \
 cat > .env << 'EOF'
 OLLAMA_MODEL=gemma2:2b
 CHROMA_HOST=chromadb

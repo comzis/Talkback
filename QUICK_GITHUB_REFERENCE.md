@@ -1,5 +1,7 @@
 # 🚀 Quick GitHub Publishing Reference
 
+> Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
+
 ## ✅ What's Been Done
 
 - ✅ Git repository initialized
@@ -44,7 +46,7 @@ gh repo create secure-rag-chatbot --private
 ### Step 2: Connect and Push (2 min)
 
 ```bash
-cd /Users/comzis/Projects/secure-rag-project
+cd Talkback
 
 # Replace YOUR_USERNAME with your GitHub username
 git remote add origin https://github.com/YOUR_USERNAME/secure-rag-chatbot.git

@@ -1,5 +1,7 @@
 # Using System Ollama Instead of Docker Container
 
+> Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
+
 This guide explains how to use your system's Ollama installation instead of running it in a Docker container. This provides better performance by utilizing your system's resources directly.
 
 ## ✅ What Was Changed
@@ -86,11 +88,7 @@ OLLAMA_BASE_URL=http://host.docker.internal:11434
 CHROMA_HOST=chromadb
 CHROMA_PORT=8000
 
-# LangChain Monitoring (Optional)
-# LANGCHAIN_MONITORING=true
-# LANGCHAIN_PROJECT=Secure RAG Monitoring
-# LANGSMITH_API_KEY=ls__your_api_key_here
-# LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+# LangSmith was removed. Do not set telemetry keys.
 ```
 
 ### Step 2: Stop Existing Containers
