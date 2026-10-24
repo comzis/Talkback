@@ -18,7 +18,6 @@ import engine
 from files import InvalidFilename, get_file_type, stored_filename, visible_files
 from llama_index.core import Settings
 from llama_index.llms.ollama import Ollama
-from monitoring import LangChainMonitor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,11 +50,6 @@ class LLMSelectRequest(BaseModel):
 
 class LLMPullRequest(BaseModel):
     model: str
-
-class MonitoringConfigRequest(BaseModel):
-    api_key: str = ""
-    project: str = "Talkback"
-    enabled: bool = True
 
 @app.post("/ingest")
 async def ingest_documents(background_tasks: BackgroundTasks):
@@ -138,6 +132,7 @@ async def get_system_status():
             "response_time_ms": None,
             "error": None
         },
+        "offline_mode": engine.offline_mode(),
         "database": {
             "status": "unknown",
             "connected": False,
@@ -192,62 +187,7 @@ async def get_system_status():
             "message": "Ingestion failed"
         })
     
-    # Add monitoring status
-    status["monitoring"] = {
-        "enabled": engine.monitor.enabled,
-        "project": engine.monitor.project_name if engine.monitor.enabled else None,
-        "docs_url": "https://docs.smith.langchain.com/overview",
-        "dashboard_url": "https://smith.langchain.com/"
-    }
-    
     return status
-
-@app.post("/monitoring/configure")
-async def configure_monitoring(request: MonitoringConfigRequest):
-    """
-    Enable or disable LangChain monitoring with API key configuration.
-    """
-    try:
-        if request.enabled:
-            # Enable monitoring
-            if not request.api_key:
-                raise HTTPException(status_code=400, detail="API key is required to enable monitoring")
-            
-            # Set environment variables
-            os.environ["LANGCHAIN_MONITORING"] = "true"
-            os.environ["LANGCHAIN_PROJECT"] = request.project
-            os.environ["LANGSMITH_API_KEY"] = request.api_key
-            os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
-            
-            # Reinitialize monitor
-            engine.monitor = LangChainMonitor()
-            
-            if not engine.monitor.enabled:
-                raise HTTPException(status_code=500, detail="Failed to initialize monitoring. Check your API key.")
-            
-            logger.info(f"LangChain monitoring enabled for project: {request.project}")
-            
-            return {
-                "message": "Monitoring enabled successfully",
-                "enabled": True,
-                "project": request.project
-            }
-        else:
-            # Disable monitoring
-            os.environ["LANGCHAIN_MONITORING"] = "false"
-            engine.monitor = LangChainMonitor()
-            
-            logger.info("LangChain monitoring disabled")
-            
-            return {
-                "message": "Monitoring disabled",
-                "enabled": False
-            }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error configuring monitoring: {e}")
-        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
 @app.get("/files/types")
 async def get_file_types():
@@ -475,8 +415,13 @@ async def select_llm_model(request: LLMSelectRequest):
 @app.post("/llm/pull")
 async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTasks):
     """
-    Pull/download a new model from Ollama.
+    Pull a model through the host Ollama. Refused while OFFLINE_MODE is on.
     """
+    if engine.offline_mode():
+        raise HTTPException(
+            status_code=403,
+            detail="Model download is disabled while OFFLINE_MODE is true. Set OFFLINE_MODE=false and restart only for a one-off setup download.",
+        )
     try:
         import httpx
         ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")

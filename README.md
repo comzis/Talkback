@@ -1,233 +1,190 @@
-# 🤖 Secure RAG Chatbot
+# Talkback
 
-A **100% local, privacy-focused** Retrieval-Augmented Generation (RAG) chatbot with a modern web interface. Chat with your documents using AI, with support for **30+ file formats** including PDFs, Word docs, Excel, PowerPoint, source code, and more.
+A local RAG app for chatting with a private document library. Talkback answers like an assistant. When a question is about a file in the library, or a passage is pasted in, the reply stays on the retrieved excerpts and cites the file and page.
 
-## ✨ Features
+Repository: https://github.com/comzis/Talkback
 
-- 🔒 **100% Local** - All data processing happens on your machine
-- 💬 **Modern Web Interface** - Beautiful Apple Liquid Glass design with glassmorphism
-- 🌙 **Automatic Dark Mode** - Adapts to your system preferences
-- 📤 **Drag & Drop Upload** - Easy document management
-- 📚 **30+ File Formats** - PDF, Word, Excel, PowerPoint, code files, JSON, XML, EPUB, and more
-- 🎯 **Source Citations** - AI responses include document references
-- 💾 **Persistent Storage** - ChromaDB vector database
-- 🤖 **Flexible LLM** - Use any Ollama-compatible model
-- 💻 **Code Analysis** - Upload and query source code
-- 📊 **Data Processing** - Handle spreadsheets and data files
-- 🎨 **SF Symbols Icons** - Apple-style iconography throughout
-- ✨ **Smooth Animations** - Spring physics for natural interactions
+The chat window is the main view. The library, system status, and upload area sit in the side column.
 
-## 🚀 Quick Start
+## What it does
+
+- Keeps documents, embeddings, and chat on this machine. Ollama runs on the host. ChromaDB stores the vectors.
+- Adds a file in one step. Drop a file on the library panel, or click the drop area and choose one. Talkback saves it and starts indexing. Uploading the same name replaces that file only.
+- Leaves files that have not changed in the index. New and changed files are embedded. Removed files drop their chunks.
+- Answers greetings and general questions with no sources. A question that names a library file is answered from that file. Each cited claim keeps its source number, with the page and excerpt beside it.
+- Uses `gemma2:2b` through Ollama by default, and `BAAI/bge-small-en-v1.5` for embeddings. The embedding model downloads once, on first start.
+
+LangSmith monitoring is off unless you turn it on. When it is enabled, traces leave the machine.
+
+## Quick start
 
 ### Prerequisites
 
 - Docker Desktop
-- 8GB+ RAM
-- 5-10GB free disk space
+- [Ollama](https://ollama.com/) running on the host
+- About 8 GB of RAM and several GB of free disk for the image and model
 
-### 1. Clone and Setup
+### 1. Clone and configure
 
 ```bash
-# Clone the repository
-git clone <your-private-repo-url>
-cd secure-rag-project
+git clone https://github.com/comzis/Talkback.git
+cd Talkback
 
-# Create environment file
 cat > .env << EOF
 OLLAMA_MODEL=gemma2:2b
+OLLAMA_BASE_URL=http://host.docker.internal:11434
 CHROMA_HOST=chromadb
 CHROMA_PORT=8000
 EOF
 ```
 
-### 2. Start Services
+`CHROMA_PORT=8000` is the port inside the Docker network. From the host, Chroma is published on port **8002**, because 8000 is often already taken.
+
+### 2. Pull the model and start the stack
 
 ```bash
-# Build and start all services
+ollama pull gemma2:2b
 docker compose up --build -d
-
-# Download the default LLM model (fast and efficient - 1.6 GB)
-docker exec ollama_service ollama pull gemma2:2b
-
-# Check status
 docker compose ps
 ```
 
-### 3. Access the Chatbot
+The API image is large because it includes a CPU build of PyTorch. The first start also downloads the embedding model into `./hf_cache`.
 
-Open your browser and navigate to:
+### 3. Open Talkback
 
-```
 http://localhost:8001
-```
 
-### 4. Upload Documents and Chat!
+Drop a file into the library panel. Indexing starts on its own. Then ask in the chat.
 
-1. Drag & drop files into the glass-style upload area (30+ formats supported)
-2. Click "Upload Files" button
-3. Click "Process Documents" button
-4. Start asking questions in the beautiful chat interface!
+There is no login. The API listens on all interfaces inside the container and is published on port 8001.
 
-## 📁 Supported File Formats
+## Asking questions
 
-### Documents & Text
-PDF, Word (DOCX/DOC), OpenDocument (ODT), Plain Text (TXT), Markdown (MD), reStructuredText (RST), Rich Text Format (RTF)
+| You ask | Talkback does |
+| --- | --- |
+| `hello`, or a short general question such as `What is 2 + 2?` | Replies as an assistant and attaches no documents |
+| A question that names a library file, such as `What does the campaign say about privacy?` | Searches that file and cites the page |
+| A pasted passage | Explains the passage and cites the library where an excerpt supports the explanation |
+| A document question the excerpts do not support | Says the library does not cover it, and does not invent a citation |
 
-### Presentations & Data
-PowerPoint (PPTX), Excel (XLSX), CSV
+Document answers use a low temperature so the reply stays close to the excerpt. The source number in the sentence matches the number in the source list.
 
-### Web & Configuration
-JSON, XML, HTML
+## Supported files
 
-### Source Code
-Python, JavaScript/TypeScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, Kotlin, and more
+Documents and text: PDF, Word, OpenDocument, TXT, Markdown, RST, RTF, EPUB.
 
-### eBooks
-EPUB
+Presentations and tables: PowerPoint, Excel, CSV.
 
-## 📖 Documentation
+Data and code: JSON, XML, HTML, and common source files such as Python, JavaScript, TypeScript, Java, C/C++, Go, and Rust.
 
-For detailed setup instructions, API documentation, and troubleshooting:
+Images can be uploaded. Text is taken from files the reader can parse. A scanned PDF with no text layer will not add searchable chunks.
 
-👉 **[Read the Complete User Guide](USER_GUIDE.md)**
+## Configuration
 
-## 🏗️ Architecture
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OLLAMA_MODEL` | Model name in host Ollama | `gemma2:2b` |
+| `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
+| `CHROMA_HOST` | Chroma service name on the Docker network | `chromadb` |
+| `CHROMA_PORT` | Chroma port on the Docker network | `8000` |
+| `LANGCHAIN_MONITORING` | Send traces to LangSmith | off |
+| `LANGCHAIN_PROJECT` | LangSmith project name | `Talkback` |
 
-```
-User Browser (Port 8001)
-         ↓
-    FastAPI + LlamaIndex
-    ↙              ↘
-ChromaDB          Ollama
-(Vectors)         (LLM)
-```
-
-- **FastAPI**: Web framework and chatbot interface
-- **LlamaIndex**: RAG orchestration with 30+ file readers
-- **ChromaDB**: Vector database for embeddings
-- **Ollama**: Local LLM inference (gemma2:2b default, llama2, llama3, mistral, etc.)
-- **HuggingFace**: Embedding generation (BAAI/bge-small-en-v1.5)
-
-## 💡 Use Cases
-
-- **Documentation Hub**: Query across all your project docs
-- **Code Review Assistant**: Upload source code and ask questions
-- **Business Intelligence**: Analyze Excel reports and presentations
-- **Research Assistant**: Process academic papers and research notes
-- **Learning Tool**: Create a personal AI tutor with your study materials
-
-## 🔧 Configuration
-
-### Available LLM Models
-
-- `gemma2:2b` - Gemma 2 2B ⚡ **Default & Recommended** (very fast, 1.6 GB, privacy-focused)
-- `llama2` - Llama 2 7B (balanced performance, 3.8 GB)
-- `llama3` - Llama 3 8B (newer, better quality, 4.7 GB)
-- `mistral` - Mistral 7B (high quality, 4.1 GB)
-- `phi3` - Phi-3 Mini (efficient, 2.3 GB)
-
-### Change Model
+Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first:
 
 ```bash
-# Option A: Switch via Web UI (instant, no restart)
-# 1. Open http://localhost:8001
-# 2. Click "Change Model" button
-# 3. Select from dropdown
-
-# Option B: Change default in .env
-OLLAMA_MODEL=llama3
-
-# Restart services
-docker compose restart rag-api
-
-# Download new model if needed
-docker exec ollama_service ollama pull llama3
+ollama pull llama3
 ```
 
-## 🛠️ Development
+`gemma2:2b` is the fast default. A larger local model holds a longer, more careful answer more steadily.
 
-### Project Structure
+If files in `./data` are not writable inside the container, rebuild the API with your user id:
+
+```bash
+docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" rag-api
+docker compose up -d
+```
+
+The compose file currently builds as UID `502` and GID `20`.
+
+## Layout
 
 ```
-secure-rag-project/
+Talkback/
 ├── app/
-│   ├── main.py              # FastAPI application
-│   ├── requirements.txt     # Python dependencies
-│   ├── Dockerfile          # API container
-│   └── static/             # Chatbot UI
-│       ├── index.html
-│       ├── style.css
-│       └── script.js
-├── data/                   # Your documents (gitignored)
-├── chroma_data/           # Vector DB storage (gitignored)
-├── docker-compose.yml     # Service orchestration
-├── .env                   # Configuration (gitignored)
-└── USER_GUIDE.md         # Complete documentation
+│   ├── main.py           # HTTP API and the Talkback page
+│   ├── engine.py         # Chroma, ingestion, retrieval, answers
+│   ├── prompts.py        # When to search, and how a citation is kept
+│   ├── library.py        # Which files to add, replace, or leave indexed
+│   ├── files.py          # Safe filenames and the library listing
+│   ├── monitoring.py     # Optional LangSmith traces
+│   ├── static/           # Chat UI
+│   ├── tests/            # Library plan, prompts, and citation checks
+│   ├── requirements.txt
+│   └── Dockerfile
+├── data/                 # Library files (gitignored)
+├── chroma_data/          # Vector store (gitignored)
+├── hf_cache/             # Embedding model cache (gitignored)
+├── docker-compose.yml
+└── .env                  # Local config (gitignored)
 ```
 
-### API Endpoints
+Static files and Python are copied into the API image. After a UI or Python change:
 
-- `GET /` - Chatbot interface
-- `POST /upload` - Upload files
-- `POST /ingest` - Process documents
-- `GET /ingest/status` - Check processing status
-- `POST /query` - Ask questions
-- `GET /health` - Health check
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Problem: Model not found error**
 ```bash
-# Download the default model first
-docker exec ollama_service ollama pull gemma2:2b
+docker compose up -d --build rag-api
 ```
 
-**Problem: Containers not starting**
+Run the unit tests from `app/`. They do not load the model or Chroma.
+
 ```bash
-# Check Docker is running
-docker ps
-
-# View logs
-docker compose logs -f
+cd app && python3 -m unittest tests.test_library
 ```
 
-**Problem: Upload fails**
+## API
+
+- `GET /` serves the Talkback page
+- `POST /upload` saves files and starts indexing
+- `POST /ingest` indexes files already on disk
+- `GET /ingest/status` reports indexing progress
+- `GET /files` lists the library
+- `DELETE /files/{filename}` deletes one file and its chunks
+- `POST /query` answers one question. The body is `{"query": "..."}`. The response is `{"response": "...", "sources": [...]}`
+- `GET /health` is the API health check
+- `GET /llm/models`, `POST /llm/select`, and `POST /llm/pull` manage Ollama models
+
+`POST /query` has no conversation memory. Each question is answered on its own.
+
+## Troubleshooting
+
+**The model is missing.** Pull it on the host, not in a container:
+
 ```bash
-# Ensure data directory exists
-mkdir -p data
-
-# Check file format is supported (see USER_GUIDE.md)
+ollama pull gemma2:2b
+ollama list
 ```
 
-For more troubleshooting, see [USER_GUIDE.md](USER_GUIDE.md).
+**The page is up but answers fail.** Confirm Ollama is reachable from the container:
 
-## 🔐 Privacy & Security
+```bash
+docker exec rag_api_service python -c "import urllib.request; print(urllib.request.urlopen('http://host.docker.internal:11434/api/tags', timeout=5).status)"
+```
 
-- **100% Local Processing**: No data leaves your machine
-- **No Cloud Services**: All AI inference happens locally
-- **Persistent Data**: Stored in local Docker volumes
-- **Your Control**: You own all your data and models
+**Containers are not healthy.** The API waits for Chroma, then loads the embedding model. Give the first start a few minutes, then:
 
-## 📝 License
+```bash
+docker compose ps
+docker compose logs -f rag-api
+```
 
-This project is for private use. All rights reserved.
+**A file uploaded and nothing is searchable.** Indexing runs in the background after the upload. Watch Ingestion and Embeddings in System Pulse. If the status stays on an error, read `docker compose logs rag-api`.
 
-## 🤝 Contributing
+## Privacy
 
-This is a private repository. For questions or issues, contact the repository owner.
+Documents, chunks, and chat requests stay on this machine and go to the local Ollama process. Embeddings are computed in the API container.
 
-## 🙏 Acknowledgments
+Turning on LangSmith monitoring sends query and indexing traces to LangSmith. Leave it off for a fully local demo.
 
-Built with:
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [LlamaIndex](https://www.llamaindex.ai/)
-- [ChromaDB](https://www.trychroma.com/)
-- [Ollama](https://ollama.ai/)
-- [HuggingFace](https://huggingface.co/)
+## License
 
----
-
-**Made with ❤️ for privacy-conscious AI enthusiasts**
-
+Private use. All rights reserved.

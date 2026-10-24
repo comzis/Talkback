@@ -19,12 +19,16 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from files import visible_files
 from library import balance_matches, disk_signature, indexed_signature, plan_updates
-from monitoring import LangChainMonitor
 from progress import ingest_metrics
 from prompts import (
     asks_about_library,
     assistant_prompt,
+    cited_source_indexes,
+    excerpts_mention,
     explanation_prompt,
+    library_miss,
+    named_library_files,
+    should_search_library,
     strip_citations,
     supporting_sources,
 )
@@ -32,6 +36,24 @@ from prompts import (
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path(os.getenv("RAG_DATA_DIR", "/app/data"))
+
+
+def offline_mode() -> bool:
+    """True unless OFFLINE_MODE is explicitly turned off for a setup download."""
+    return os.getenv("OFFLINE_MODE", "true").lower() in {"1", "true", "yes"}
+
+
+def apply_offline_mode() -> None:
+    """Stop Hugging Face from calling the network when the cache is already present."""
+    if not offline_mode():
+        logger.info("OFFLINE_MODE is off. Setup may download a missing embedding model.")
+        return
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_DATASETS_OFFLINE"] = "1"
+    logger.info("Offline mode: the embedding model loads from the local cache only.")
+
+
 EMBED_BATCH = 1
 
 ingestion_status: dict = {
@@ -51,7 +73,6 @@ ingestion_status: dict = {
     "estimated_time_remaining": 0,
 }
 
-monitor = LangChainMonitor()
 db = None
 chroma_collection = None
 vector_store = None
@@ -93,6 +114,7 @@ def init() -> None:
         logger.error(message)
         raise ValueError(message)
 
+    apply_offline_mode()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     connect_chroma()
     Settings.llm = Ollama(
@@ -274,12 +296,7 @@ def _ingest_once() -> None:
     """Add new or changed files without dropping documents already indexed."""
     global cached_index
 
-    ingest_run_id = monitor.start_run(
-        name="document_ingestion",
-        run_type="chain",
-        inputs={"data_path": str(UPLOAD_DIR)},
-        tags=["ingestion"],
-    )
+    logger.info("Ingestion started for %s", UPLOAD_DIR)
     try:
         started = time.time()
         ingestion_status["start_time"] = started
@@ -311,7 +328,7 @@ def _ingest_once() -> None:
                 "Library is empty."
             )
             _finish_kept(started, message, len(on_disk))
-            monitor.end_run(ingest_run_id, outputs={"status": "unchanged", "files": len(on_disk)})
+            logger.info("Ingestion unchanged. %s files already indexed.", len(on_disk))
             return
 
         paths = [by_name[name] for name in embed_names]
@@ -323,7 +340,7 @@ def _ingest_once() -> None:
 
         if not documents:
             _finish_kept(started, "No readable text in the new files. Existing documents were kept.", len(on_disk))
-            monitor.end_run(ingest_run_id, outputs={"status": "no_text", "files": embed_names})
+            logger.info("Ingestion found no readable text in %s", embed_names)
             return
 
         nodes = SentenceSplitter().get_nodes_from_documents(documents)
@@ -371,16 +388,11 @@ def _ingest_once() -> None:
             memory_percent=ingestion_status["memory_percent"],
             start_time=started,
         ))
-        logger.info("Ingestion complete. Library now has %s chunks.", library_total)
-        monitor.end_run(
-            ingest_run_id,
-            outputs={
-                "status": "completed",
-                "added_chunks": total,
-                "added_files": embed_names,
-                "library_chunks": library_total,
-                "speed": speed,
-            },
+        logger.info(
+            "Ingestion complete. Added %s chunks from %s. Library now has %s chunks.",
+            total,
+            embed_names,
+            library_total,
         )
     except Exception as exc:
         logger.exception("Ingestion failed")
@@ -389,62 +401,92 @@ def _ingest_once() -> None:
         ingestion_status["error"] = "Ingestion failed"
         ingestion_status["progress"] = 0
         ingestion_status["current_file"] = None
-        monitor.end_run(ingest_run_id, error=str(exc))
+        logger.error("Ingestion failed: %s", exc)
+
+
+def _complete(prompt: str, temperature: float | None = None) -> str:
+    """Complete one prompt, pinning temperature only for that call."""
+    llm = Settings.llm
+    if temperature is None or not hasattr(llm, "temperature"):
+        return str(llm.complete(prompt)).strip()
+    previous = llm.temperature
+    llm.temperature = temperature
+    try:
+        return str(llm.complete(prompt)).strip()
+    finally:
+        llm.temperature = previous
+
+
+def _source_record(node, number: int) -> dict:
+    """Keep the citation number, file, page, and excerpt for one retrieved chunk."""
+    metadata = node.metadata or {}
+    file_name = metadata.get("file_name") or "Document"
+    page = metadata.get("page_label") or metadata.get("page_number")
+    record = {
+        "number": number,
+        "source": file_name,
+        "text": (node.get_text() or "")[:500],
+    }
+    if page not in (None, ""):
+        record["page"] = str(page)
+    return record
+
+
+def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str]):
+    """Search the library, and stay inside a file the question names."""
+    nodes = index.as_retriever(similarity_top_k=24).retrieve(query)
+    named = set(named_library_files(query, library_files))
+    if named:
+        preferred = [node for node in nodes if (node.metadata or {}).get("file_name") in named]
+        if preferred:
+            return balance_matches(preferred, per_file=3, limit=4)
+    return balance_matches(nodes, per_file=2, limit=4)
 
 
 def assistant_reply(query: str) -> str:
     """Answer as a general assistant, with no document requirement."""
-    return str(Settings.llm.complete(assistant_prompt(query))).strip()
+    return _complete(assistant_prompt(query))
 
 
 def answer_query(query: str) -> dict:
     """Answer from the library when it applies, and as an assistant otherwise."""
-    query_run_id = monitor.start_run(
-        name="rag_query",
-        run_type="chain",
-        inputs={"query": query},
-        tags=["query", "rag"],
-    )
+    logger.info("Query started (%s characters)", len(query or ""))
     try:
-        if collection_count() == 0:
+        if collection_count() == 0 or not should_search_library(query):
             reply = assistant_reply(query)
-            monitor.end_run(query_run_id, outputs={"status": "assistant"})
+            logger.info("Query answered as assistant")
             return {"response": reply, "sources": []}
 
         index = get_or_create_cached_index()
         library_files = sorted(indexed_documents())
-        if not asks_about_library(query, library_files):
+        about_library = asks_about_library(query, library_files)
+        nodes = _retrieve_nodes(index, query, library_files)
+        sources = [_source_record(node, number) for number, node in enumerate(nodes, 1)]
+        mentioned = excerpts_mention(query, [source["text"] for source in sources])
+        if not about_library and not mentioned:
             reply = assistant_reply(query)
-            monitor.end_run(query_run_id, outputs={"status": "assistant"})
+            logger.info("Query answered as assistant")
             return {"response": reply, "sources": []}
-        nodes = BalancedRetriever(index).retrieve(query)
-        sources = []
-        for node in nodes:
-            metadata = node.metadata or {}
-            file_name = metadata.get("file_name", "Unknown Source")
-            display_name = file_name if file_name != "Unknown Source" else "Document"
-            sources.append({
-                "source": display_name,
-                "text": node.get_text()[:500],
-            })
-        reply = str(Settings.llm.complete(explanation_prompt(
+        reply = _complete(explanation_prompt(
             query,
             library_files,
             [f"{source['source']}\n{source['text']}" for source in sources],
-        ))).strip()
+        ), temperature=0.1)
         used = supporting_sources(reply, sources)
+        if used and not cited_source_indexes(reply):
+            marks = " ".join(f"[{source['number']}]" for source in used)
+            reply = f"{reply} {marks}"
         if not used:
-            reply = strip_citations(reply)
-            monitor.end_run(query_run_id, outputs={"status": "assistant"})
+            if about_library:
+                reply = library_miss(reply)
+            else:
+                reply = assistant_reply(query)
+            logger.info("Query answered as assistant")
             return {"response": reply, "sources": []}
         sources = used
 
-        monitor.end_run(
-            query_run_id,
-            outputs={"status": "completed", "sources": [source["source"] for source in sources]},
-        )
+        logger.info("Query cited %s", [source["source"] for source in sources])
         return {"response": reply, "sources": sources}
-    except Exception as exc:
+    except Exception:
         logger.exception("Query failed")
-        monitor.end_run(query_run_id, error=str(exc))
         raise

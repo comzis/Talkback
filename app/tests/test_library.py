@@ -65,16 +65,32 @@ class PromptTests(unittest.TestCase):
         self.assertFalse(prompts.asks_about_library("How do I run hello-world.py?", files))
         self.assertTrue(prompts.asks_about_library("What does Python Basics say about loops?", files))
         self.assertTrue(prompts.asks_about_library("What is Inlock?", files))
+        self.assertTrue(prompts.asks_about_library("What does the campaign say about privacy?", files))
         self.assertTrue(prompts.asks_about_library("Inlock\nSecure AI for Private Enterprise systems", files))
+        self.assertFalse(prompts.should_search_library("hello"))
+        self.assertFalse(prompts.should_search_library("What is 2 + 2?"))
+        self.assertTrue(prompts.excerpts_mention(
+            "What privacy rules does the campaign describe?",
+            ["Inlock is privacy-first for private enterprise."],
+        ))
+        self.assertFalse(prompts.excerpts_mention("What is 2 + 2?", ["Inlock privacy"]))
 
     def test_explanation_keeps_the_passage_it_describes(self):
         sources = [
             {"source": "inlock campaign v4.pdf", "text": "Inlock Secure AI for Private Enterprise"},
             {"source": "notes.pdf", "text": "license optional compatibility metadata"},
         ]
-        answer = "Inlock offers secure private enterprise AI."
+        answer = "Inlock offers secure private enterprise AI. [1]"
         kept = prompts.supporting_sources(answer, sources)
         self.assertEqual([item["source"] for item in kept], ["inlock campaign v4.pdf"])
+        self.assertEqual(kept[0]["number"], 1)
+        self.assertEqual(prompts.supporting_sources("See the later section. [9]", sources), [])
+        uncited = prompts.supporting_sources(
+            "Inlock keeps enterprise data completely private.",
+            sources,
+        )
+        self.assertEqual([item["number"] for item in uncited], [1])
+        self.assertEqual(prompts.library_miss("I think it is Paris."), "The library does not cover that.")
 
     def test_general_reply_is_not_treated_as_a_citation(self):
         self.assertFalse(prompts.answered_from_sources("Paris is the capital of France."))

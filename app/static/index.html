@@ -133,22 +133,6 @@
                             </div>
                         </div>
                     </div>
-                    <div class="pulse-card pulse-card-wide" id="monitoringCard">
-                        <div class="pulse-header">
-                            <div class="pulse-label">LANGCHAIN MONITORING</div>
-                            <div class="traffic-light red" id="monitoringLight"></div>
-                        </div>
-                        <div class="pulse-status" id="monitoringStatus">Disabled</div>
-                        <div class="monitoring-config">
-                            <input type="text" id="langsmithApiKey" class="config-input" placeholder="LangSmith API Key (ls__...)" />
-                            <input type="text" id="langsmithProject" class="config-input" placeholder="Project Name (optional)" value="Talkback" />
-                            <button class="pulse-btn" id="enableMonitoringBtn">Enable Monitoring</button>
-                        </div>
-                        <div class="monitoring-links">
-                            <a href="https://docs.smith.langchain.com/overview" target="_blank" class="monitoring-link">Docs</a>
-                            <a href="https://smith.langchain.com/" target="_blank" class="monitoring-link">Dashboard</a>
-                        </div>
-                    </div>
                 </div>
             </div>
         </header>
@@ -262,7 +246,7 @@
                 <select id="modelSelect" class="model-select">
                     <option value="">Loading models...</option>
                 </select>
-                <div class="model-add">
+                <div class="model-add" id="modelAdd" hidden>
                     <input type="text" id="newModelInput" class="model-input" placeholder="Model name (e.g., llama3)">
                     <button class="btn btn-secondary" id="addModelBtn">Add Model</button>
                 </div>
@@ -273,6 +257,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.17"></script>
+    <script src="/static/script.js?v=4.19"></script>
 </body>
 </html>

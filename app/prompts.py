@@ -50,9 +50,28 @@ def assistant_prompt(query: str) -> str:
 
 _GENERIC_FILE_WORDS = {
     "python", "basics", "notes", "guide", "skills", "document", "documents",
-    "campaign", "manual", "intro", "introduction", "overview", "draft",
+    "manual", "intro", "introduction", "overview", "draft",
     "final", "report", "slides", "sheet",
 }
+_SMALL_TALK = re.compile(
+    r"^(hi|hello|hey|thanks|thank you|ok|okay|yo|good morning|good afternoon|good evening)\b",
+    re.IGNORECASE,
+)
+
+
+def named_library_files(query: str, library_files: list[str]) -> list[str]:
+    """Return library filenames the question actually names."""
+    lowered = (query or "").lower()
+    matched = []
+    for name in library_files:
+        full = name.lower()
+        stem = full.rsplit(".", 1)[0].strip()
+        tokens = re.findall(r"[a-z0-9]{5,}", stem)
+        named = (full and full in lowered) or (len(stem) >= 4 and stem in lowered)
+        named = named or any(token in lowered and token not in _GENERIC_FILE_WORDS for token in tokens)
+        if named:
+            matched.append(name)
+    return matched
 
 
 def asks_about_library(query: str, library_files: list[str]) -> bool:
@@ -67,34 +86,43 @@ def asks_about_library(query: str, library_files: list[str]) -> bool:
     )
     if any(cue in lowered for cue in cues):
         return True
-    for name in library_files:
-        full = name.lower()
-        stem = full.rsplit(".", 1)[0].strip()
-        if full and full in lowered:
-            return True
-        if len(stem) >= 4 and stem in lowered:
-            return True
-        tokens = re.findall(r"[a-z0-9]{5,}", stem)
-        if any(token in lowered and token not in _GENERIC_FILE_WORDS for token in tokens):
-            return True
-    return False
+    return bool(named_library_files(query, library_files))
+
+
+def should_search_library(query: str) -> bool:
+    """False for a greeting or a note too short to be a library question."""
+    text = (query or "").strip()
+    if len(text) < 12:
+        return False
+    if _SMALL_TALK.match(text) and "\n" not in text and len(text) < 48:
+        return False
+    words = [word for word in _WORD.findall(text.lower()) if word not in _STOP]
+    return bool(words) or (text.count("\n") >= 1 and len(text) > 40)
+
+
+def excerpts_mention(query: str, texts: list[str]) -> bool:
+    """True when a retrieved excerpt uses a distinctive word from the question."""
+    words = [word for word in _WORD.findall((query or "").lower()) if word not in _STOP]
+    if not words:
+        return False
+    blob = " ".join(texts).lower()
+    return any(word in blob for word in words)
 
 
 def explanation_prompt(query: str, library_files: list[str], excerpts: list[str]) -> str:
-    """Prompt that explains pasted text and reasons with library excerpts."""
+    """Prompt that explains pasted text and reasons only with library excerpts."""
     names = ", ".join(library_files) if library_files else "(none yet)"
     shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(excerpts, 1))
     if not shown:
         shown = "(no matching excerpts)"
     return (
-        "You are Talkback, a helpful assistant. The user is asking about their documents or pasted a passage.\n"
+        "You are Talkback. The user is asking about their documents or pasted a passage.\n"
         f"The library contains: {names}.\n"
         "If the user pasted a passage, explain that text in plain language and walk through the lines.\n"
-        "Reference the library excerpts only where they answer the question, "
-        "and cite each claim with a source number such as [1] or [2].\n"
-        "Keep the reply short. Use plain sentences, not a markdown manual.\n"
-        "If the excerpts do not apply, answer from your own knowledge and do not cite them.\n"
-        "Do not say you are waiting for a document.\n\n"
+        "Answer from the library excerpts below. Do not add facts from outside those excerpts.\n"
+        "End the answer with the excerpt number in brackets, such as [1].\n"
+        "If the excerpts do not contain the answer, say that the library does not cover it and do not cite a number.\n"
+        "Keep the reply short. Use plain sentences, not a markdown manual.\n\n"
         f"Library excerpts:\n{shown}\n\n"
         f"User:\n{query}\n"
         "Assistant:"
@@ -121,27 +149,43 @@ def cited_source_indexes(text: str) -> list[int]:
     return indexes
 
 
-def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
-    """Keep excerpts the reply cites, or excerpts whose wording the reply explains."""
-    texts = [source.get("text", "") for source in sources]
-    if grounded_in_sources(answer, texts):
-        chosen = [
-            sources[number - 1]
-            for number in cited_source_indexes(answer)
-            if 1 <= number <= len(sources)
-        ]
-        return chosen or sources
+def _has_word(haystack: str, word: str) -> bool:
+    return re.search(rf"\b{re.escape(word)}\b", haystack) is not None
+
+
+def _excerpt_supports(answer: str, text: str) -> bool:
+    """True when the reply repeats distinctive wording from one excerpt."""
     cleaned = strip_citations(answer).lower()
-    kept = []
-    for source in sources:
-        words = [
-            word for word in _WORD.findall(source.get("text", "").lower())
-            if word not in _STOP and len(word) >= 5
-        ]
-        hits = sum(1 for word in words if word in cleaned)
-        if hits >= 2:
-            kept.append(source)
-    return kept
+    words = [
+        word for word in _WORD.findall((text or "").lower())
+        if word not in _STOP and len(word) >= 5
+    ]
+    hits = sum(1 for word in dict.fromkeys(words) if _has_word(cleaned, word))
+    return hits >= 2
+
+
+def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
+    """Keep excerpts whose wording the reply uses, preferring numbers it cited."""
+    if not answer or _REFUSAL.search(answer):
+        return []
+    cited = [number for number in cited_source_indexes(answer) if 1 <= number <= len(sources)]
+    pool = cited or list(range(1, len(sources) + 1))
+    chosen = []
+    for number in pool:
+        source = dict(sources[number - 1])
+        if not _excerpt_supports(answer, source.get("text", "")):
+            continue
+        source["number"] = number
+        chosen.append(source)
+    return chosen[:2] if not cited else chosen
+
+
+def library_miss(answer: str) -> str:
+    """Use the model's refusal when it already admits the gap."""
+    cleaned = strip_citations(answer)
+    if cleaned and _REFUSAL.search(answer or ""):
+        return cleaned
+    return "The library does not cover that."
 
 
 def strip_citations(text: str) -> str:

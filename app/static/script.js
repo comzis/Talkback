@@ -66,11 +66,7 @@ const elements = {
     etaDisplay: document.getElementById('etaDisplay'),
     cpuUsage: document.getElementById('cpuUsage'),
     memoryUsage: document.getElementById('memoryUsage'),
-    monitoringStatus: document.getElementById('monitoringStatus'),
-    monitoringLight: document.getElementById('monitoringLight'),
-    langsmithApiKey: document.getElementById('langsmithApiKey'),
-    langsmithProject: document.getElementById('langsmithProject'),
-    enableMonitoringBtn: document.getElementById('enableMonitoringBtn'),
+    modelAdd: document.getElementById('modelAdd'),
     chatStatus: document.getElementById('chatStatus'),
     // File type stats
     docFiles: document.getElementById('docFiles'),
@@ -109,10 +105,7 @@ function initializeEventListeners() {
     elements.changeModelBtn.addEventListener('click', () => elements.modelModal.style.display = 'flex');
     elements.closeModal.addEventListener('click', () => elements.modelModal.style.display = 'none');
     elements.addModelBtn.addEventListener('click', addModel);
-    
-    // Monitoring
-    elements.enableMonitoringBtn.addEventListener('click', enableMonitoring);
-    
+
     // Chat
     elements.sendBtn.addEventListener('click', sendMessage);
     elements.chatInput.addEventListener('keydown', (e) => {
@@ -511,15 +504,17 @@ function addMessage(text, role, isLoading = false, sources = []) {
             item.className = 'source-item';
             const number = document.createElement('div');
             number.className = 'source-number';
-            number.textContent = String(index + 1);
+            number.textContent = String(source.number || index + 1);
             const sourceText = document.createElement('div');
             sourceText.className = 'source-text';
             const name = document.createElement('strong');
-            name.textContent = source.source || 'Unknown';
+            const label = source.source || 'Unknown';
+            name.textContent = source.page ? `${label} · p. ${source.page}` : label;
             sourceText.appendChild(name);
             if (source.text) {
                 const excerpt = document.createElement('span');
-                excerpt.textContent = ` ${source.text.substring(0, 150)}...`;
+                const snippet = source.text.length > 180 ? `${source.text.slice(0, 180)}…` : source.text;
+                excerpt.textContent = ` ${snippet}`;
                 sourceText.appendChild(excerpt);
             }
             item.append(number, sourceText);
@@ -620,55 +615,6 @@ async function addModel() {
     }
 }
 
-// Monitoring
-async function enableMonitoring() {
-    const apiKey = elements.langsmithApiKey.value.trim();
-    const project = elements.langsmithProject.value.trim() || 'Talkback';
-    
-    if (!apiKey && elements.monitoringStatus.textContent === 'Disabled') {
-        showToast('Please enter your LangSmith API key', 'error');
-        return;
-    }
-    
-    try {
-        elements.enableMonitoringBtn.disabled = true;
-        elements.enableMonitoringBtn.textContent = 'Configuring...';
-        
-        const response = await fetch('/monitoring/configure', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                api_key: apiKey,
-                project: project,
-                enabled: elements.monitoringStatus.textContent === 'Disabled'
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            if (data.enabled) {
-                showToast('Monitoring enabled', 'success');
-                elements.monitoringStatus.textContent = 'Enabled';
-                setTrafficLight(elements.monitoringLight, 'green');
-                elements.enableMonitoringBtn.textContent = 'Disable Monitoring';
-            } else {
-                showToast('Monitoring disabled', 'success');
-                elements.monitoringStatus.textContent = 'Disabled';
-                setTrafficLight(elements.monitoringLight, 'red');
-                elements.enableMonitoringBtn.textContent = 'Enable Monitoring';
-            }
-        } else {
-            showToast(data.detail || data.error || 'Failed to configure monitoring', 'error');
-        }
-    } catch (error) {
-        showToast('Error configuring monitoring', 'error');
-        console.error('Monitoring error:', error);
-    } finally {
-        elements.enableMonitoringBtn.disabled = false;
-    }
-}
-
 // System Status
 async function checkSystemStatus() {
     try {
@@ -707,16 +653,8 @@ async function checkSystemStatus() {
             setTrafficLight(elements.llmLight, 'red');
         }
         
-        // Monitoring Status
-        if (data.monitoring?.enabled) {
-            elements.monitoringStatus.textContent = 'Enabled';
-            setTrafficLight(elements.monitoringLight, 'green');
-            elements.langsmithProject.value = data.monitoring.project || 'Talkback';
-            elements.enableMonitoringBtn.textContent = 'Disable Monitoring';
-        } else {
-            elements.monitoringStatus.textContent = 'Disabled';
-            setTrafficLight(elements.monitoringLight, 'red');
-            elements.enableMonitoringBtn.textContent = 'Enable Monitoring';
+        if (elements.modelAdd) {
+            elements.modelAdd.hidden = data.offline_mode !== false;
         }
     } catch (error) {
         console.error('Error checking system status:', error);
