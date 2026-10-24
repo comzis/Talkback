@@ -190,6 +190,53 @@ class LibraryPlanTests(unittest.TestCase):
         self.assertEqual(embed, ["b/notes.pdf"])
         self.assertEqual(drop, ["notes.pdf"])
 
+    def test_partial_file_is_indexed_again(self):
+        signature = (10, "2026-10-24", 100)
+        done = {
+            "relative_path": "done.pdf",
+            "file_size": 10,
+            "last_modified_date": "2026-10-24",
+            "source_mtime": 100,
+            "index_complete": True,
+        }
+        partial = {
+            "relative_path": "partial.pdf",
+            "file_size": 10,
+            "last_modified_date": "2026-10-24",
+            "source_mtime": 100,
+        }
+        mixed_done = {
+            "relative_path": "mixed.pdf",
+            "file_size": 8,
+            "last_modified_date": "2026-10-24",
+            "source_mtime": 50,
+            "index_complete": True,
+        }
+        mixed_open = {
+            "relative_path": "mixed.pdf",
+            "file_size": 8,
+            "last_modified_date": "2026-10-24",
+            "source_mtime": 50,
+        }
+        indexed, legacy, incomplete = library.classify_stored_chunks(
+            [done, partial, mixed_done, mixed_open]
+        )
+        self.assertEqual(set(indexed), {"done.pdf"})
+        self.assertEqual(legacy, set())
+        self.assertEqual(incomplete, {"partial.pdf", "mixed.pdf"})
+        embed, drop = library.index_plan(
+            {
+                "done.pdf": signature,
+                "partial.pdf": signature,
+                "mixed.pdf": (8, "2026-10-24", 50),
+            },
+            indexed,
+            legacy,
+            incomplete,
+        )
+        self.assertEqual(set(embed), {"partial.pdf", "mixed.pdf"})
+        self.assertEqual(set(drop), {"partial.pdf", "mixed.pdf"})
+
     def test_legacy_root_file_is_rewritten_once(self):
         signature = (10, "2026-10-24", 100)
         embed, drop = library.index_plan(

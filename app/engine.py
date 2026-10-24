@@ -24,11 +24,9 @@ from files import visible_files
 from library import (
     balance_matches,
     chunk_belongs_to,
-    chunk_is_legacy,
-    chunk_key,
+    classify_stored_chunks,
     disk_signature,
     index_plan,
-    indexed_signature,
     library_key,
     read_only_requested,
     reindex_minutes,
@@ -81,15 +79,15 @@ def start_reindex_schedule() -> None:
 
 
 def start_initial_index() -> None:
-    """Index files already on disk when the vector collection is empty."""
+    """Index files on disk that are missing or were only partly stored."""
     def run() -> None:
         try:
             wait_for_models()
-            if reindex_required() or not files_waiting():
+            if reindex_required():
                 return
             if not begin_ingestion():
                 return
-            logger.info("Indexing files already in the library folder.")
+            logger.info("Checking the library for files that are not fully indexed.")
             process_ingestion()
         except Exception:
             logger.exception("Initial index failed")
@@ -353,22 +351,12 @@ class BalancedRetriever(BaseRetriever):
         )
 
 
-def indexed_documents() -> tuple[dict[str, tuple], set[str]]:
-    """Return relative path to signature, and paths still stored without relative_path."""
+def indexed_documents() -> tuple[dict[str, tuple], set[str], set[str]]:
+    """Return complete signatures, legacy paths, and files still missing a finished marker."""
     if chroma_collection is None or collection_count() == 0:
-        return {}, set()
+        return {}, set(), set()
     stored = chroma_collection.get(include=["metadatas"])
-    found: dict[str, tuple] = {}
-    legacy: set[str] = set()
-    for metadata in stored.get("metadatas") or []:
-        key = chunk_key(metadata)
-        if not key:
-            continue
-        if key not in found:
-            found[key] = indexed_signature(metadata)
-        if chunk_is_legacy(metadata):
-            legacy.add(key)
-    return found, legacy
+    return classify_stored_chunks(stored.get("metadatas") or [])
 
 
 def delete_chunks_for_file(relative_path: str) -> int:
@@ -463,8 +451,8 @@ def _ingest_once() -> None:
         file_list = visible_files(UPLOAD_DIR)
         by_key = {library_key(path, UPLOAD_DIR): path for path in file_list}
         on_disk = {key: disk_signature(path) for key, path in by_key.items()}
-        indexed, legacy_keys = indexed_documents()
-        embed_names, drop_names = index_plan(on_disk, indexed, legacy_keys)
+        indexed, legacy_keys, incomplete_keys = indexed_documents()
+        embed_names, drop_names = index_plan(on_disk, indexed, legacy_keys, incomplete_keys)
         ingestion_status["total_files"] = len(embed_names)
         ingestion_status["processed_files"] = 0
         logger.info(
@@ -520,25 +508,30 @@ def _ingest_once() -> None:
 
         index = VectorStoreIndex.from_vector_store(vector_store, storage_context=storage_context)
         chunk_started = time.time()
-        completed_files = 0
-        active_file = None
         batch_size = config.embed_batch()
-        for offset in range(0, total, batch_size):
-            batch = nodes[offset:offset + batch_size]
-            index.insert_nodes(batch)
-            done = min(offset + len(batch), total)
-            ingestion_status.update(ingest_metrics(done, total, time.time() - chunk_started))
-            ingestion_status["status"] = "processing"
-            current_name = batch[-1].metadata.get("relative_path") or batch[-1].metadata.get("file_name")
-            if active_file is None:
-                active_file = current_name
-            elif current_name != active_file:
-                completed_files += 1
-                active_file = current_name
-            ingestion_status["current_file"] = current_name
+        nodes_by_file: dict[str, list] = {}
+        for node in nodes:
+            key = (node.metadata or {}).get("relative_path") or (node.metadata or {}).get("file_name")
+            nodes_by_file.setdefault(key, []).append(node)
+        done = 0
+        completed_files = 0
+        for name in embed_names:
+            file_nodes = nodes_by_file.get(name, [])
+            if not file_nodes:
+                continue
+            ingestion_status["current_file"] = name
+            for offset in range(0, len(file_nodes), batch_size):
+                batch = file_nodes[offset:offset + batch_size]
+                index.insert_nodes(batch)
+                done += len(batch)
+                ingestion_status.update(ingest_metrics(done, total, time.time() - chunk_started))
+                ingestion_status["status"] = "processing"
+                ingestion_status["processed_files"] = completed_files
+                ingestion_status["message"] = f"Embedded {done} of {total} new chunks"
+                _touch_resources()
+            _mark_file_complete(name)
+            completed_files += 1
             ingestion_status["processed_files"] = completed_files
-            ingestion_status["message"] = f"Embedded {done} of {total} new chunks"
-            _touch_resources()
 
         elapsed = time.time() - chunk_started
         speed = total / elapsed if elapsed > 0 else 0
@@ -571,6 +564,24 @@ def _ingest_once() -> None:
         ingestion_status["progress"] = 0
         ingestion_status["current_file"] = None
         logger.error("Ingestion failed: %s", exc)
+
+
+def _mark_file_complete(relative_path: str) -> None:
+    """Stamp every stored chunk only after that file's batches have all been inserted."""
+    if chroma_collection is None:
+        raise RuntimeError("Chroma is not connected")
+    stored = chroma_collection.get(where={"relative_path": relative_path}, include=["metadatas"])
+    ids = list(stored.get("ids") or [])
+    metas = [dict(meta or {}) for meta in (stored.get("metadatas") or [])]
+    if not ids or len(ids) != len(metas):
+        raise RuntimeError(f"Could not mark {relative_path} complete")
+    for meta in metas:
+        meta["index_complete"] = True
+    for offset in range(0, len(ids), 100):
+        chroma_collection.update(
+            ids=ids[offset:offset + 100],
+            metadatas=metas[offset:offset + 100],
+        )
 
 
 def _complete(prompt: str, temperature: float | None = None) -> str:
@@ -703,7 +714,7 @@ def iter_answer(query: str):
             yield from _stream_prompt(assistant_prompt(query), None, None)
             return
         index = get_or_create_cached_index()
-        indexed, _legacy = indexed_documents()
+        indexed, _legacy, _incomplete = indexed_documents()
         library_files = sorted(indexed)
         nodes, named_file = _retrieve_nodes(index, query, library_files)
         if not named_file and not _library_matches(nodes):

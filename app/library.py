@@ -67,6 +67,39 @@ def chunk_is_legacy(metadata: dict | None) -> bool:
     return not str((metadata or {}).get("relative_path") or "").strip()
 
 
+def chunk_is_complete(metadata: dict | None) -> bool:
+    """True when this chunk was stored after the whole file had been embedded."""
+    value = (metadata or {}).get("index_complete")
+    if value is True:
+        return True
+    return str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def classify_stored_chunks(metadatas: list[dict | None]) -> tuple[dict[str, tuple], set[str], set[str]]:
+    """Split stored chunks into complete signatures, legacy keys, and unfinished files.
+
+    A file counts as indexed only when every one of its chunks has index_complete.
+    Chunks written before that marker, including a crash mid-file, are unfinished.
+    """
+    complete: dict[str, tuple] = {}
+    legacy: set[str] = set()
+    all_complete: dict[str, bool] = {}
+    for metadata in metadatas:
+        key = chunk_key(metadata)
+        if not key:
+            continue
+        if chunk_is_legacy(metadata):
+            legacy.add(key)
+        finished = chunk_is_complete(metadata)
+        all_complete[key] = finished if key not in all_complete else all_complete[key] and finished
+        if finished and key not in complete:
+            complete[key] = indexed_signature(metadata)
+    incomplete = {key for key, finished in all_complete.items() if not finished}
+    for key in incomplete:
+        complete.pop(key, None)
+    return complete, legacy, incomplete
+
+
 def chunk_belongs_to(metadata: dict | None, relative_path: str) -> bool:
     """True when a chunk came from this library path and no other file of the same name."""
     metadata = metadata or {}
@@ -82,18 +115,21 @@ def index_plan(
     on_disk: dict[str, tuple],
     indexed: dict[str, tuple],
     legacy_keys: set[str] | None = None,
+    incomplete_keys: set[str] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Plan embeds and drops, and rewrite legacy chunks that lack a relative path.
+    """Plan embeds and drops, and rewrite legacy or unfinished files.
 
     Existing indexes stored only file_name. Those chunks are removed and embedded
     again once, so the new metadata carries relative_path. A file that moved to a
     new relative path is a drop of the old key plus an embed of the new one.
+    A file with any chunk missing index_complete is removed and embedded again.
     """
     embed, drop = plan_updates(on_disk, indexed)
-    for key in legacy_keys or set():
+    rewrite = set(legacy_keys or ()) | set(incomplete_keys or ())
+    for key in sorted(rewrite):
         if key in on_disk and key not in embed:
             embed.append(key)
-        if key in indexed and key not in drop:
+        if key not in drop:
             drop.append(key)
     return embed, drop
 
