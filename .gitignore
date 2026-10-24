@@ -41,6 +41,7 @@ env/
 
 # Data and Persistent Storage (Keep these local)
 chroma_data/
+hf_cache/
 data/*
 !data/.gitkeep
 

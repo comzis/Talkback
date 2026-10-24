@@ -1,23 +1,22 @@
-# app/requirements.txt
-fastapi
-uvicorn
-python-dotenv
-python-multipart
-llama-index
-llama-index-llms-ollama
-llama-index-embeddings-huggingface
-llama-index-vector-stores-chroma
-llama-index-readers-file  # For PDF, DOCX, etc.
-
-# Dependencies for document parsing
-pypdf
-python-docx
-python-pptx  # For PowerPoint files
-openpyxl  # For Excel files
-striprtf  # For RTF files (already installed via llama-index-readers-file)
-ebooklib  # For EPUB files
-beautifulsoup4  # For HTML parsing (already installed via llama-index-readers-file)
-lxml  # For XML parsing (already installed via llama-index-readers-file)
-httpx  # For async HTTP requests (LLM status check)
-langsmith>=0.1.28  # LangChain / LangSmith monitoring client
-psutil>=5.9.0  # For real-time CPU and memory monitoring
+# Direct dependencies. torch is installed from the CPU index in the Dockerfile
+# so the image does not pull NVIDIA CUDA wheels.
+fastapi==0.162.0
+uvicorn==0.54.0
+python-dotenv==1.2.4
+python-multipart==0.0.32
+llama-index==0.14.25
+llama-index-llms-ollama==0.11.0
+llama-index-embeddings-huggingface==0.8.0
+llama-index-vector-stores-chroma==0.6.0
+llama-index-readers-file==0.7.0
+pypdf==6.21.2
+python-docx==1.2.0
+python-pptx==1.0.2
+openpyxl==3.1.5
+striprtf==0.0.26
+ebooklib==0.20
+beautifulsoup4==4.15.0
+lxml==6.1.3
+httpx==0.28.1
+langsmith==0.14.12
+psutil==7.2.2

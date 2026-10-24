@@ -4,100 +4,32 @@ import logging
 import shutil
 from pathlib import Path
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List
 import asyncio
-import mimetypes
 
-from llama_index.core import (
-    VectorStoreIndex,
-    SimpleDirectoryReader,
-    StorageContext,
-    Settings,
-)
-from llama_index.core.prompts import PromptTemplate
-from llama_index.core.query_engine import CitationQueryEngine
-from llama_index.vector_stores.chroma import ChromaVectorStore
+import engine
+from files import InvalidFilename, get_file_type, stored_filename, visible_files
+from llama_index.core import Settings
 from llama_index.llms.ollama import Ollama
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-import chromadb
-
 from monitoring import LangChainMonitor
 
-# --- Setup ---
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-
-# Validate required environment variables
-required_env_vars = {
-    "OLLAMA_MODEL": "LLM model name for Ollama",
-    "CHROMA_HOST": "ChromaDB host address",
-    "CHROMA_PORT": "ChromaDB port number"
-}
-
-missing_vars = []
-for var, description in required_env_vars.items():
-    if not os.getenv(var):
-        missing_vars.append(f"{var} ({description})")
-
-if missing_vars:
-    error_msg = f"Missing required environment variables:\n" + "\n".join(f"  - {var}" for var in missing_vars)
-    logger.error(error_msg)
-    raise ValueError(error_msg)
-
-# --- Global Settings (LlamaIndex) ---
-# Use local models for 100% data privacy
-# 1. Local LLM (Default: gemma2:2b - fast, efficient, privacy-focused)
-# Using host Ollama for better performance
-Settings.llm = Ollama(
-    model=os.getenv("OLLAMA_MODEL", "gemma2:2b"),
-    base_url=os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),  # Connect to host Ollama
-    request_timeout=300.0  # Increased to 5 minutes to handle concurrent embedding load
-)
-# 2. Local Embedding Model
-Settings.embed_model = HuggingFaceEmbedding(
-    model_name="BAAI/bge-small-en-v1.5"
-)
-
 # --- FastAPI App ---
 app = FastAPI(title="Secure Local RAG API")
-monitor = LangChainMonitor()
 
-# Create uploads directory if it doesn't exist
-UPLOAD_DIR = Path("/app/data")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# Serve static files (HTML, CSS, JS)
-app.mount("/static", StaticFiles(directory="/app/static"), name="static")
-
-# Global state for ingestion progress and cached index
-ingestion_status: Dict = {
-    "status": "idle",  # idle, processing, completed, error
-    "progress": 0,      # 0-100
-    "current": 0,       # current chunk being processed
-    "total": 0,         # total chunks to process
-    "message": "",      # status message
-    "error": None,      # error message if any
-    "current_file": None,        # current file being processed
-    "total_files": 0,            # total files to process
-    "processed_files": 0,        # files completed
-    "start_time": None,          # processing start timestamp
-    "chunks_per_second": 0.0,    # processing speed
-    "cpu_percent": 0.0,          # real CPU usage
-    "memory_percent": 0.0,       # real memory usage
-    "estimated_time_remaining": 0  # ETA in seconds
-}
-
-# Cached index built from the persistent Chroma vector store.
-# This avoids recreating the index on every query and is refreshed after ingestion.
-cached_index: VectorStoreIndex | None = None
+engine.init()
 
 class QueryRequest(BaseModel):
     query: str
@@ -117,171 +49,6 @@ class MonitoringConfigRequest(BaseModel):
     project: str = "Secure RAG Monitoring"
     enabled: bool = True
 
-# --- ChromaDB Connection ---
-try:
-    # Connect to ChromaDB container
-    db = chromadb.HttpClient(
-        host=os.getenv("CHROMA_HOST"), 
-        port=os.getenv("CHROMA_PORT")
-    )
-    # Get or create the collection (like a table)
-    chroma_collection = db.get_or_create_collection("rag_collection")
-    
-    # Create the LlamaIndex vector store
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    
-    # Create the LlamaIndex storage context
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
-    
-    logger.info("Successfully connected to ChromaDB")
-    
-except Exception as e:
-    logger.error(f"Error connecting to ChromaDB: {e}")
-    raise RuntimeError(
-        f"Failed to connect to ChromaDB at {os.getenv('CHROMA_HOST')}:{os.getenv('CHROMA_PORT')}. "
-        f"Ensure ChromaDB service is running. Error: {e}"
-    )
-    
-# --- Helper functions ---
-
-def get_or_create_cached_index() -> VectorStoreIndex:
-    """
-    Return the cached VectorStoreIndex if available, otherwise create it from the
-    existing vector store and storage context, cache it, and return it.
-    """
-    global cached_index
-
-    if cached_index is not None:
-        return cached_index
-
-    logger.info("Creating VectorStoreIndex from existing vector store for query")
-    cached_index = VectorStoreIndex.from_vector_store(
-        vector_store,
-        storage_context=storage_context,
-    )
-    return cached_index
-    
-# --- API Endpoints ---
-def process_ingestion():
-    """
-    Background task to process document ingestion with enhanced progress tracking.
-    """
-    global ingestion_status, cached_index
-    import time
-    import psutil
-    from pathlib import Path
-
-    ingest_run_id = monitor.start_run(
-        name="document_ingestion",
-        run_type="chain",
-        inputs={"data_path": str(UPLOAD_DIR)},
-        tags=["ingestion"],
-    )
-    
-    try:
-        # Initialize start time
-        start_time = time.time()
-        ingestion_status["start_time"] = start_time
-        ingestion_status["status"] = "processing"
-        ingestion_status["message"] = "Reading documents..."
-        ingestion_status["progress"] = 10
-        
-        # Get list of files for tracking
-        all_files = list(UPLOAD_DIR.rglob("*"))
-        file_list = [f for f in all_files if f.is_file()]
-        ingestion_status["total_files"] = len(file_list)
-        ingestion_status["processed_files"] = 0
-        
-        reader = SimpleDirectoryReader(input_dir="/app/data", recursive=True)
-        documents = reader.load_data()
-        
-        doc_count = len(documents)
-        if not documents:
-            logger.warning("No documents found in /app/data. Skipping ingestion.")
-            ingestion_status["status"] = "completed"
-            ingestion_status["message"] = "No documents found to ingest."
-            ingestion_status["progress"] = 100
-            ingestion_status["current_file"] = None
-            monitor.end_run(
-                ingest_run_id,
-                outputs={
-                    "status": "no_documents",
-                    "documents": 0,
-                },
-            )
-            return
-        
-        ingestion_status["total"] = doc_count
-        ingestion_status["message"] = f"Processing {doc_count} chunks from {len(file_list)} files..."
-        ingestion_status["progress"] = 20
-        logger.info(f"Ingesting {doc_count} chunks from {len(file_list)} files...")
-        
-        # Track current file being processed
-        if documents:
-            first_file = documents[0].metadata.get('file_name', 'Unknown')
-            ingestion_status["current_file"] = first_file
-        
-        # Process documents with progress updates
-        ingestion_status["message"] = "Generating embeddings..."
-        ingestion_status["progress"] = 40
-        
-        # Track embedding progress
-        chunk_start_time = time.time()
-        
-        # This creates the index and stores embeddings in ChromaDB
-        new_index = VectorStoreIndex.from_documents(
-            documents,
-            storage_context=storage_context,
-            show_progress=True
-        )
-
-        # Calculate final metrics
-        elapsed_time = time.time() - chunk_start_time
-        chunks_per_second = doc_count / elapsed_time if elapsed_time > 0 else 0
-        
-        # Get real system metrics
-        cpu_percent = psutil.cpu_percent(interval=0.1)
-        memory_percent = psutil.virtual_memory().percent
-        
-        # Update status with metrics
-        ingestion_status["chunks_per_second"] = round(chunks_per_second, 2)
-        ingestion_status["cpu_percent"] = round(cpu_percent, 1)
-        ingestion_status["memory_percent"] = round(memory_percent, 1)
-        ingestion_status["processed_files"] = len(file_list)
-
-        # Update cached index so subsequent queries can reuse it efficiently
-        cached_index = new_index
-        
-        # Update to completed
-        ingestion_status["status"] = "completed"
-        ingestion_status["message"] = f"Successfully ingested {doc_count} chunks."
-        ingestion_status["progress"] = 100
-        ingestion_status["current"] = doc_count
-        ingestion_status["current_file"] = None
-        ingestion_status["estimated_time_remaining"] = 0
-        logger.info("Ingestion complete.")
-        monitor.end_run(
-            ingest_run_id,
-            outputs={
-                "status": "completed",
-                "documents": doc_count,
-                "files": len(file_list),
-                "speed": chunks_per_second,
-            },
-        )
-        
-    except Exception as e:
-        logger.error(f"Error during ingestion: {e}")
-        ingestion_status["status"] = "error"
-        ingestion_status["message"] = "Ingestion failed"
-        ingestion_status["error"] = str(e)
-        ingestion_status["progress"] = 0
-        ingestion_status["current_file"] = None
-        monitor.end_run(
-            ingest_run_id,
-            error=str(e),
-        )
-
 @app.post("/ingest")
 async def ingest_documents(background_tasks: BackgroundTasks):
     """
@@ -289,38 +56,16 @@ async def ingest_documents(background_tasks: BackgroundTasks):
     This directory is mapped from './data' on your host.
     Runs in background and updates progress status.
     """
-    global ingestion_status
-    
-    # Check if already processing
-    if ingestion_status["status"] == "processing":
+    if not engine.begin_ingestion():
         return {
             "message": "Ingestion already in progress",
-            "status": ingestion_status["status"]
+            "status": "processing"
         }
-    
-    # Reset status with all fields
-    ingestion_status = {
-        "status": "processing",
-        "progress": 0,
-        "current": 0,
-        "total": 0,
-        "message": "Starting ingestion...",
-        "error": None,
-        "current_file": None,
-        "total_files": 0,
-        "processed_files": 0,
-        "start_time": None,
-        "chunks_per_second": 0.0,
-        "cpu_percent": 0.0,
-        "memory_percent": 0.0,
-        "estimated_time_remaining": 0
-    }
-    
-    # Start background task
-    background_tasks.add_task(process_ingestion)
+
+    background_tasks.add_task(engine.process_ingestion)
     
     return {
-        "message": "Ingestion started",
+        "message": "Adding new documents. Files already indexed are kept.",
         "status": "processing"
     }
 
@@ -329,7 +74,7 @@ async def get_ingestion_status():
     """
     Get the current status of document ingestion.
     """
-    return ingestion_status
+    return engine.ingestion_status
 
 @app.get("/system/resources")
 async def get_system_resources():
@@ -354,95 +99,10 @@ async def query_index(request: QueryRequest):
     if not request.query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    query_run_id = monitor.start_run(
-        name="rag_query",
-        run_type="chain",
-        inputs={"query": request.query},
-        tags=["query", "rag"],
-    )
-    
     try:
-        # Check if we have any documents indexed
-        collection_count = chroma_collection.count()
-        if collection_count == 0:
-            monitor.end_run(
-                query_run_id,
-                outputs={
-                    "status": "no_documents",
-                },
-            )
-            return {
-                "response": "I don't have any documents indexed yet. Please upload files and click 'Process Documents' first.",
-                "sources": []
-            }
-        
-        # 1. Load or create the index from the persistent ChromaDB store,
-        # using the in-memory cache for performance.
-        index = get_or_create_cached_index()
-        
-        # 2. Fulfill "Citing sources" requirement
-        # We will use a CitationQueryEngine
-        
-        # Custom prompt template to force the LLM to use citations
-        qa_template = PromptTemplate(
-            "You are Sentinel Spark ⚡, a friendly AI superhero guardian! You're helpful, entertaining, and love making references to superheroes and tech.\n\n"
-            "Your personality:\n"
-            "- Enthusiastic and encouraging (use phrases like 'Great question!', 'Awesome!', 'Let's dive in!')\n"
-            "- Make occasional superhero references (Spider-Man, Iron Man, Avengers, etc.)\n"
-            "- Add a touch of humor when appropriate\n"
-            "- Be warm and supportive\n\n"
-            "Answer the user's question based on the provided context.\n"
-            "IMPORTANT: When you use information, you MUST cite the source using [source_number].\n"
-            "Example: The sky is blue [1]. Python is awesome [2].\n\n"
-            "If the context doesn't have the answer, be honest but stay in character!\n"
-            "---------------------\n"
-            "Context: {context_str}\n"
-            "---------------------\n"
-            "Question: {query_str}\n"
-            "Answer (as Sentinel Spark): "
-        )
-
-        query_engine = CitationQueryEngine.from_args(
-            index,
-            similarity_top_k=3,
-            # Fulfill RAG Logic: Retrieval -> Augmentation -> Generation
-            citation_qa_template=qa_template,
-        )
-
-        # 3. Generate the response
-        response = query_engine.query(request.query)
-        
-        # 4. Process sources for a clean API response
-        sources = []
-        for node in response.source_nodes:
-            # Get the file name (e.g., 'Python Basics.pdf')
-            file_name = node.metadata.get('file_name', 'Unknown Source')
-            # Get the specific text chunk
-            text_chunk = node.get_text()
-            # Clean up the filename for better display
-            display_name = file_name if file_name != 'Unknown Source' else 'Document'
-            sources.append({
-                "source": display_name,  # Changed from "file" to "source" for frontend consistency
-                "text": text_chunk[:500]  # Limit text to 500 chars for cleaner display
-            })
-
-        monitor.end_run(
-            query_run_id,
-            outputs={
-                "status": "completed",
-                "sources": [src["source"] for src in sources],
-            },
-        )
-
-        return {
-            "response": str(response),
-            "sources": sources
-        }
-        
-    except Exception as e:
-        logger.error(f"Error during query: {e}")
-        monitor.end_run(query_run_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        return await asyncio.to_thread(engine.answer_query, request.query)
+    except Exception:
+        raise HTTPException(status_code=500, detail="The query could not be completed.")
 
 @app.get("/health")
 def health_check():
@@ -491,41 +151,43 @@ async def get_system_status():
             })
     except Exception as e:
         status["llm"]["status"] = "error"
-        status["llm"]["error"] = str(e)
+        logger.exception("Failed to check LLM status")
+        status["llm"]["error"] = "The language model could not be reached."
         status["alarms"].append({
             "type": "error",
             "component": "llm",
-            "message": f"Failed to check LLM status: {str(e)}"
+            "message": "The language model could not be reached."
         })
     
     # Check Database status
     try:
-        collection_count = chroma_collection.count()
+        collection_count = engine.collection_count()
         status["database"]["status"] = "online"
         status["database"]["connected"] = True
         status["database"]["collection_count"] = collection_count
     except Exception as e:
         status["database"]["status"] = "offline"
         status["database"]["connected"] = False
-        status["database"]["error"] = str(e)
+        logger.exception("Database connection error")
+        status["database"]["error"] = "Database connection error"
         status["alarms"].append({
             "type": "error",
             "component": "database",
-            "message": f"Database connection error: {str(e)}"
+            "message": "Database connection error"
         })
     
     # Check ingestion status for warnings
-    if ingestion_status.get("status") == "error":
+    if engine.ingestion_status.get("status") == "error":
         status["alarms"].append({
             "type": "warning",
             "component": "ingestion",
-            "message": f"Ingestion error: {ingestion_status.get('error', 'Unknown error')}"
+            "message": "Ingestion failed"
         })
     
     # Add monitoring status
     status["monitoring"] = {
-        "enabled": monitor.enabled,
-        "project": monitor.project_name if monitor.enabled else None,
+        "enabled": engine.monitor.enabled,
+        "project": engine.monitor.project_name if engine.monitor.enabled else None,
         "docs_url": "https://docs.smith.langchain.com/overview",
         "dashboard_url": "https://smith.langchain.com/"
     }
@@ -538,8 +200,6 @@ async def configure_monitoring(request: MonitoringConfigRequest):
     Enable or disable LangChain monitoring with API key configuration.
     """
     try:
-        global monitor
-        
         if request.enabled:
             # Enable monitoring
             if not request.api_key:
@@ -552,9 +212,9 @@ async def configure_monitoring(request: MonitoringConfigRequest):
             os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
             
             # Reinitialize monitor
-            monitor = LangChainMonitor()
+            engine.monitor = LangChainMonitor()
             
-            if not monitor.enabled:
+            if not engine.monitor.enabled:
                 raise HTTPException(status_code=500, detail="Failed to initialize monitoring. Check your API key.")
             
             logger.info(f"LangChain monitoring enabled for project: {request.project}")
@@ -567,7 +227,7 @@ async def configure_monitoring(request: MonitoringConfigRequest):
         else:
             # Disable monitoring
             os.environ["LANGCHAIN_MONITORING"] = "false"
-            monitor = LangChainMonitor()
+            engine.monitor = LangChainMonitor()
             
             logger.info("LangChain monitoring disabled")
             
@@ -579,7 +239,7 @@ async def configure_monitoring(request: MonitoringConfigRequest):
         raise
     except Exception as e:
         logger.error(f"Error configuring monitoring: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
 @app.get("/files/types")
 async def get_file_types():
@@ -617,13 +277,13 @@ async def get_file_types():
         }
     except Exception as e:
         logger.error(f"Error getting file types: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve the chatbot interface."""
     try:
-        with open("/app/static/index.html", "r") as f:
+        with open(STATIC_DIR / "index.html", "r") as f:
             return f.read()
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Chatbot interface not found</h1>", status_code=404)
@@ -637,76 +297,70 @@ async def upload_files(files: List[UploadFile] = File(...)):
         uploaded_files = []
         
         for file in files:
-            # Save file to the data directory
-            file_path = UPLOAD_DIR / file.filename
+            try:
+                safe_name = stored_filename(file.filename)
+            except InvalidFilename:
+                raise HTTPException(status_code=400, detail="Invalid filename")
+            file_path = engine.UPLOAD_DIR / safe_name
             
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             
-            uploaded_files.append(file.filename)
-            logger.info(f"Uploaded file: {file.filename}")
+            uploaded_files.append(safe_name)
+            logger.info(f"Uploaded file: {safe_name}")
         
         return {
             "message": f"Successfully uploaded {len(uploaded_files)} file(s).",
-            "files": uploaded_files
+            "files": uploaded_files,
+            "uploaded_count": len(uploaded_files),
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error during file upload: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
-def get_file_type(filename: str) -> str:
-    """
-    Determine file type category from extension.
-    Returns: 'document', 'code', 'data', 'image', 'other'
-    """
-    ext = Path(filename).suffix.lower()
-    
-    # Documents
-    doc_exts = {'.pdf', '.doc', '.docx', '.odt', '.txt', '.md', '.rst', '.rtf', '.epub'}
-    # Code files
-    code_exts = {'.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.cpp', '.c', '.h', '.go', '.rs', '.php', '.rb', '.swift', '.kt', '.sh', '.bash', '.zsh', '.yaml', '.yml', '.json', '.xml', '.html', '.css', '.scss', '.less'}
-    # Data/Spreadsheet
-    data_exts = {'.xlsx', '.xls', '.csv', '.json', '.xml'}
-    # Images
-    image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp'}
-    # Presentations
-    pres_exts = {'.pptx', '.ppt', '.odp'}
-    
-    if ext in doc_exts or ext in pres_exts:
-        return 'document'
-    elif ext in code_exts:
-        return 'code'
-    elif ext in data_exts:
-        return 'data'
-    elif ext in image_exts:
-        return 'image'
-    else:
-        return 'other'
+@app.delete("/files/{filename}")
+async def delete_uploaded_file(filename: str):
+    """Delete one library file and only the chunks that came from it."""
+    try:
+        safe_name = stored_filename(filename)
+    except InvalidFilename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    file_path = engine.UPLOAD_DIR / safe_name
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        file_path.unlink()
+        removed = engine.delete_chunks_for_file(safe_name)
+    except Exception:
+        logger.exception("Failed to delete %s", safe_name)
+        raise HTTPException(status_code=500, detail="The file could not be deleted.")
+
+    return {"deleted": safe_name, "chunks_removed": removed}
 
 @app.get("/files")
 async def list_uploaded_files():
     """
-    List all files currently in the data directory, sorted by file type.
+    List visible files currently in the data directory, sorted by file type.
     """
     try:
         files = []
-        if UPLOAD_DIR.exists():
-            for file_path in UPLOAD_DIR.rglob("*"):
-                if file_path.is_file():
-                    # Get relative path from UPLOAD_DIR for cleaner display
-                    rel_path = file_path.relative_to(UPLOAD_DIR)
-                    filename = rel_path.name
-                    file_type = get_file_type(filename)
-                    
-                    files.append({
-                        "name": str(rel_path),
-                        "filename": filename,
-                        "size": file_path.stat().st_size,
-                        "modified": file_path.stat().st_mtime,
-                        "type": file_type,
-                        "extension": Path(filename).suffix.lower()
-                    })
+        for file_path in visible_files(engine.UPLOAD_DIR):
+            rel_path = file_path.relative_to(engine.UPLOAD_DIR)
+            filename = rel_path.name
+            file_type = get_file_type(filename)
+            files.append({
+                "name": str(rel_path),
+                "filename": filename,
+                "size": file_path.stat().st_size,
+                "modified": file_path.stat().st_mtime,
+                "type": file_type,
+                "extension": Path(filename).suffix.lower(),
+            })
         
         # Sort by type first, then by name within each type
         type_order = {'document': 0, 'code': 1, 'data': 2, 'image': 3, 'other': 4}
@@ -722,7 +376,7 @@ async def list_uploaded_files():
         }
     except Exception as e:
         logger.error(f"Error listing files: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
 @app.get("/llm/models")
 async def list_llm_models():
@@ -758,7 +412,7 @@ async def list_llm_models():
                 raise HTTPException(status_code=response.status_code, detail="Failed to fetch models from Ollama")
     except Exception as e:
         logger.error(f"Error listing LLM models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
 @app.post("/llm/select")
 async def select_llm_model(request: LLMSelectRequest):
@@ -783,21 +437,14 @@ async def select_llm_model(request: LLMSelectRequest):
                 if not model_found:
                     raise HTTPException(status_code=404, detail=f"Model '{request.model}' not found. Available models: {model_names}")
                 
-                # Update the global LLM settings
-                global Settings
                 ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
                 Settings.llm = Ollama(
                     model=request.model,
                     base_url=ollama_base,
-                    request_timeout=300.0  # Increased to 5 minutes
+                    request_timeout=300.0,
                 )
-                
-                # Update environment variable (in-memory, won't persist to .env file)
                 os.environ["OLLAMA_MODEL"] = request.model
-                
-                # Clear cached index to force reload with new model
-                global cached_index
-                cached_index = None
+                engine.cached_index = None
                 
                 logger.info(f"Switched LLM model to: {request.model}")
                 
@@ -811,7 +458,7 @@ async def select_llm_model(request: LLMSelectRequest):
         raise
     except Exception as e:
         logger.error(f"Error selecting LLM model: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
 @app.post("/llm/pull")
 async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTasks):
@@ -847,7 +494,7 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
         }
     except Exception as e:
         logger.error(f"Error initiating model pull: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="The request could not be completed.")
 
 @app.get("/llm/status")
 async def get_llm_status():
@@ -887,10 +534,10 @@ async def get_llm_status():
                     "response_time_ms": round(response_time, 2)
                 }
     except Exception as e:
-        logger.error(f"Error checking LLM status: {e}")
+        logger.exception("Error checking LLM status")
         return {
             "status": "offline",
             "available": False,
-            "error": str(e),
+            "error": "Ollama is offline",
             "response_time_ms": None
         }

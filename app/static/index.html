@@ -3,21 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure RAG Studio</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.3">
+    <title>Talkback</title>
+    <link rel="stylesheet" href="/static/style.css?v=4.9">
 </head>
 <body>
     <div class="app-container">
-        <!-- Top Banner -->
-        <div class="top-banner">
-            <span class="banner-label">APPLE DESIGN TIPS · PRIVATE AI</span>
-        </div>
-
         <!-- Hero Section -->
         <header class="hero-section">
             <div class="hero-content">
-                <h1 class="hero-title">Secure RAG Studio</h1>
-                <p class="hero-description">A beautifully crafted, privacy-first research companion. Curate your library, ground responses, and chat freely—even before documents are uploaded.</p>
+                <h1 class="hero-title">Talkback</h1>
+                <p class="hero-description">Curate your library, ground responses, and chat freely—even before documents are uploaded.</p>
                 <div class="hero-badges">
                     <span class="badge">Library: <span id="docCount">0</span> docs</span>
                     <span class="badge" id="systemMode">Private Mode</span>
@@ -70,7 +65,7 @@
                         
                         <!-- Current file display -->
                         <div class="current-file-display" id="currentFileDisplay" style="display: none;">
-                            <span class="file-icon">📄</span>
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7.2L19 8.2V20.5H7z"/><path d="M14 3.5V8.5h5"/></svg>
                             <span class="file-name" id="currentFileName">--</span>
                         </div>
                         
@@ -80,11 +75,11 @@
                         </div>
                         
                         <div class="embedding-progress">
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="embeddingProgress" style="width: 0%">
-                                    <!-- Percentage inside bar -->
-                                    <span class="progress-percentage" id="progressPercentage">0%</span>
+                            <div class="progress-row">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="embeddingProgress" style="width: 0%"></div>
                                 </div>
+                                <span class="progress-percentage" id="progressPercentage">0%</span>
                             </div>
                             <div class="progress-text" id="embeddingProgressText">0 / 0 chunks</div>
                         </div>
@@ -92,26 +87,22 @@
                         <!-- Processing speed and ETA -->
                         <div class="processing-stats" id="processingStats" style="display: none;">
                             <div class="stat-item">
-                                <span class="stat-icon">⚡</span>
-                                <span class="stat-label">Speed:</span>
+                                <span class="stat-label">Speed</span>
                                 <span class="stat-value" id="processingSpeed">-- chunks/s</span>
                             </div>
                             <div class="stat-item">
-                                <span class="stat-icon">⏱️</span>
-                                <span class="stat-label">ETA:</span>
+                                <span class="stat-label">ETA</span>
                                 <span class="stat-value" id="etaDisplay">--</span>
                             </div>
                         </div>
                         
                         <div class="system-stats">
                             <div class="stat-item">
-                                <span class="stat-icon">🧠</span>
-                                <span class="stat-label">CPU:</span>
+                                <span class="stat-label">CPU</span>
                                 <span class="stat-value" id="cpuUsage">--</span>
                             </div>
                             <div class="stat-item">
-                                <span class="stat-icon">💾</span>
-                                <span class="stat-label">Memory:</span>
+                                <span class="stat-label">Memory</span>
                                 <span class="stat-value" id="memoryUsage">--</span>
                             </div>
                         </div>
@@ -128,8 +119,8 @@
                             <button class="pulse-btn" id="enableMonitoringBtn">Enable Monitoring</button>
                         </div>
                         <div class="monitoring-links">
-                            <a href="https://docs.smith.langchain.com/overview" target="_blank" class="monitoring-link">📚 Docs</a>
-                            <a href="https://smith.langchain.com/" target="_blank" class="monitoring-link">🔗 Dashboard</a>
+                            <a href="https://docs.smith.langchain.com/overview" target="_blank" class="monitoring-link">Docs</a>
+                            <a href="https://smith.langchain.com/" target="_blank" class="monitoring-link">Dashboard</a>
                         </div>
                     </div>
                 </div>
@@ -139,19 +130,19 @@
         <!-- Feature Cards -->
         <div class="feature-cards">
             <div class="feature-card">
-                <div class="feature-icon">📁</div>
+                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l2 2h9v9.5h-17z"/></svg></div>
                 <h3 class="feature-title">Curated Uploads</h3>
-                <p class="feature-text">Files are auto-sorted into Document, Data, Code, and Media vaults with duplicate protection.</p>
+                <p class="feature-text">New files are added to the library. Uploading the same name updates that file only.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">💬</div>
+                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14v9H8.5L5 18.5z"/></svg></div>
                 <h3 class="feature-title">Ambient Chat</h3>
                 <p class="feature-text">Start conversations instantly. The assistant gracefully falls back to general knowledge when needed.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">🔒</div>
+                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="11" width="12" height="8" rx="1"/><path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11"/></svg></div>
                 <h3 class="feature-title">Local & Private</h3>
-                <p class="feature-text">Everything runs on-device with Ollama + ChromaDB. No cloud calls, ever.</p>
+                <p class="feature-text">Chat and vectors stay on this machine. The embedding model is downloaded once, on first start.</p>
             </div>
         </div>
 
@@ -167,9 +158,9 @@
                 
                 <!-- Drop Zone -->
                 <div class="drop-zone" id="dropZone">
-                    <div class="drop-icon">📂</div>
+                    <div class="drop-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V6"/><path d="M8.5 9.5 12 6l3.5 3.5"/><path d="M5 16.5V19h14v-2.5"/></svg></div>
                     <h4 class="drop-title">Drop files anywhere</h4>
-                    <p class="drop-text">We'll auto-sort them by type and prevent duplicates.</p>
+                    <p class="drop-text">New files are added to the library. Uploading the same name updates that file only.</p>
                 </div>
                 <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.py,.js,.ts,.png,.jpg,.jpeg,.gif,.bmp,.svg,.webp,.ico,.tiff,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v" hidden>
                 
@@ -177,7 +168,7 @@
                 <div class="action-row">
                     <button class="btn btn-primary" id="uploadBtn">Upload Files</button>
                     <button class="btn btn-secondary" id="processBtn">
-                        <span>⚡</span> Process Library
+                        Process Library
                     </button>
                 </div>
 
@@ -223,6 +214,12 @@
                 <!-- Upload Queue -->
                 <div class="upload-queue">
                     <div class="queue-header">
+                        <span class="queue-title">Library</span>
+                    </div>
+                    <div class="queue-list" id="libraryList"></div>
+                </div>
+                <div class="upload-queue">
+                    <div class="queue-header">
                         <span class="queue-title">Upload Queue</span>
                         <span class="queue-count" id="queueCount">0 selected</span>
                     </div>
@@ -235,7 +232,6 @@
             <!-- Right: Chat Studio -->
             <section class="chat-panel">
                 <div class="panel-header">
-                    <h2 class="panel-title">CONVERSATIONAL STUDIO</h2>
                     <span class="status-badge" id="chatStatus">Awaiting documents</span>
                 </div>
                 <h3 class="section-heading">Chat with Your Library</h3>
@@ -243,8 +239,7 @@
                 <div class="chat-container">
                     <div class="chat-messages" id="chatMessages">
                         <div class="ambient-message">
-                            <div class="ambient-icon">✨</div>
-                            <h4 class="ambient-title">Elegant, ambient intelligence</h4>
+                            <h4 class="ambient-title">Ready for a question</h4>
                             <p class="ambient-text">You can talk to me right away. I'll respond from general knowledge until your documents are processed.</p>
                             <p class="ambient-text">Add files to unlock grounded, citation-rich answers.</p>
                         </div>
@@ -287,6 +282,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.3"></script>
+    <script src="/static/script.js?v=4.9"></script>
 </body>
 </html>

@@ -1,37 +1,5 @@
 // Secure RAG Studio - JavaScript
 
-// Superhero Persona - Sentinel Spark ⚡
-const superheroPersona = {
-    name: "Sentinel Spark",
-    greetings: [
-        "⚡ Sentinel Spark here! Your friendly neighborhood AI guardian, ready to protect your privacy and supercharge your knowledge!",
-        "🦸 Greetings, citizen! Sentinel Spark reporting for duty. Let's unlock some insights together!",
-        "⚡ *WHOOSH* Sentinel Spark has arrived! Time to make your documents work harder than a caffeinated squirrel!",
-        "🦸 Hey there! Sentinel Spark at your service. I may not wear a cape, but I do wear encryption... which is basically the same thing!"
-    ],
-    jokes: [
-        "Why did the AI go to therapy? It had too many deep learning issues! 😄",
-        "I asked my neural network for a joke... it gave me a 404 error. Classic! 🤖",
-        "What's an AI's favorite snack? Microchips! 🍟",
-        "I'm not saying I'm fast, but I process information faster than you can say 'machine learning'! ⚡",
-        "Why don't AIs ever get lost? Because they always follow the right path... or gradient! 🧭"
-    ],
-    references: [
-        "With great processing power comes great responsibility! 🕷️",
-        "I am... inevitable. (At least when it comes to finding answers in your docs!) 💎",
-        "To infinity and beyond... your document collection! 🚀",
-        "May the embeddings be with you! ⭐",
-        "I could do this all day! (Processing documents, that is) 🛡️"
-    ],
-    encouragements: [
-        "You're doing amazing! Even Tony Stark would be impressed! 🦾",
-        "Keep going, hero! Your knowledge base is growing stronger! 💪",
-        "Excellent question! You're leveling up faster than Spider-Man! 🕸️",
-        "Wow! That's a great query. You're basically a superhero yourself! 🦸",
-        "Fantastic work! You're assembling knowledge like the Avengers assemble! 🎯"
-    ]
-};
-
 // State
 const state = {
     files: [],
@@ -116,13 +84,18 @@ const elements = {
     videoFiles: document.getElementById('videoFiles')
 };
 
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
+function boot() {
     initializeEventListeners();
     loadFiles();
     loadModels();
     startStatusMonitoring();
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+} else {
+    boot();
+}
 
 // Event Listeners
 function initializeEventListeners() {
@@ -206,12 +179,13 @@ async function uploadFiles() {
         const data = await response.json();
         
         if (response.ok) {
-            showToast(`Uploaded ${data.uploaded_count} file(s)`, 'success');
+            const count = data.uploaded_count ?? (data.files ? data.files.length : 0);
+            showToast(`Uploaded ${count} file(s)`, 'success');
             state.selectedFiles = [];
             updateQueue();
             loadFiles();
         } else {
-            showToast(data.error || 'Upload failed', 'error');
+            showToast(data.detail || data.error || 'Upload failed', 'error');
         }
     } catch (error) {
         showToast('Upload error: ' + error.message, 'error');
@@ -230,6 +204,7 @@ async function loadFiles() {
         state.files = data.files || [];
         categorizeFiles();
         updateFileStats();
+        renderLibrary();
     } catch (error) {
         console.error('Error loading files:', error);
     }
@@ -284,8 +259,8 @@ function updateFileStats() {
     
     // Update sub-text
     document.querySelectorAll('.stat-sub').forEach(el => {
-        const value = parseInt(el.previousElementSibling.textContent);
-        el.textContent = value > 0 ? 'Awaiting files' : 'Awaiting files';
+        const value = parseInt(el.previousElementSibling.textContent, 10);
+        el.textContent = value > 0 ? 'Ready to process' : 'Awaiting files';
     });
 }
 
@@ -298,7 +273,7 @@ function updateQueue() {
     }
     
     elements.queueList.innerHTML = state.selectedFiles.map(file => `
-        <div class="queue-item">${file.name}</div>
+        <div class="queue-item">${escapeHtml(file.name)}</div>
     `).join('');
 }
 
@@ -311,7 +286,7 @@ async function processDocuments() {
     
     try {
         elements.processBtn.disabled = true;
-        elements.processBtn.innerHTML = '<span>⚡</span> Processing...';
+        elements.processBtn.textContent = 'Processing...';
         elements.ingestionStatus.textContent = 'Processing...';
         setTrafficLight(elements.ingestionLight, 'orange');
         
@@ -322,12 +297,11 @@ async function processDocuments() {
         const data = await response.json();
         
         if (response.ok) {
-            showToast('Documents processed successfully', 'success');
-            elements.ingestionStatus.textContent = 'Ready';
-            elements.chatStatus.textContent = 'Ready';
-            setTrafficLight(elements.ingestionLight, 'green');
+            showToast(data.message || 'Processing started', 'info');
+            elements.ingestionStatus.textContent = 'Processing';
+            setTrafficLight(elements.ingestionLight, 'orange');
         } else {
-            showToast(data.error || 'Processing failed', 'error');
+            showToast(data.detail || data.error || 'Processing failed', 'error');
             elements.ingestionStatus.textContent = 'Error';
             setTrafficLight(elements.ingestionLight, 'red');
         }
@@ -337,7 +311,7 @@ async function processDocuments() {
         setTrafficLight(elements.ingestionLight, 'red');
     } finally {
         elements.processBtn.disabled = false;
-        elements.processBtn.innerHTML = '<span>⚡</span> Process Library';
+        elements.processBtn.textContent = 'Process Library';
     }
 }
 
@@ -376,28 +350,40 @@ async function sendMessage() {
     }
 }
 
-// Superhero Persona Functions
-function getRandomItem(array) {
-    return array[Math.floor(Math.random() * array.length)];
-}
-
-function addSuperheroFlair(message) {
-    // Add superhero greeting or encouragement randomly (20% chance)
-    if (Math.random() < 0.2) {
-        const flair = Math.random() < 0.5 
-            ? getRandomItem(superheroPersona.encouragements)
-            : getRandomItem(superheroPersona.references);
-        return `${message}\n\n_${flair}_`;
+function renderLibrary() {
+    const list = document.getElementById('libraryList');
+    if (!list) return;
+    if (!state.files.length) {
+        list.innerHTML = '';
+        return;
     }
-    return message;
+    list.innerHTML = state.files.map(file => {
+        const name = file.filename || file.name;
+        return `
+            <div class="queue-item library-item">
+                <span>${escapeHtml(name)}</span>
+                <button type="button" class="delete-file" data-filename="${escapeHtml(name)}">Delete</button>
+            </div>
+        `;
+    }).join('');
+    list.querySelectorAll('.delete-file').forEach(button => {
+        button.addEventListener('click', () => deleteLibraryFile(button.dataset.filename));
+    });
 }
 
-function getSuperheroGreeting() {
-    return getRandomItem(superheroPersona.greetings);
-}
-
-function getSuperheroJoke() {
-    return getRandomItem(superheroPersona.jokes);
+async function deleteLibraryFile(name) {
+    try {
+        const response = await fetch('/files/' + encodeURIComponent(name), { method: 'DELETE' });
+        const data = await response.json();
+        if (response.ok) {
+            showToast(`Deleted ${name}`, 'success');
+            loadFiles();
+        } else {
+            showToast(data.detail || 'Delete failed', 'error');
+        }
+    } catch (error) {
+        showToast('Delete error: ' + error.message, 'error');
+    }
 }
 
 // Update Embedding Status
@@ -408,8 +394,38 @@ function formatTime(seconds) {
     return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderEmbeddingBar(status) {
+    const total = Number(status.total) || 0;
+    const current = Number(status.current) || 0;
+    const progress = Number.isFinite(status.progress)
+        ? status.progress
+        : (total > 0 ? (current / total) * 100 : 0);
+    elements.embeddingProgress.style.width = `${progress}%`;
+    elements.progressPercentage.textContent = `${Math.round(progress)}%`;
+    elements.embeddingProgressText.textContent = `${current} / ${total} chunks`;
+}
+
 function updateEmbeddingStatus(status) {
     if (!status) return;
+    if (status.status === 'processing') {
+        elements.ingestionStatus.textContent = 'Processing';
+        setTrafficLight(elements.ingestionLight, 'orange');
+    } else if (status.status === 'error') {
+        elements.ingestionStatus.textContent = 'Error';
+        setTrafficLight(elements.ingestionLight, 'red');
+    } else if (status.status === 'completed') {
+        elements.ingestionStatus.textContent = 'Ready';
+        setTrafficLight(elements.ingestionLight, 'green');
+    }
     
     state.embeddingProgress.current = status.current || 0;
     state.embeddingProgress.total = status.total || 0;
@@ -419,12 +435,7 @@ function updateEmbeddingStatus(status) {
     if (status.status === 'processing') {
         elements.embeddingStatus.textContent = 'Processing';
         setTrafficLight(elements.embeddingLight, 'orange');
-        
-        // Update progress bar with percentage
-        const progress = status.total > 0 ? (status.current / status.total) * 100 : 0;
-        elements.embeddingProgress.style.width = `${progress}%`;
-        elements.progressPercentage.textContent = `${Math.round(progress)}%`;
-        elements.embeddingProgressText.textContent = `${status.current} / ${status.total} chunks`;
+        renderEmbeddingBar(status);
         
         // Add processing animation class
         elements.embeddingProgress.classList.add('processing');
@@ -473,9 +484,7 @@ function updateEmbeddingStatus(status) {
     } else if (status.status === 'completed') {
         elements.embeddingStatus.textContent = 'Completed';
         setTrafficLight(elements.embeddingLight, 'green');
-        elements.embeddingProgress.style.width = '100%';
-        elements.progressPercentage.textContent = '100%';
-        elements.embeddingProgressText.textContent = `${status.total} / ${status.total} chunks`;
+        renderEmbeddingBar(status);
         
         // Remove processing animation
         elements.embeddingProgress.classList.remove('processing');
@@ -492,14 +501,6 @@ function updateEmbeddingStatus(status) {
         if (status.memory_percent !== undefined) {
             elements.memoryUsage.textContent = `${status.memory_percent.toFixed(1)}%`;
         }
-        
-        // Reset after 3 seconds
-        setTimeout(() => {
-            elements.embeddingStatus.textContent = 'Idle';
-            elements.embeddingProgress.style.width = '0%';
-            elements.progressPercentage.textContent = '0%';
-            elements.embeddingProgressText.textContent = '0 / 0 chunks';
-        }, 3000);
     } else if (status.status === 'error') {
         elements.embeddingStatus.textContent = 'Error';
         setTrafficLight(elements.embeddingLight, 'red');
@@ -512,9 +513,7 @@ function updateEmbeddingStatus(status) {
     } else {
         elements.embeddingStatus.textContent = 'Idle';
         setTrafficLight(elements.embeddingLight, 'green');
-        elements.embeddingProgress.style.width = '0%';
-        elements.progressPercentage.textContent = '0%';
-        elements.embeddingProgressText.textContent = '0 / 0 chunks';
+        renderEmbeddingBar(status);
         
         // Hide extra elements when idle
         elements.currentFileDisplay.style.display = 'none';
@@ -526,29 +525,24 @@ function updateEmbeddingStatus(status) {
 
 function addMessage(text, role, isLoading = false, sources = []) {
     const messageId = `msg-${Date.now()}`;
-    const avatar = role === 'user' ? 'U' : '⚡';  // Superhero icon for assistant
+    const avatar = role === 'user' ? 'U' : 'A';
     
-    // Remove ambient message if it exists
     const ambient = elements.chatMessages.querySelector('.ambient-message');
     if (ambient) ambient.remove();
     
-    // Add superhero flair to assistant messages
-    let finalText = text;
-    if (role === 'assistant' && !isLoading) {
-        finalText = addSuperheroFlair(text);
-    }
+    const finalText = escapeHtml(text);
     
     let sourcesHTML = '';
     if (sources && sources.length > 0) {
         sourcesHTML = `
             <div class="message-sources">
-                <div class="sources-title">📚 Sources Referenced</div>
+                <div class="sources-title">Sources</div>
                 ${sources.map((source, index) => `
                     <div class="source-item">
                         <div class="source-number">${index + 1}</div>
                         <div class="source-text">
-                            <strong>${source.source || 'Unknown'}</strong>
-                            ${source.text ? `<br><span style="font-size: 12px; color: rgba(255,255,255,0.5);">${source.text.substring(0, 150)}...</span>` : ''}
+                            <strong>${escapeHtml(source.source || 'Unknown')}</strong>
+                            ${source.text ? `<br><span style="font-size: 12px; color: rgba(255,255,255,0.5);">${escapeHtml(source.text.substring(0, 150))}...</span>` : ''}
                         </div>
                     </div>
                 `).join('')}
@@ -560,7 +554,7 @@ function addMessage(text, role, isLoading = false, sources = []) {
         <div class="message ${role}" id="${messageId}">
             <div class="message-avatar">${avatar}</div>
             <div class="message-content">
-                ${isLoading ? '⚡ Sentinel Spark is analyzing...' : finalText}
+                ${isLoading ? 'Thinking...' : finalText}
                 ${sourcesHTML}
             </div>
         </div>
@@ -584,8 +578,8 @@ async function loadModels() {
         const data = await response.json();
         
         if (data.models && data.models.length > 0) {
-            elements.modelSelect.innerHTML = data.models.map(model => 
-                `<option value="${model.name}">${model.name}</option>`
+            elements.modelSelect.innerHTML = data.models.map(model =>
+                `<option value="${escapeHtml(model.name)}">${escapeHtml(model.name)}</option>`
             ).join('');
             
             if (data.current_model) {
@@ -648,7 +642,7 @@ async function addModel() {
             elements.newModelInput.value = '';
             loadModels();
         } else {
-            showToast(data.error || 'Failed to add model', 'error');
+            showToast(data.detail || data.error || 'Failed to add model', 'error');
         }
     } catch (error) {
         showToast('Error adding model', 'error');
@@ -686,7 +680,7 @@ async function enableMonitoring() {
         
         if (response.ok) {
             if (data.enabled) {
-                showToast('✅ LangChain monitoring enabled!', 'success');
+                showToast('Monitoring enabled', 'success');
                 elements.monitoringStatus.textContent = 'Enabled';
                 setTrafficLight(elements.monitoringLight, 'green');
                 elements.enableMonitoringBtn.textContent = 'Disable Monitoring';
@@ -697,7 +691,7 @@ async function enableMonitoring() {
                 elements.enableMonitoringBtn.textContent = 'Enable Monitoring';
             }
         } else {
-            showToast(data.error || 'Failed to configure monitoring', 'error');
+            showToast(data.detail || data.error || 'Failed to configure monitoring', 'error');
         }
     } catch (error) {
         showToast('Error configuring monitoring', 'error');
@@ -734,9 +728,6 @@ async function checkSystemStatus() {
             elements.dbDetail.textContent = 'No connection';
             setTrafficLight(elements.dbLight, 'red');
         }
-        
-        // Ingestion Status
-        setTrafficLight(elements.ingestionLight, 'green');
         
         // LLM Status
         if (data.llm?.available) {

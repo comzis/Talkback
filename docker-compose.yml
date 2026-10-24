@@ -1,31 +1,48 @@
-
-
 services:
-  # Service 1: The RAG API (FastAPI + LlamaIndex)
-  # Now connects to host Ollama instead of containerized version
   rag-api:
-    build: ./app
+    build:
+      context: ./app
+      args:
+        UID: "502"
+        GID: "20"
     ports:
       - "8001:8001"
     depends_on:
-      - chromadb
+      chromadb:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      HF_HOME: /cache/huggingface
+      HUGGINGFACE_HUB_CACHE: /cache/huggingface/hub
+      SENTENCE_TRANSFORMERS_HOME: /cache/huggingface/sentence-transformers
     volumes:
-      - ./data:/app/data  # Map local data folder into the container
+      - ./data:/app/data
+      - ./hf_cache:/home/appuser/.cache
     container_name: rag_api_service
-    # Use host network mode to access host's Ollama
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
 
-  # Service 2: The Persistent Vector DB
   chromadb:
     image: chromadb/chroma
     ports:
-      - "8000:8000"
+      - "8002:8000"
     volumes:
-      # Persistent storage for vector embeddings
-      - ./chroma_data:/chroma/chroma 
+      - ./chroma_data:/chroma/chroma
     container_name: chromadb_service
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/8000"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
 
-# Note: Ollama service removed - using system Ollama at http://host.docker.internal:11434
+# Ollama runs on the host at http://host.docker.internal:11434
