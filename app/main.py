@@ -457,6 +457,8 @@ async def select_llm_model(request: LLMSelectRequest):
                     model=request.model,
                     base_url=config.ollama_base_url(),
                     request_timeout=config.ollama_timeout(),
+                    context_window=config.ollama_context(),
+                    keep_alive=config.ollama_keep_alive(),
                 )
                 os.environ["OLLAMA_MODEL"] = request.model
                 engine.cached_index = None

@@ -84,6 +84,14 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
 | `EMBED_MODEL` | Local embedding model. `BAAI/bge-m3` is the larger server option | `intfloat/multilingual-e5-small` |
 | `EMBED_BATCH` | Chunks per embedding batch. Progress updates after each batch | `16` |
+| `CHUNK_SIZE` | Chunk size in tokens | `512` |
+| `CHUNK_OVERLAP` | Overlap between chunks | `64` |
+| `RETRIEVE_CANDIDATES` | Chunks retrieved before the per-file cap | `8` |
+| `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
+| `RETRIEVE_PER_FILE` | Maximum chunks from one file | `2` |
+| `OLLAMA_CONTEXT` | Ollama context window (`num_ctx`) | `4096` |
+| `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |
+| `TORCH_THREADS` | Torch CPU threads | half the cores |
 | `OFFLINE_MODE` | Load embeddings from the local cache and refuse `/llm/pull` | `true` |
 | `LIBRARY_READ_ONLY` | Treat the data directory as a read-only mount | `false` |
 | `REINDEX_INTERVAL_MINUTES` | Repeat incremental indexing. Unset or `0` keeps it off | off |

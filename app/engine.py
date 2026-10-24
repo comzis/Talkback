@@ -10,6 +10,7 @@ from pathlib import Path
 
 import chromadb
 import psutil
+import torch
 from llama_index.core import Settings, SimpleDirectoryReader, StorageContext, VectorStoreIndex
 from llama_index.core.retrievers import BaseRetriever
 from llama_index.core.node_parser import SentenceSplitter
@@ -161,19 +162,52 @@ def init() -> None:
         raise ValueError(message)
 
     apply_offline_mode()
+    torch.set_num_threads(config.torch_threads())
+    logger.info("Torch CPU threads set to %s", config.torch_threads())
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     connect_chroma()
-    Settings.llm = Ollama(
-        model=config.require_ollama_model(),
-        base_url=config.ollama_base_url(),
-        request_timeout=config.ollama_timeout(),
-    )
-    model_name = config.embed_model_name()
-    Settings.embed_model = HuggingFaceEmbedding(
-        model_name=model_name,
-        query_instruction=embeddings.query_instruction(model_name),
-        text_instruction=embeddings.text_instruction(model_name),
-    )
+    threading.Thread(target=_warm_up, name="talkback-warmup", daemon=True).start()
+
+
+_models_ready = threading.Event()
+
+
+def models_ready() -> bool:
+    return _models_ready.is_set()
+
+
+def wait_for_models(timeout: float = 180) -> None:
+    """Block a query or ingest until the background warm-up has finished."""
+    if _models_ready.wait(timeout):
+        if Settings.embed_model is None or Settings.llm is None:
+            raise RuntimeError("Local models did not finish loading.")
+        return
+    raise TimeoutError("Talkback is still loading the local models.")
+
+
+def _warm_up() -> None:
+    """Load the embedder and send one short request to host Ollama."""
+    try:
+        model_name = config.embed_model_name()
+        Settings.llm = Ollama(
+            model=config.require_ollama_model(),
+            base_url=config.ollama_base_url(),
+            request_timeout=config.ollama_timeout(),
+            context_window=config.ollama_context(),
+            keep_alive=config.ollama_keep_alive(),
+        )
+        Settings.embed_model = HuggingFaceEmbedding(
+            model_name=model_name,
+            query_instruction=embeddings.query_instruction(model_name),
+            text_instruction=embeddings.text_instruction(model_name),
+        )
+        Settings.embed_model.get_query_embedding("ping")
+        Settings.llm.complete("ok")
+        logger.info("Warm-up finished.")
+    except Exception:
+        logger.exception("Warm-up failed")
+    finally:
+        _models_ready.set()
 
 
 def _remember_collection(collection) -> None:
@@ -388,6 +422,7 @@ def _ingest_once() -> None:
 
     logger.info("Ingestion started for %s", UPLOAD_DIR)
     try:
+        wait_for_models()
         started = time.time()
         ingestion_status["start_time"] = started
         ingestion_status["status"] = "processing"
@@ -442,7 +477,10 @@ def _ingest_once() -> None:
             logger.info("Ingestion found no readable text in %s", embed_names)
             return
 
-        nodes = SentenceSplitter().get_nodes_from_documents(documents)
+        nodes = SentenceSplitter(
+            chunk_size=config.chunk_size(),
+            chunk_overlap=config.chunk_overlap(),
+        ).get_nodes_from_documents(documents)
         total = len(nodes)
         ingestion_status["total"] = total
         ingestion_status["current"] = 0
@@ -536,7 +574,9 @@ def _source_record(node, number: int) -> dict:
 
 def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str]):
     """Search the library, and stay inside a file the question names."""
-    nodes = index.as_retriever(similarity_top_k=24).retrieve(query)
+    per_file = config.retrieve_per_file()
+    limit = config.retrieve_limit()
+    nodes = index.as_retriever(similarity_top_k=config.retrieve_candidates()).retrieve(query)
     named = set(named_library_files(query, library_files))
     if named:
         preferred = [
@@ -544,8 +584,8 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
             if ((node.metadata or {}).get("relative_path") or (node.metadata or {}).get("file_name")) in named
         ]
         if preferred:
-            return balance_matches(preferred, per_file=3, limit=4)
-    return balance_matches(nodes, per_file=2, limit=4)
+            return balance_matches(preferred, per_file=per_file, limit=limit)
+    return balance_matches(nodes, per_file=per_file, limit=limit)
 
 
 def _stream_deltas(prompt: str, temperature: float | None = None):
@@ -600,6 +640,7 @@ def _stream_prompt(prompt: str, temperature: float | None, sources: list | None,
 def iter_answer(query: str):
     """Yield token events, then sources. Uses Ollama.stream_complete."""
     logger.info("Query started (%s characters)", len(query or ""))
+    wait_for_models()
     try:
         if collection_count() == 0 or not should_search_library(query):
             yield from _stream_prompt(assistant_prompt(query), None, None, False, query)

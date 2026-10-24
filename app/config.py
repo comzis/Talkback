@@ -9,6 +9,13 @@ DEFAULT_EMBED_MODEL = "intfloat/multilingual-e5-small"
 SERVER_EMBED_MODEL = "BAAI/bge-m3"
 DEFAULT_EMBED_BATCH = 16
 DEFAULT_OLLAMA_TIMEOUT = 300.0
+DEFAULT_CHUNK_SIZE = 512
+DEFAULT_CHUNK_OVERLAP = 64
+DEFAULT_RETRIEVE_CANDIDATES = 8
+DEFAULT_RETRIEVE_LIMIT = 4
+DEFAULT_RETRIEVE_PER_FILE = 2
+DEFAULT_OLLAMA_CONTEXT = 4096
+DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
 
 
 def _raw(name: str) -> str:
@@ -47,11 +54,56 @@ def embed_model_name() -> str:
 
 
 def embed_batch() -> int:
-    raw = _raw("EMBED_BATCH")
+    return _positive_int("EMBED_BATCH", DEFAULT_EMBED_BATCH)
+
+
+def _positive_int(name: str, default: int) -> int:
+    raw = _raw(name)
     if not raw:
-        return DEFAULT_EMBED_BATCH
+        return default
     try:
         value = int(raw)
     except ValueError:
-        return DEFAULT_EMBED_BATCH
-    return value if value > 0 else DEFAULT_EMBED_BATCH
+        return default
+    return value if value > 0 else default
+
+
+def chunk_size() -> int:
+    return _positive_int("CHUNK_SIZE", DEFAULT_CHUNK_SIZE)
+
+
+def chunk_overlap() -> int:
+    raw = _raw("CHUNK_OVERLAP")
+    if not raw:
+        return DEFAULT_CHUNK_OVERLAP
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_CHUNK_OVERLAP
+    return value if value >= 0 else DEFAULT_CHUNK_OVERLAP
+
+
+def retrieve_candidates() -> int:
+    return _positive_int("RETRIEVE_CANDIDATES", DEFAULT_RETRIEVE_CANDIDATES)
+
+
+def retrieve_limit() -> int:
+    return _positive_int("RETRIEVE_LIMIT", DEFAULT_RETRIEVE_LIMIT)
+
+
+def retrieve_per_file() -> int:
+    return _positive_int("RETRIEVE_PER_FILE", DEFAULT_RETRIEVE_PER_FILE)
+
+
+def ollama_context() -> int:
+    return _positive_int("OLLAMA_CONTEXT", DEFAULT_OLLAMA_CONTEXT)
+
+
+def ollama_keep_alive() -> str:
+    return _raw("OLLAMA_KEEP_ALIVE") or DEFAULT_OLLAMA_KEEP_ALIVE
+
+
+def torch_threads() -> int:
+    """CPU threads for torch. Default is half the visible cores, at least one."""
+    default = max(1, (os.cpu_count() or 2) // 2)
+    return _positive_int("TORCH_THREADS", default)

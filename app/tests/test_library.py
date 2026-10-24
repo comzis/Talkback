@@ -215,7 +215,22 @@ class LibraryPlanTests(unittest.TestCase):
 
 class ConfigTests(unittest.TestCase):
     def test_embed_defaults_and_required_chat_model(self):
-        saved = {name: os.environ.get(name) for name in ("EMBED_MODEL", "EMBED_BATCH", "OLLAMA_MODEL")}
+        saved = {
+            name: os.environ.get(name)
+            for name in (
+                "EMBED_MODEL",
+                "EMBED_BATCH",
+                "OLLAMA_MODEL",
+                "CHUNK_SIZE",
+                "CHUNK_OVERLAP",
+                "RETRIEVE_CANDIDATES",
+                "RETRIEVE_LIMIT",
+                "RETRIEVE_PER_FILE",
+                "OLLAMA_CONTEXT",
+                "OLLAMA_KEEP_ALIVE",
+                "TORCH_THREADS",
+            )
+        }
         try:
             os.environ.pop("EMBED_MODEL", None)
             os.environ.pop("EMBED_BATCH", None)
@@ -230,6 +245,25 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.embed_batch(), 4)
             os.environ["OLLAMA_MODEL"] = "pilot-model"
             self.assertEqual(config.require_ollama_model(), "pilot-model")
+            for name in (
+                "CHUNK_SIZE",
+                "CHUNK_OVERLAP",
+                "RETRIEVE_CANDIDATES",
+                "RETRIEVE_LIMIT",
+                "RETRIEVE_PER_FILE",
+                "OLLAMA_CONTEXT",
+                "OLLAMA_KEEP_ALIVE",
+                "TORCH_THREADS",
+            ):
+                os.environ.pop(name, None)
+            self.assertEqual(config.chunk_size(), 512)
+            self.assertEqual(config.chunk_overlap(), 64)
+            self.assertEqual(config.retrieve_candidates(), 8)
+            self.assertEqual(config.retrieve_limit(), 4)
+            self.assertEqual(config.retrieve_per_file(), 2)
+            self.assertEqual(config.ollama_context(), 4096)
+            self.assertEqual(config.ollama_keep_alive(), "30m")
+            self.assertGreaterEqual(config.torch_threads(), 1)
         finally:
             for name, value in saved.items():
                 if value is None:
