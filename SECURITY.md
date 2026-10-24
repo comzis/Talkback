@@ -18,8 +18,8 @@ There is no LangSmith client and no telemetry endpoint.
 
 | Port | Process | Who should reach it |
 | --- | --- | --- |
-| 8001 | Talkback API, published from the container | People using the demo |
-| 8002 | ChromaDB, published from container port 8000 | The host, for debugging. The API uses `chromadb:8000` on the Docker network |
+| 127.0.0.1:8001 | Talkback API. The container still listens on 8001; Docker publishes that port on loopback only | This machine |
+| Chroma 8000 | ChromaDB, not published. The API uses `chromadb:8000` on the Docker network | The API container. For host debugging, publish `127.0.0.1:8002:8000` and do not use `8002:8000` |
 | 11434 | Host Ollama | The API container, via `host.docker.internal` |
 
 ## Outbound network

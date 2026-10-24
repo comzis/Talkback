@@ -6,7 +6,7 @@ services:
         UID: ${UID:-502}
         GID: ${GID:-20}
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     depends_on:
       chromadb:
         condition: service_healthy
@@ -39,8 +39,8 @@ services:
     image: chromadb/chroma
     environment:
       ANONYMIZED_TELEMETRY: "FALSE"
-    ports:
-      - "8002:8000"
+    # Not published. The API uses chromadb:8000 on the compose network.
+    # To inspect it from this machine only: "127.0.0.1:8002:8000"
     volumes:
       # This image keeps its database in /data. A mount on /chroma/chroma is ignored.
       - ./chroma_data:/data

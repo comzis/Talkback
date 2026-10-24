@@ -33,7 +33,7 @@ cp .env.example .env
 
 Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name.
 
-`CHROMA_PORT=8000` is the port inside the Docker network. From the host, Chroma is published on port **8002**, because 8000 is often already taken. The database files are in `./chroma_data` on the host.
+`CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The API is published on `127.0.0.1:8001` only.
 
 ### 2. Pull the model and start the stack
 
@@ -53,7 +53,7 @@ http://localhost:8001
 
 Drop a file into the library panel. Indexing starts on its own. Then ask in the chat.
 
-There is no login. The API listens on all interfaces inside the container and is published on port 8001.
+There is no login. The API listens on all interfaces inside the container and is published only on `127.0.0.1:8001`, so other devices on the network cannot open it.
 
 ## Asking questions
 
