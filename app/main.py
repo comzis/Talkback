@@ -16,6 +16,7 @@ from typing import List
 import asyncio
 
 import config
+import embeddings
 import engine
 from files import InvalidFilename, get_file_type, safe_relative_path, stored_filename, visible_files
 from llama_index.core import Settings
@@ -47,12 +48,19 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     response: str
     sources: list[dict]
+    notice: str | None = None
+    footnote: str | None = None
 
 class LLMSelectRequest(BaseModel):
     model: str
 
 class LLMPullRequest(BaseModel):
     model: str
+
+def _reject_if_reindex_required() -> None:
+    if engine.reindex_required():
+        raise HTTPException(status_code=409, detail=embeddings.REINDEX_MESSAGE)
+
 
 @app.post("/ingest")
 async def ingest_documents(background_tasks: BackgroundTasks):
@@ -61,6 +69,7 @@ async def ingest_documents(background_tasks: BackgroundTasks):
     This directory is mapped from './data' on your host.
     Runs in background and updates progress status.
     """
+    _reject_if_reindex_required()
     if not engine.begin_ingestion():
         return {
             "message": "Ingestion already in progress",
@@ -72,6 +81,17 @@ async def ingest_documents(background_tasks: BackgroundTasks):
     return {
         "message": "Adding new documents. Files already indexed are kept.",
         "status": "processing"
+    }
+
+@app.post("/ingest/rebuild")
+async def rebuild_index(background_tasks: BackgroundTasks):
+    """Drop the collection and embed every file with the current model."""
+    if not engine.begin_ingestion():
+        return {"message": "Ingestion already in progress", "status": "processing"}
+    background_tasks.add_task(engine.rebuild_library)
+    return {
+        "message": "Full re-index started. The old vectors are being replaced.",
+        "status": "processing",
     }
 
 @app.get("/ingest/status")
@@ -103,6 +123,7 @@ async def query_index(request: QueryRequest):
     """
     if not request.query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    _reject_if_reindex_required()
 
     try:
         return await asyncio.to_thread(engine.answer_query, request.query)
@@ -114,6 +135,7 @@ async def query_stream(request: QueryRequest):
     """Stream answer tokens, then the sources the finished answer used."""
     if not request.query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    _reject_if_reindex_required()
 
     def generate():
         try:
@@ -158,6 +180,8 @@ async def get_system_status():
         },
         "offline_mode": engine.offline_mode(),
         "library_read_only": engine.library_read_only(),
+        "reindex_required": engine.reindex_required(),
+        "embed_model": config.embed_model_name(),
         "database": {
             "status": "unknown",
             "connected": False,
@@ -287,6 +311,8 @@ async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile
             uploaded_files.append(safe_name)
             logger.info(f"Uploaded file: {safe_name}")
 
+        if engine.reindex_required():
+            raise HTTPException(status_code=409, detail=embeddings.REINDEX_MESSAGE)
         if engine.begin_ingestion():
             background_tasks.add_task(engine.process_ingestion)
 

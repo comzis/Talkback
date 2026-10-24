@@ -18,6 +18,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 import config
+import embeddings
 from files import visible_files
 from library import (
     balance_matches,
@@ -66,6 +67,9 @@ def start_reindex_schedule() -> None:
     def loop() -> None:
         while True:
             time.sleep(minutes * 60)
+            if reindex_required():
+                logger.info("Scheduled re-index skipped until a full re-index.")
+                continue
             if not begin_ingestion():
                 logger.info("Scheduled re-index skipped because indexing is already running.")
                 continue
@@ -114,6 +118,12 @@ chroma_collection = None
 vector_store = None
 storage_context = None
 cached_index: VectorStoreIndex | None = None
+_reindex_required = False
+
+
+def reindex_required() -> bool:
+    """True when stored vectors were embedded with a different model."""
+    return _reindex_required
 
 
 def _fresh_status(**overrides) -> dict:
@@ -158,12 +168,36 @@ def init() -> None:
         base_url=config.ollama_base_url(),
         request_timeout=config.ollama_timeout(),
     )
-    Settings.embed_model = HuggingFaceEmbedding(model_name=config.embed_model_name())
+    model_name = config.embed_model_name()
+    Settings.embed_model = HuggingFaceEmbedding(
+        model_name=model_name,
+        query_instruction=embeddings.query_instruction(model_name),
+        text_instruction=embeddings.text_instruction(model_name),
+    )
+
+
+def _remember_collection(collection) -> None:
+    """Keep the open collection and record whether its vectors match EMBED_MODEL."""
+    global db, chroma_collection, vector_store, storage_context, _reindex_required
+
+    count = collection.count()
+    current = config.embed_model_name()
+    _reindex_required = embeddings.full_reindex_required(collection.metadata, count, current)
+    if count == 0:
+        meta = dict(collection.metadata or {})
+        if meta.get(embeddings.EMBED_META_KEY) != current:
+            meta[embeddings.EMBED_META_KEY] = current
+            collection.modify(metadata=meta)
+        _reindex_required = False
+    chroma_collection = collection
+    vector_store = ChromaVectorStore(chroma_collection=collection)
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    logger.info("Embedding model %s. Full re-index required: %s", current, _reindex_required)
 
 
 def connect_chroma() -> None:
     """Retry until Chroma accepts a heartbeat, then open the library collection."""
-    global db, chroma_collection, vector_store, storage_context
+    global db
 
     host = os.getenv("CHROMA_HOST")
     port = int(os.getenv("CHROMA_PORT", "8000"))
@@ -173,12 +207,8 @@ def connect_chroma() -> None:
             client = chromadb.HttpClient(host=host, port=port)
             client.heartbeat()
             collection = client.get_or_create_collection("rag_collection")
-            store = ChromaVectorStore(chroma_collection=collection)
-            context = StorageContext.from_defaults(vector_store=store)
             db = client
-            chroma_collection = collection
-            vector_store = store
-            storage_context = context
+            _remember_collection(collection)
             logger.info("Connected to ChromaDB on attempt %s", attempt)
             return
         except Exception as exc:
@@ -211,7 +241,7 @@ def get_or_create_cached_index() -> VectorStoreIndex:
 
 def replace_vector_collection() -> None:
     """Drop stored vectors so the next ingest replaces the library."""
-    global chroma_collection, vector_store, storage_context, cached_index
+    global cached_index
 
     try:
         db.delete_collection("rag_collection")
@@ -219,10 +249,26 @@ def replace_vector_collection() -> None:
     except Exception as exc:
         logger.info("No existing rag_collection to remove: %s", exc)
 
-    chroma_collection = db.get_or_create_collection("rag_collection")
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    collection = db.get_or_create_collection(
+        "rag_collection",
+        metadata={embeddings.EMBED_META_KEY: config.embed_model_name()},
+    )
     cached_index = None
+    _remember_collection(collection)
+
+
+def rebuild_library() -> None:
+    """Replace every vector with the current embedding model, then clear the block."""
+    global _reindex_required
+    _reindex_required = True
+    replace_vector_collection()
+    _reindex_required = True
+    process_ingestion()
+    if ingestion_status.get("status") == "error":
+        _reindex_required = True
+        return
+    _reindex_required = False
+    logger.info("Full re-index finished with %s", config.embed_model_name())
 
 
 class BalancedRetriever(BaseRetriever):

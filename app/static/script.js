@@ -29,7 +29,9 @@ const elements = {
     fileInput: document.getElementById('fileInput'),
     refreshBtn: document.getElementById('refreshBtn'),
     reindexBtn: document.getElementById('reindexBtn'),
+    rebuildBtn: document.getElementById('rebuildBtn'),
     readOnlyNote: document.getElementById('readOnlyNote'),
+    rebuildNote: document.getElementById('rebuildNote'),
     chatInput: document.getElementById('chatInput'),
     sendBtn: document.getElementById('sendBtn'),
     chatMessages: document.getElementById('chatMessages'),
@@ -105,6 +107,7 @@ function initializeEventListeners() {
     // Buttons
     elements.refreshBtn.addEventListener('click', refreshAll);
     elements.reindexBtn.addEventListener('click', reindexLibrary);
+    if (elements.rebuildBtn) elements.rebuildBtn.addEventListener('click', rebuildLibrary);
     elements.changeModelBtn.addEventListener('click', () => elements.modelModal.style.display = 'flex');
     elements.closeModal.addEventListener('click', () => elements.modelModal.style.display = 'none');
     elements.addModelBtn.addEventListener('click', addModel);
@@ -146,6 +149,24 @@ function handleDrop(e) {
 function handleFileSelect(e) {
     addFiles(Array.from(e.target.files));
     e.target.value = '';
+}
+
+async function rebuildLibrary() {
+    try {
+        elements.rebuildBtn.disabled = true;
+        const response = await fetch('/ingest/rebuild', { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'Full re-index started', 'info');
+            checkIngestionStatus();
+        } else {
+            showToast(data.detail || 'Full re-index failed', 'error');
+        }
+    } catch (error) {
+        showToast('Full re-index error: ' + error.message, 'error');
+    } finally {
+        elements.rebuildBtn.disabled = false;
+    }
 }
 
 async function reindexLibrary() {
@@ -742,6 +763,9 @@ async function checkSystemStatus() {
         if (elements.reindexBtn) elements.reindexBtn.hidden = !state.readOnly;
         if (elements.dropZone) elements.dropZone.hidden = state.readOnly;
         if (elements.readOnlyNote) elements.readOnlyNote.hidden = !state.readOnly;
+        const needsRebuild = Boolean(data.reindex_required);
+        if (elements.rebuildBtn) elements.rebuildBtn.hidden = !needsRebuild;
+        if (elements.rebuildNote) elements.rebuildNote.hidden = !needsRebuild;
     } catch (error) {
         console.error('Error checking system status:', error);
         setTrafficLight(elements.apiLight, 'red');

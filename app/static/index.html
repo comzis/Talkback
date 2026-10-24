@@ -141,6 +141,7 @@
             <aside class="library-panel">
                 <div class="panel-header">
                     <h2 class="panel-title">LIBRARY CURATOR</h2>
+                    <button class="btn-refresh" id="rebuildBtn" hidden>Full re-index</button>
                     <button class="btn-refresh" id="reindexBtn" hidden>Re-index now</button>
                     <button class="btn-refresh" id="refreshBtn">Refresh</button>
                 </div>
@@ -152,6 +153,7 @@
                     <h4 class="drop-title">Drop a file here</h4>
                     <p class="drop-text">Or click to choose one. It is added and indexed right away. The same name replaces that file.</p>
                     <p class="drop-text" id="readOnlyNote" hidden>This folder is read-only. Re-index reads it and does not upload or delete files.</p>
+                    <p class="drop-text" id="rebuildNote" hidden>Full re-index needed. The embedding model changed, so these vectors cannot be queried.</p>
                 </div>
                 <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.py,.js,.ts,.png,.jpg,.jpeg,.gif,.bmp,.svg,.webp,.ico,.tiff,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v" hidden>
 
@@ -259,6 +261,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.23"></script>
+    <script src="/static/script.js?v=4.24"></script>
 </body>
 </html>

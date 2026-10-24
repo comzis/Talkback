@@ -4,9 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import importlib.util
 import os
+from pathlib import Path
 
 import config
+import embeddings
 import files
 import library
 import progress
@@ -64,6 +67,8 @@ class PromptTests(unittest.TestCase):
         )
         self.assertIn("explain that text", explanation)
         self.assertIn("walk through the lines", explanation)
+        self.assertIn("language of the user's question", explanation)
+        self.assertIn("original language", prompts.assistant_prompt("bonjour"))
         self.assertIn("Inlock\nSecure AI for Private Enterprise", explanation)
         self.assertEqual(prompts.cited_source_indexes("See [1] and later [1] then [3]."), [1, 3])
         self.assertNotIn("Sentinel", text)
@@ -215,7 +220,8 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("EMBED_MODEL", None)
             os.environ.pop("EMBED_BATCH", None)
             os.environ.pop("OLLAMA_MODEL", None)
-            self.assertEqual(config.embed_model_name(), "BAAI/bge-small-en-v1.5")
+            self.assertEqual(config.embed_model_name(), "intfloat/multilingual-e5-small")
+            self.assertEqual(config.SERVER_EMBED_MODEL, "BAAI/bge-m3")
             self.assertEqual(config.embed_batch(), 16)
             self.assertEqual(config.configured_model(), "")
             with self.assertRaises(ValueError):
@@ -230,6 +236,88 @@ class ConfigTests(unittest.TestCase):
                     os.environ.pop(name, None)
                 else:
                     os.environ[name] = value
+
+
+class EmbeddingIdentityTests(unittest.TestCase):
+    def test_e5_strings_are_exactly_prefixed(self):
+        self.assertEqual(
+            embeddings.embedded_query("intfloat/multilingual-e5-small", "le coffre"),
+            "query: le coffre",
+        )
+        self.assertEqual(
+            embeddings.embedded_passage("intfloat/multilingual-e5-small", "le coffre"),
+            "passage: le coffre",
+        )
+        self.assertEqual(embeddings.join_instruction("query:", "le coffre"), "query: le coffre")
+        self.assertEqual(embeddings.join_instruction("passage:", "le coffre"), "passage: le coffre")
+        self.assertEqual(embeddings.join_instruction("query: ", "le coffre"), "query:  le coffre")
+        self.assertEqual(embeddings.embedded_query("BAAI/bge-m3", "le coffre"), "le coffre")
+
+    def test_installed_embedder_joins_with_one_space(self):
+        if importlib.util.find_spec("llama_index") is None:
+            self.skipTest("llama-index is not installed in this interpreter")
+        from llama_index.embeddings.huggingface.utils import format_query, format_text
+
+        self.assertEqual(
+            format_query("le coffre", "intfloat/multilingual-e5-small", "query:"),
+            "query: le coffre",
+        )
+        self.assertEqual(
+            format_text("le coffre", "intfloat/multilingual-e5-small", "passage:"),
+            "passage: le coffre",
+        )
+
+    def test_legacy_vectors_need_a_full_reindex(self):
+        current = "intfloat/multilingual-e5-small"
+        self.assertFalse(embeddings.full_reindex_required(None, 0, current))
+        self.assertTrue(embeddings.full_reindex_required(None, 674, current))
+        self.assertEqual(embeddings.collection_embed_model(None, 674), embeddings.LEGACY_EMBED_MODEL)
+        self.assertFalse(
+            embeddings.full_reindex_required({"embed_model": current}, 10, current)
+        )
+        self.assertFalse(embeddings.is_e5("BAAI/bge-m3"))
+        self.assertTrue(embeddings.is_e5("intfloat/multilingual-e5-small"))
+
+
+class MultilingualRetrievalTests(unittest.TestCase):
+    def test_same_question_in_three_languages_retrieves_its_document(self):
+        if importlib.util.find_spec("llama_index") is None:
+            self.skipTest("embedding libraries are not installed here")
+        needle = "models--intfloat--multilingual-e5-small"
+        roots = [
+            Path(__file__).resolve().parents[2] / "hf_cache" / "llama_index",
+            Path.home() / ".cache" / "llama_index",
+            Path("/home/appuser/.cache/llama_index"),
+        ]
+        if not any((root / needle).exists() for root in roots):
+            self.skipTest("multilingual-e5-small is not in the local cache")
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        os.environ["HF_DATASETS_OFFLINE"] = "1"
+        from llama_index.core import Document, VectorStoreIndex
+        from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
+        model = "intfloat/multilingual-e5-small"
+        embed = HuggingFaceEmbedding(
+            model_name=model,
+            query_instruction=embeddings.query_instruction(model),
+            text_instruction=embeddings.text_instruction(model),
+        )
+        fixture_dir = Path(__file__).resolve().parent / "fixtures"
+        documents = [
+            Document(text=path.read_text(encoding="utf-8"), metadata={"file_name": path.name})
+            for path in sorted(fixture_dir.glob("*.txt"))
+        ]
+        index = VectorStoreIndex.from_documents(documents, embed_model=embed)
+        questions = (
+            ("Quel est le code du portail nord ?", "fr.txt"),
+            ("What is the north gate code?", "en.txt"),
+            ("¿Cuál es el código de la puerta norte?", "es.txt"),
+        )
+        for question, expected in questions:
+            nodes = index.as_retriever(similarity_top_k=1).retrieve(question)
+            self.assertTrue(nodes, question)
+            self.assertEqual(nodes[0].metadata.get("file_name"), expected, question)
 
 
 class ProgressTests(unittest.TestCase):

@@ -1,0 +1,4 @@
+Nota de seguridad, sede de Lyon.
+El código de la puerta norte es SOL-88.
+Este código abre solo la puerta norte del depósito de Lyon.
+La puerta norte no comparte su código con las demás entradas.

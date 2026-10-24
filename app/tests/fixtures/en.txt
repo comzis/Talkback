@@ -1,0 +1,4 @@
+Safety note, Lyon site.
+The north gate code is MAPLE-42.
+This code opens only the north gate of the Lyon depot.
+The north gate does not share its code with the other entrances.

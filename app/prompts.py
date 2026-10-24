@@ -39,6 +39,8 @@ def assistant_prompt(query: str) -> str:
     """Prompt for a direct assistant reply with no document requirement."""
     return (
         "You are Talkback, a helpful assistant. Reply the way a person would in a conversation.\n"
+        "Reply in the language of the user's question, even when a source is in another language. "
+        "Keep file names and quoted text in their original language.\n"
         "Keep it short and natural. Use plain sentences.\n"
         "Do not use markdown, headings, or a numbered manual unless the user asked for steps.\n"
         "Do not mention documents, a library, or sources.\n"
@@ -117,6 +119,8 @@ def explanation_prompt(query: str, library_files: list[str], excerpts: list[str]
         shown = "(no matching excerpts)"
     return (
         "You are Talkback. The user is asking about their documents or pasted a passage.\n"
+        "Reply in the language of the user's question, even when a source is in another language. "
+        "Keep file names and quoted text in their original language.\n"
         f"The library contains: {names}.\n"
         "If the user pasted a passage, explain that text in plain language and walk through the lines.\n"
         "Answer from the library excerpts below. Do not add facts from outside those excerpts.\n"

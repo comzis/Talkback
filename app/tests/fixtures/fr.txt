@@ -1,0 +1,4 @@
+Note de sécurité, site de Lyon.
+Le code du portail nord est AZUR-17.
+Ce code ouvre uniquement le portail nord du dépôt de Lyon.
+Le portail nord ne partage pas son code avec les autres entrées.
