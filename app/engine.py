@@ -12,8 +12,6 @@ import psutil
 from llama_index.core import Settings, SimpleDirectoryReader, StorageContext, VectorStoreIndex
 from llama_index.core.retrievers import BaseRetriever
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core.prompts import PromptTemplate
-from llama_index.core.query_engine import CitationQueryEngine
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.chroma import ChromaVectorStore
@@ -22,7 +20,7 @@ from files import visible_files
 from library import balance_matches, disk_signature, indexed_signature, plan_updates
 from monitoring import LangChainMonitor
 from progress import ingest_metrics
-from prompts import citation_prompt
+from prompts import assistant_prompt, explanation_prompt, strip_citations, supporting_sources
 
 logger = logging.getLogger(__name__)
 
@@ -359,8 +357,13 @@ def process_ingestion() -> None:
         monitor.end_run(ingest_run_id, error=str(exc))
 
 
+def assistant_reply(query: str) -> str:
+    """Answer as a general assistant, with no document requirement."""
+    return str(Settings.llm.complete(assistant_prompt(query))).strip()
+
+
 def answer_query(query: str) -> dict:
-    """Answer from the index, or from the local model when the library is empty."""
+    """Answer from the library when it applies, and as an assistant otherwise."""
     query_run_id = monitor.start_run(
         name="rag_query",
         run_type="chain",
@@ -369,31 +372,39 @@ def answer_query(query: str) -> dict:
     )
     try:
         if collection_count() == 0:
-            completion = Settings.llm.complete(query)
-            monitor.end_run(query_run_id, outputs={"status": "no_documents"})
-            return {"response": str(completion), "sources": []}
+            reply = assistant_reply(query)
+            monitor.end_run(query_run_id, outputs={"status": "assistant"})
+            return {"response": reply, "sources": []}
 
         index = get_or_create_cached_index()
         library_files = sorted(indexed_documents())
-        query_engine = CitationQueryEngine.from_args(
-            index,
-            retriever=BalancedRetriever(index),
-            citation_qa_template=PromptTemplate(citation_prompt(library_files)),
-        )
-        response = query_engine.query(query)
+        nodes = BalancedRetriever(index).retrieve(query)
         sources = []
-        for node in response.source_nodes:
-            file_name = node.metadata.get("file_name", "Unknown Source")
+        for node in nodes:
+            metadata = node.metadata or {}
+            file_name = metadata.get("file_name", "Unknown Source")
             display_name = file_name if file_name != "Unknown Source" else "Document"
             sources.append({
                 "source": display_name,
                 "text": node.get_text()[:500],
             })
+        reply = str(Settings.llm.complete(explanation_prompt(
+            query,
+            library_files,
+            [f"{source['source']}\n{source['text']}" for source in sources],
+        ))).strip()
+        used = supporting_sources(reply, sources)
+        if not used:
+            reply = strip_citations(reply)
+            monitor.end_run(query_run_id, outputs={"status": "assistant"})
+            return {"response": reply, "sources": []}
+        sources = used
+
         monitor.end_run(
             query_run_id,
             outputs={"status": "completed", "sources": [source["source"] for source in sources]},
         )
-        return {"response": str(response), "sources": sources}
+        return {"response": reply, "sources": sources}
     except Exception as exc:
         logger.exception("Query failed")
         monitor.end_run(query_run_id, error=str(exc))

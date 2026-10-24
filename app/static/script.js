@@ -119,9 +119,13 @@ function initializeEventListeners() {
     
     // Chat
     elements.sendBtn.addEventListener('click', sendMessage);
-    elements.chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
+    elements.chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
     });
+    elements.chatInput.addEventListener('input', resizeChatInput);
     
     // Model
     elements.modelSelect.addEventListener('change', selectModel);
@@ -323,6 +327,7 @@ async function sendMessage() {
     // Add user message
     addMessage(query, 'user');
     elements.chatInput.value = '';
+    resizeChatInput();
     
     // Show loading
     const loadingId = addMessage('Thinking...', 'assistant', true);
@@ -523,8 +528,17 @@ function updateEmbeddingStatus(status) {
     }
 }
 
+let messageSeq = 0;
+
+function resizeChatInput() {
+    const input = elements.chatInput;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+}
+
 function addMessage(text, role, isLoading = false, sources = []) {
-    const messageId = `msg-${Date.now()}`;
+    const messageId = `msg-${++messageSeq}`;
     const avatar = role === 'user' ? 'U' : 'A';
     
     const ambient = elements.chatMessages.querySelector('.ambient-message');
@@ -722,7 +736,7 @@ async function checkSystemStatus() {
             elements.dbStatus.textContent = 'Connected';
             elements.dbDetail.textContent = `${count} documents`;
             setTrafficLight(elements.dbLight, 'green');
-            elements.chatStatus.textContent = count > 0 ? 'Ready' : 'Awaiting documents';
+            elements.chatStatus.textContent = 'Assistant';
         } else {
             elements.dbStatus.textContent = 'Disconnected';
             elements.dbDetail.textContent = 'No connection';

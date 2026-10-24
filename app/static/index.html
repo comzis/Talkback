@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Talkback</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.9">
+    <link rel="stylesheet" href="/static/style.css?v=4.12">
 </head>
 <body>
     <div class="app-container">
@@ -232,7 +232,7 @@
             <!-- Right: Chat Studio -->
             <section class="chat-panel">
                 <div class="panel-header">
-                    <span class="status-badge" id="chatStatus">Awaiting documents</span>
+                    <span class="status-badge" id="chatStatus">Assistant</span>
                 </div>
                 <h3 class="section-heading">Chat with Your Library</h3>
                 
@@ -240,21 +240,20 @@
                     <div class="chat-messages" id="chatMessages">
                         <div class="ambient-message">
                             <h4 class="ambient-title">Ready for a question</h4>
-                            <p class="ambient-text">You can talk to me right away. I'll respond from general knowledge until your documents are processed.</p>
-                            <p class="ambient-text">Add files to unlock grounded, citation-rich answers.</p>
+                            <p class="ambient-text">Ask me anything, or paste a passage. I explain the text and cite your documents when they apply.</p>
                         </div>
                     </div>
                     
                     <div class="chat-input-area">
-                        <input 
-                            type="text" 
-                            id="chatInput" 
-                            class="chat-input" 
-                            placeholder='Ask anything — try "Summarize my Python guides"'
-                        >
+                        <textarea
+                            id="chatInput"
+                            class="chat-input"
+                            rows="1"
+                            placeholder="Ask anything, or paste lines to explain"
+                        ></textarea>
                         <button class="btn-send" id="sendBtn">Send</button>
                     </div>
-                    <p class="input-hint">Press Enter to send · Responses cite sources when available</p>
+                    <p class="input-hint">Enter to send · Shift+Enter for a new line · Paste a passage to have it explained</p>
                 </div>
             </section>
         </div>
@@ -282,6 +281,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.9"></script>
+    <script src="/static/script.js?v=4.12"></script>
 </body>
 </html>

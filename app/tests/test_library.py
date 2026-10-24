@@ -46,8 +46,43 @@ class PromptTests(unittest.TestCase):
         self.assertIn("[1]", text)
         self.assertIn("inlock campaign v4.pdf", text)
         self.assertIn("Python Basics.pdf", text)
+        self.assertIn("helpful assistant", text)
+        self.assertIn("reply from your own knowledge", text)
+        explanation = prompts.explanation_prompt(
+            "Inlock\nSecure AI for Private Enterprise",
+            ["inlock campaign v4.pdf"],
+            ["Inlock deploys private AI systems."],
+        )
+        self.assertIn("explain that text", explanation)
+        self.assertIn("walk through the lines", explanation)
+        self.assertIn("Inlock\nSecure AI for Private Enterprise", explanation)
+        self.assertEqual(prompts.cited_source_indexes("See [1] and later [1] then [3]."), [1, 3])
         self.assertNotIn("Sentinel", text)
         self.assertNotIn("superhero", text.lower())
+
+    def test_explanation_keeps_the_passage_it_describes(self):
+        sources = [
+            {"source": "inlock campaign v4.pdf", "text": "Inlock Secure AI for Private Enterprise"},
+            {"source": "notes.pdf", "text": "license optional compatibility metadata"},
+        ]
+        answer = "Inlock offers secure private enterprise AI."
+        kept = prompts.supporting_sources(answer, sources)
+        self.assertEqual([item["source"] for item in kept], ["inlock campaign v4.pdf"])
+
+    def test_general_reply_is_not_treated_as_a_citation(self):
+        self.assertFalse(prompts.answered_from_sources("Paris is the capital of France."))
+        self.assertFalse(prompts.answered_from_sources(
+            "I cannot find it in the retrieved excerpts [1]."
+        ))
+        self.assertTrue(prompts.answered_from_sources("Inlock offers private AI. [1]"))
+
+    def test_unrelated_citation_does_not_count_as_grounded(self):
+        answer = "The capital of France is Paris. [1]"
+        sources = ["The capital of California is Sacramento."]
+        self.assertFalse(prompts.grounded_in_sources(answer, sources))
+        grounded = "Inlock offers private AI consulting. [1]"
+        library = ["Inlock Secure AI for Private Enterprise. Privacy-First AI Consulting."]
+        self.assertTrue(prompts.grounded_in_sources(grounded, library))
 
 
 class LibraryPlanTests(unittest.TestCase):
