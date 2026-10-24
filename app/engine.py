@@ -502,20 +502,62 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
     return balance_matches(nodes, per_file=2, limit=4)
 
 
-def assistant_reply(query: str) -> str:
-    """Answer as a general assistant, with no document requirement."""
-    return _complete(assistant_prompt(query))
+def _stream_deltas(prompt: str, temperature: float | None = None):
+    """Yield text deltas from Ollama.stream_complete, which this version provides."""
+    llm = Settings.llm
+    previous = getattr(llm, "temperature", None)
+    if temperature is not None and hasattr(llm, "temperature"):
+        llm.temperature = temperature
+    try:
+        for chunk in llm.stream_complete(prompt):
+            delta = chunk.delta or ""
+            if delta:
+                yield delta
+    finally:
+        if temperature is not None and hasattr(llm, "temperature"):
+            llm.temperature = previous
 
 
-def answer_query(query: str) -> dict:
-    """Answer from the library when it applies, and as an assistant otherwise."""
+def _stream_prompt(prompt: str, temperature: float | None, sources: list | None, about_library: bool, query: str):
+    """Stream one completion, then the sources that the finished text actually used."""
+    parts: list[str] = []
+    for delta in _stream_deltas(prompt, temperature):
+        parts.append(delta)
+        yield {"event": "token", "data": {"text": delta}}
+    reply = "".join(parts).strip()
+    if sources is None:
+        logger.info("Query answered as assistant")
+        yield {"event": "sources", "data": {"sources": []}}
+        yield {"event": "done", "data": {}}
+        return
+    used = supporting_sources(reply, sources)
+    if used and not cited_source_indexes(reply):
+        marks = " ".join(f"[{source['number']}]" for source in used)
+        extra = f" {marks}"
+        reply = f"{reply}{extra}"
+        yield {"event": "token", "data": {"text": extra}}
+    if not used:
+        if about_library:
+            reply = library_miss(reply)
+        else:
+            reply = _complete(assistant_prompt(query))
+        logger.info("Query answered as assistant")
+        yield {"event": "replace", "data": {"text": reply}}
+        yield {"event": "sources", "data": {"sources": []}}
+        yield {"event": "done", "data": {}}
+        return
+    logger.info("Query cited %s", [source["source"] for source in used])
+    yield {"event": "sources", "data": {"sources": used}}
+    yield {"event": "done", "data": {}}
+
+
+def iter_answer(query: str):
+    """Yield token events, then sources. Uses Ollama.stream_complete."""
     logger.info("Query started (%s characters)", len(query or ""))
     try:
         if collection_count() == 0 or not should_search_library(query):
-            reply = assistant_reply(query)
-            logger.info("Query answered as assistant")
-            return {"response": reply, "sources": []}
-
+            yield from _stream_prompt(assistant_prompt(query), None, None, False, query)
+            return
         index = get_or_create_cached_index()
         indexed, _legacy = indexed_documents()
         library_files = sorted(indexed)
@@ -524,29 +566,34 @@ def answer_query(query: str) -> dict:
         sources = [_source_record(node, number) for number, node in enumerate(nodes, 1)]
         mentioned = excerpts_mention(query, [source["text"] for source in sources])
         if not about_library and not mentioned:
-            reply = assistant_reply(query)
-            logger.info("Query answered as assistant")
-            return {"response": reply, "sources": []}
-        reply = _complete(explanation_prompt(
+            yield from _stream_prompt(assistant_prompt(query), None, None, False, query)
+            return
+        prompt = explanation_prompt(
             query,
             library_files,
             [f"{source['source']}\n{source['text']}" for source in sources],
-        ), temperature=0.1)
-        used = supporting_sources(reply, sources)
-        if used and not cited_source_indexes(reply):
-            marks = " ".join(f"[{source['number']}]" for source in used)
-            reply = f"{reply} {marks}"
-        if not used:
-            if about_library:
-                reply = library_miss(reply)
-            else:
-                reply = assistant_reply(query)
-            logger.info("Query answered as assistant")
-            return {"response": reply, "sources": []}
-        sources = used
-
-        logger.info("Query cited %s", [source["source"] for source in sources])
-        return {"response": reply, "sources": sources}
+        )
+        yield from _stream_prompt(prompt, 0.1, sources, about_library, query)
     except Exception:
         logger.exception("Query failed")
         raise
+
+
+def assistant_reply(query: str) -> str:
+    """Answer as a general assistant, with no document requirement."""
+    return _complete(assistant_prompt(query))
+
+
+def answer_query(query: str) -> dict:
+    """Answer from the library when it applies, and as an assistant otherwise."""
+    text: list[str] = []
+    sources: list = []
+    for event in iter_answer(query):
+        kind = event["event"]
+        if kind == "token":
+            text.append(event["data"]["text"])
+        elif kind == "replace":
+            text = [event["data"]["text"]]
+        elif kind == "sources":
+            sources = event["data"]["sources"]
+    return {"response": "".join(text).strip(), "sources": sources}

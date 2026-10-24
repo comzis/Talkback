@@ -1,4 +1,5 @@
 # app/main.py
+import json
 import os
 import logging
 import shutil
@@ -9,7 +10,7 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List
 import asyncio
@@ -106,6 +107,27 @@ async def query_index(request: QueryRequest):
         return await asyncio.to_thread(engine.answer_query, request.query)
     except Exception:
         raise HTTPException(status_code=500, detail="The query could not be completed.")
+
+@app.post("/query/stream")
+async def query_stream(request: QueryRequest):
+    """Stream answer tokens, then the sources the finished answer used."""
+    if not request.query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    def generate():
+        try:
+            for event in engine.iter_answer(request.query):
+                payload = json.dumps(event["data"], ensure_ascii=False)
+                yield f"event: {event['event']}\ndata: {payload}\n\n"
+        except Exception:
+            logger.exception("Streamed query failed")
+            yield 'event: error\ndata: {"detail": "The query could not be completed."}\n\n'
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 @app.get("/health")
 def health_check():

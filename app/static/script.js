@@ -279,38 +279,128 @@ function updateQueue() {
 }
 
 // Chat
+let activeAnswer = null;
+
+function appendSources(content, sources) {
+    const sourcesEl = document.createElement('div');
+    sourcesEl.className = 'message-sources';
+    const title = document.createElement('div');
+    title.className = 'sources-title';
+    title.textContent = 'Sources';
+    sourcesEl.appendChild(title);
+    sources.forEach((source, index) => {
+        const item = document.createElement('div');
+        item.className = 'source-item';
+        const number = document.createElement('div');
+        number.className = 'source-number';
+        number.textContent = String(source.number || index + 1);
+        const sourceText = document.createElement('div');
+        sourceText.className = 'source-text';
+        const name = document.createElement('strong');
+        name.textContent = source.label || source.path || source.source || 'Unknown';
+        sourceText.appendChild(name);
+        if (source.text) {
+            const excerpt = document.createElement('span');
+            const snippet = source.text.length > 180 ? `${source.text.slice(0, 180)}…` : source.text;
+            excerpt.textContent = ` ${snippet}`;
+            sourceText.appendChild(excerpt);
+        }
+        item.append(number, sourceText);
+        sourcesEl.appendChild(item);
+    });
+    content.appendChild(sourcesEl);
+}
+
+function setMessageBody(messageId, text, sources) {
+    const content = document.getElementById(messageId)?.querySelector('.message-content');
+    if (!content) return;
+    content.textContent = text;
+    if (sources && sources.length) {
+        appendSources(content, sources);
+    }
+    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+function consumeSseBuffer(buffer, onEvent) {
+    const parts = buffer.split('\n\n');
+    const rest = parts.pop();
+    parts.forEach(part => {
+        if (!part.trim()) return;
+        let eventName = 'message';
+        const dataLines = [];
+        part.split('\n').forEach(line => {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        });
+        if (!dataLines.length) return;
+        onEvent(eventName, JSON.parse(dataLines.join('\n')));
+    });
+    return rest;
+}
+
 async function sendMessage() {
+    if (activeAnswer) {
+        activeAnswer.abort();
+        return;
+    }
     const query = elements.chatInput.value.trim();
     if (!query) return;
-    
-    // Add user message
+
     addMessage(query, 'user');
     elements.chatInput.value = '';
     resizeChatInput();
-    
-    // Show loading
-    const loadingId = addMessage('Thinking...', 'assistant', true);
-    
+    const messageId = addMessage('Thinking...', 'assistant', true);
+    const controller = new AbortController();
+    activeAnswer = controller;
+    elements.sendBtn.textContent = 'Stop';
+    let streamed = '';
+    let sawToken = false;
+
     try {
-        const response = await fetch('/query', {
+        const response = await fetch('/query/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
+            body: JSON.stringify({ query }),
+            signal: controller.signal
         });
-        
-        const data = await response.json();
-        
-        // Remove loading message
-        removeMessage(loadingId);
-        
-        if (response.ok) {
-            addMessage(data.response || data.answer, 'assistant', false, data.sources);
-        } else {
-            addMessage(data.detail || data.error || 'Query failed', 'assistant');
+        if (!response.ok || !response.body) {
+            const data = await response.json().catch(() => ({}));
+            setMessageBody(messageId, data.detail || 'Query failed');
+            return;
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const step = await reader.read();
+            buffer += decoder.decode(step.value || new Uint8Array(), { stream: !step.done });
+            buffer = consumeSseBuffer(buffer, (eventName, data) => {
+                if (eventName === 'token') {
+                    if (!sawToken) streamed = '';
+                    sawToken = true;
+                    streamed += data.text || '';
+                    setMessageBody(messageId, streamed);
+                } else if (eventName === 'replace') {
+                    streamed = data.text || '';
+                    sawToken = true;
+                    setMessageBody(messageId, streamed);
+                } else if (eventName === 'sources') {
+                    setMessageBody(messageId, streamed, data.sources || []);
+                } else if (eventName === 'error') {
+                    setMessageBody(messageId, data.detail || 'The query could not be completed.');
+                }
+            });
+            if (step.done) break;
         }
     } catch (error) {
-        removeMessage(loadingId);
-        addMessage('Error: ' + error.message, 'assistant');
+        if (error.name === 'AbortError') {
+            setMessageBody(messageId, sawToken ? streamed : 'Stopped.');
+        } else {
+            setMessageBody(messageId, 'Error: ' + error.message);
+        }
+    } finally {
+        activeAnswer = null;
+        elements.sendBtn.textContent = 'Send';
     }
 }
 
@@ -512,37 +602,7 @@ function addMessage(text, role, isLoading = false, sources = []) {
     const content = document.createElement('div');
     content.className = 'message-content';
     content.textContent = isLoading ? 'Thinking...' : String(text ?? '').trim();
-
-    if (sources && sources.length > 0) {
-        const sourcesEl = document.createElement('div');
-        sourcesEl.className = 'message-sources';
-        const title = document.createElement('div');
-        title.className = 'sources-title';
-        title.textContent = 'Sources';
-        sourcesEl.appendChild(title);
-        sources.forEach((source, index) => {
-            const item = document.createElement('div');
-            item.className = 'source-item';
-            const number = document.createElement('div');
-            number.className = 'source-number';
-            number.textContent = String(source.number || index + 1);
-            const sourceText = document.createElement('div');
-            sourceText.className = 'source-text';
-            const name = document.createElement('strong');
-            const label = source.label || source.path || source.source || 'Unknown';
-            name.textContent = label;
-            sourceText.appendChild(name);
-            if (source.text) {
-                const excerpt = document.createElement('span');
-                const snippet = source.text.length > 180 ? `${source.text.slice(0, 180)}…` : source.text;
-                excerpt.textContent = ` ${snippet}`;
-                sourceText.appendChild(excerpt);
-            }
-            item.append(number, sourceText);
-            sourcesEl.appendChild(item);
-        });
-        content.appendChild(sourcesEl);
-    }
+    if (sources && sources.length > 0) appendSources(content, sources);
 
     message.append(avatar, content);
     elements.chatMessages.appendChild(message);
