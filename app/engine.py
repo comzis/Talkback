@@ -132,6 +132,7 @@ ingestion_status: dict = {
     "total_files": 0,
     "processed_files": 0,
     "start_time": None,
+    "finished_at": None,
     "chunks_per_second": 0.0,
     "cpu_percent": 0.0,
     "memory_percent": 0.0,
@@ -144,6 +145,7 @@ vector_store = None
 storage_context = None
 cached_index: VectorStoreIndex | None = None
 _reindex_required = False
+_last_indexed_at: float | None = None
 
 
 def reindex_required() -> bool:
@@ -168,6 +170,7 @@ def _fresh_status(**overrides) -> dict:
         "total_files": 0,
         "processed_files": 0,
         "start_time": None,
+        "finished_at": _last_indexed_at,
         "chunks_per_second": 0.0,
         "cpu_percent": 0.0,
         "memory_percent": 0.0,
@@ -411,8 +414,15 @@ def _touch_resources() -> None:
     ingestion_status["memory_percent"] = round(psutil.virtual_memory().percent, 1)
 
 
+def _note_indexed() -> None:
+    """Remember when a pass finished, including one that found nothing new."""
+    global _last_indexed_at
+    _last_indexed_at = time.time()
+
+
 def _finish_kept(started: float, message: str, files: int) -> None:
     kept = collection_count()
+    _note_indexed()
     ingestion_status.update(_fresh_status(
         status="completed",
         message=message,
@@ -537,6 +547,7 @@ def _ingest_once() -> None:
         speed = total / elapsed if elapsed > 0 else 0
         cached_index = index
         library_total = collection_count()
+        _note_indexed()
         ingestion_status.update(_fresh_status(
             status="completed",
             message=f"Added {total} chunks from {len(embed_names)} file(s). Existing documents were kept.",

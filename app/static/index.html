@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache">
     <title>Talkback</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.33">
+    <link rel="stylesheet" href="/static/style.css?v=4.34">
 </head>
 <body>
     <div class="app-container">
@@ -142,10 +142,25 @@
                 <div class="panel-header">
                     <h2 class="panel-title">LIBRARY CURATOR</h2>
                     <div class="panel-actions">
-                        <button class="btn-refresh" id="rebuildBtn" hidden>Full re-index</button>
-                        <button class="btn-refresh" id="reindexBtn" hidden>Re-index now</button>
                         <button class="btn-refresh" id="refreshBtn">Refresh</button>
                     </div>
+                </div>
+                <div class="reindex-bar">
+                    <details class="reindex-menu" id="reindexMenu">
+                        <summary class="btn-refresh">Re-index</summary>
+                        <div class="reindex-actions">
+                            <button type="button" id="reindexChangedBtn">Re-index changed files</button>
+                            <button type="button" id="reindexFullBtn">Full re-index</button>
+                        </div>
+                        <div class="reindex-confirm" id="reindexConfirm" hidden>
+                            <p>Full re-index deletes the current vectors and embeds every file again.</p>
+                            <div class="reindex-confirm-actions">
+                                <button type="button" id="reindexConfirmYes">Replace the index</button>
+                                <button type="button" id="reindexConfirmNo">Cancel</button>
+                            </div>
+                        </div>
+                    </details>
+                    <p class="reindex-meta" id="reindexMeta">0 chunks</p>
                 </div>
                 <p class="rebuild-note" id="rebuildNote" hidden>These files are not indexed yet.</p>
                 <h3 class="section-heading">Manage Your Documents</h3>
@@ -263,6 +278,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.27"></script>
+    <script src="/static/script.js?v=4.28"></script>
 </body>
 </html>

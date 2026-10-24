@@ -20,7 +20,10 @@ const state = {
         current: 0,
         total: 0,
         isProcessing: false
-    }
+    },
+    chunkCount: 0,
+    lastIndexedAt: null,
+    indexing: false
 };
 
 // DOM Elements
@@ -28,8 +31,13 @@ const elements = {
     dropZone: document.getElementById('dropZone'),
     fileInput: document.getElementById('fileInput'),
     refreshBtn: document.getElementById('refreshBtn'),
-    reindexBtn: document.getElementById('reindexBtn'),
-    rebuildBtn: document.getElementById('rebuildBtn'),
+    reindexMenu: document.getElementById('reindexMenu'),
+    reindexChangedBtn: document.getElementById('reindexChangedBtn'),
+    reindexFullBtn: document.getElementById('reindexFullBtn'),
+    reindexConfirm: document.getElementById('reindexConfirm'),
+    reindexConfirmYes: document.getElementById('reindexConfirmYes'),
+    reindexConfirmNo: document.getElementById('reindexConfirmNo'),
+    reindexMeta: document.getElementById('reindexMeta'),
     readOnlyNote: document.getElementById('readOnlyNote'),
     rebuildNote: document.getElementById('rebuildNote'),
     chatInput: document.getElementById('chatInput'),
@@ -106,8 +114,10 @@ function initializeEventListeners() {
     
     // Buttons
     elements.refreshBtn.addEventListener('click', refreshAll);
-    elements.reindexBtn.addEventListener('click', reindexLibrary);
-    if (elements.rebuildBtn) elements.rebuildBtn.addEventListener('click', rebuildLibrary);
+    elements.reindexChangedBtn.addEventListener('click', reindexChanged);
+    elements.reindexFullBtn.addEventListener('click', askFullReindex);
+    elements.reindexConfirmYes.addEventListener('click', confirmFullReindex);
+    elements.reindexConfirmNo.addEventListener('click', cancelFullReindex);
     elements.changeModelBtn.addEventListener('click', () => elements.modelModal.style.display = 'flex');
     elements.closeModal.addEventListener('click', () => elements.modelModal.style.display = 'none');
     elements.addModelBtn.addEventListener('click', addModel);
@@ -151,39 +161,41 @@ function handleFileSelect(e) {
     e.target.value = '';
 }
 
-async function rebuildLibrary() {
-    try {
-        elements.rebuildBtn.disabled = true;
-        const response = await fetch('/ingest/rebuild', { method: 'POST' });
-        const data = await response.json();
-        if (response.ok) {
-            showToast(data.message || 'Full re-index started', 'info');
-            checkIngestionStatus();
-        } else {
-            showToast(data.detail || 'Full re-index failed', 'error');
-        }
-    } catch (error) {
-        showToast('Full re-index error: ' + error.message, 'error');
-    } finally {
-        elements.rebuildBtn.disabled = false;
-    }
+function closeReindexMenu() {
+    if (elements.reindexMenu) elements.reindexMenu.open = false;
+    if (elements.reindexConfirm) elements.reindexConfirm.hidden = true;
 }
 
-async function reindexLibrary() {
+function askFullReindex() {
+    if (elements.reindexConfirm) elements.reindexConfirm.hidden = false;
+}
+
+function cancelFullReindex() {
+    if (elements.reindexConfirm) elements.reindexConfirm.hidden = true;
+}
+
+async function reindexChanged() {
+    closeReindexMenu();
+    await postReindex('/ingest', 'Re-index started');
+}
+
+async function confirmFullReindex() {
+    closeReindexMenu();
+    await postReindex('/ingest/rebuild', 'Full re-index started');
+}
+
+async function postReindex(path, started) {
     try {
-        elements.reindexBtn.disabled = true;
-        const response = await fetch('/ingest', { method: 'POST' });
+        const response = await fetch(path, { method: 'POST' });
         const data = await response.json();
         if (response.ok) {
-            showToast(data.message || 'Re-index started', 'info');
+            showToast(data.message || started, 'info');
             checkIngestionStatus();
         } else {
             showToast(data.detail || 'Re-index failed', 'error');
         }
     } catch (error) {
         showToast('Re-index error: ' + error.message, 'error');
-    } finally {
-        elements.reindexBtn.disabled = false;
     }
 }
 
@@ -757,7 +769,6 @@ async function checkSystemStatus() {
         const data = await response.json();
         const modelChanged = Boolean(data.reindex_required);
         const filesWaiting = Boolean(data.files_waiting);
-        if (elements.rebuildBtn) elements.rebuildBtn.hidden = !(modelChanged || filesWaiting);
         if (elements.rebuildNote) {
             elements.rebuildNote.hidden = !(modelChanged || filesWaiting);
             elements.rebuildNote.textContent = modelChanged
@@ -777,8 +788,10 @@ async function checkSystemStatus() {
         // Database Status
         if (data.database?.connected) {
             const count = data.database.collection_count || 0;
+            state.chunkCount = count;
             elements.dbStatus.textContent = 'Connected';
             elements.dbDetail.textContent = `${count} documents`;
+            renderReindexMeta();
             setTrafficLight(elements.dbLight, 'green');
             elements.chatStatus.textContent = 'Talkback';
         } else {
@@ -802,7 +815,6 @@ async function checkSystemStatus() {
         }
         state.readOnly = Boolean(data.library_read_only);
         document.querySelector('.library-panel')?.classList.toggle('read-only', state.readOnly);
-        if (elements.reindexBtn) elements.reindexBtn.hidden = !state.readOnly;
         if (elements.dropZone) elements.dropZone.hidden = state.readOnly;
         if (elements.readOnlyNote) elements.readOnlyNote.hidden = !state.readOnly;
     } catch (error) {
@@ -811,6 +823,25 @@ async function checkSystemStatus() {
         setTrafficLight(elements.dbLight, 'red');
         setTrafficLight(elements.llmLight, 'red');
     }
+}
+
+function formatIndexedAt(unix) {
+    const date = new Date(unix * 1000);
+    if (Number.isNaN(date.getTime())) return '';
+    const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (date.toDateString() === new Date().toDateString()) return time;
+    const day = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return `${day} ${time}`;
+}
+
+function renderReindexMeta() {
+    if (!elements.reindexMeta) return;
+    const count = Number.isFinite(state.chunkCount) ? state.chunkCount : 0;
+    const chunks = `${count} chunk${count === 1 ? '' : 's'}`;
+    let when = 'Not indexed yet';
+    if (state.indexing) when = 'Indexing…';
+    else if (state.lastIndexedAt) when = `Indexed ${formatIndexedAt(state.lastIndexedAt)}`;
+    elements.reindexMeta.textContent = `${chunks} · ${when}`;
 }
 
 function setTrafficLight(element, color) {
@@ -822,6 +853,9 @@ async function checkIngestionStatus() {
     try {
         const response = await fetch('/ingest/status');
         const data = await response.json();
+        state.indexing = data.status === 'processing';
+        if (data.finished_at) state.lastIndexedAt = data.finished_at;
+        renderReindexMeta();
         updateEmbeddingStatus(data);
     } catch (error) {
         console.error('Error checking ingestion status:', error);
