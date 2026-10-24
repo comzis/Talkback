@@ -103,13 +103,23 @@ def offline_mode() -> bool:
 
 
 def apply_offline_mode() -> None:
-    """Stop Hugging Face from calling the network when the cache is already present."""
+    """Stop Hugging Face from calling the network when the cache is already present.
+
+    huggingface_hub reads HF_HUB_OFFLINE once, at import. The container entrypoint
+    exports it before Python starts. Setting the constant here covers a process
+    that imported the library first.
+    """
     if not offline_mode():
         logger.info("OFFLINE_MODE is off. Setup may download a missing embedding model.")
         return
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["HF_DATASETS_OFFLINE"] = "1"
+    try:
+        import huggingface_hub.constants as hf_constants
+        hf_constants.HF_HUB_OFFLINE = True
+    except Exception:
+        logger.exception("Could not mark Hugging Face offline")
     logger.info("Offline mode: the embedding model loads from the local cache only.")
 
 

@@ -28,7 +28,7 @@ There is no LangSmith client and no telemetry endpoint.
 
 While it is true:
 
-- Hugging Face is set offline (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `HF_DATASETS_OFFLINE`). The embedding model loads only from `./hf_cache`.
+- `app/entrypoint.sh` exports `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, and `HF_DATASETS_OFFLINE=1` before Python starts. Hugging Face reads those names when its library is imported, so setting them later does not stop the calls. The embedding model then loads only from `./hf_cache`.
 - `POST /llm/pull` is refused. The Add Model button is hidden.
 
 The only outbound calls are one-off model downloads during setup, and only when you set `OFFLINE_MODE=false` and restart:

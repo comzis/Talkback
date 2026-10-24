@@ -33,4 +33,5 @@ USER ${UID}:${GID}
 
 EXPOSE 8001
 
+ENTRYPOINT ["sh", "/app/entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

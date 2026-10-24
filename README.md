@@ -45,7 +45,7 @@ docker compose ps
 
 `ollama pull` reads the name from your shell. If the variable is only in `.env`, pass the same name explicitly.
 
-The API image is large because it includes a CPU build of PyTorch. With `OFFLINE_MODE=true` (the default) the embedding model loads only from `./hf_cache`. Download it once with `OFFLINE_MODE=false`, then turn offline mode back on. See the demo checklist.
+The API image is large because it includes a CPU build of PyTorch. With `OFFLINE_MODE=true` (the default) the container exports the Hugging Face offline flags before Python starts, and the embedding model loads only from `./hf_cache`. Download it once with `OFFLINE_MODE=false`, then turn offline mode back on. See the demo checklist.
 
 ### 3. Open Talkback
 
