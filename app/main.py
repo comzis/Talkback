@@ -37,6 +37,7 @@ async def disable_asset_cache(request, call_next):
     return response
 
 engine.init()
+engine.start_reindex_schedule()
 
 class QueryRequest(BaseModel):
     query: str
@@ -133,6 +134,7 @@ async def get_system_status():
             "error": None
         },
         "offline_mode": engine.offline_mode(),
+        "library_read_only": engine.library_read_only(),
         "database": {
             "status": "unknown",
             "connected": False,
@@ -241,6 +243,11 @@ async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile
     """
     Save files into the library and index them in the same request.
     """
+    if engine.library_read_only():
+        raise HTTPException(
+            status_code=403,
+            detail="The library is read-only. Indexing reads the mounted folder and does not upload files.",
+        )
     try:
         named_files = []
         for file in files:
@@ -276,6 +283,11 @@ async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile
 @app.delete("/files/{filename:path}")
 async def delete_uploaded_file(filename: str):
     """Delete one library file and only the chunks that came from that relative path."""
+    if engine.library_read_only():
+        raise HTTPException(
+            status_code=403,
+            detail="The library is read-only. Indexing reads the mounted folder and does not delete files.",
+        )
     try:
         relative = safe_relative_path(filename)
     except InvalidFilename:

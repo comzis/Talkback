@@ -28,6 +28,8 @@ const elements = {
     dropZone: document.getElementById('dropZone'),
     fileInput: document.getElementById('fileInput'),
     refreshBtn: document.getElementById('refreshBtn'),
+    reindexBtn: document.getElementById('reindexBtn'),
+    readOnlyNote: document.getElementById('readOnlyNote'),
     chatInput: document.getElementById('chatInput'),
     sendBtn: document.getElementById('sendBtn'),
     chatMessages: document.getElementById('chatMessages'),
@@ -102,6 +104,7 @@ function initializeEventListeners() {
     
     // Buttons
     elements.refreshBtn.addEventListener('click', refreshAll);
+    elements.reindexBtn.addEventListener('click', reindexLibrary);
     elements.changeModelBtn.addEventListener('click', () => elements.modelModal.style.display = 'flex');
     elements.closeModal.addEventListener('click', () => elements.modelModal.style.display = 'none');
     elements.addModelBtn.addEventListener('click', addModel);
@@ -145,8 +148,26 @@ function handleFileSelect(e) {
     e.target.value = '';
 }
 
+async function reindexLibrary() {
+    try {
+        elements.reindexBtn.disabled = true;
+        const response = await fetch('/ingest', { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) {
+            showToast(data.message || 'Re-index started', 'info');
+            checkIngestionStatus();
+        } else {
+            showToast(data.detail || 'Re-index failed', 'error');
+        }
+    } catch (error) {
+        showToast('Re-index error: ' + error.message, 'error');
+    } finally {
+        elements.reindexBtn.disabled = false;
+    }
+}
+
 async function addFiles(files) {
-    if (!files || files.length === 0 || state.adding) return;
+    if (state.readOnly || !files || files.length === 0 || state.adding) return;
 
     state.adding = true;
     state.selectedFiles = files;
@@ -656,6 +677,11 @@ async function checkSystemStatus() {
         if (elements.modelAdd) {
             elements.modelAdd.hidden = data.offline_mode !== false;
         }
+        state.readOnly = Boolean(data.library_read_only);
+        document.querySelector('.library-panel')?.classList.toggle('read-only', state.readOnly);
+        if (elements.reindexBtn) elements.reindexBtn.hidden = !state.readOnly;
+        if (elements.dropZone) elements.dropZone.hidden = state.readOnly;
+        if (elements.readOnlyNote) elements.readOnlyNote.hidden = !state.readOnly;
     } catch (error) {
         console.error('Error checking system status:', error);
         setTrafficLight(elements.apiLight, 'red');

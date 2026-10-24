@@ -27,6 +27,8 @@ from library import (
     index_plan,
     indexed_signature,
     library_key,
+    read_only_requested,
+    reindex_minutes,
 )
 from progress import ingest_metrics
 from prompts import (
@@ -45,6 +47,31 @@ from prompts import (
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path(os.getenv("RAG_DATA_DIR", "/app/data"))
+
+
+def library_read_only() -> bool:
+    """True when the data directory is a read-only mount, such as a network share."""
+    return read_only_requested(os.getenv("LIBRARY_READ_ONLY"))
+
+
+def start_reindex_schedule() -> None:
+    """Re-run incremental indexing on a timer. Unset or 0 leaves this off."""
+    minutes = reindex_minutes(os.getenv("REINDEX_INTERVAL_MINUTES"))
+    if minutes is None:
+        logger.info("Scheduled re-index is off.")
+        return
+
+    def loop() -> None:
+        while True:
+            time.sleep(minutes * 60)
+            if not begin_ingestion():
+                logger.info("Scheduled re-index skipped because indexing is already running.")
+                continue
+            logger.info("Scheduled re-index started.")
+            process_ingestion()
+
+    threading.Thread(target=loop, name="talkback-reindex", daemon=True).start()
+    logger.info("Scheduled re-index every %s minutes.", minutes)
 
 
 def offline_mode() -> bool:

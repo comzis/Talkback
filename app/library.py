@@ -30,6 +30,21 @@ def same_version(on_disk: tuple, indexed: tuple) -> bool:
     return on_disk[1] == indexed[1]
 
 
+def read_only_requested(value: str | None) -> bool:
+    """True only when LIBRARY_READ_ONLY is explicitly enabled. Default is writable."""
+    if value is None or not str(value).strip():
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def reindex_minutes(value: str | None) -> int | None:
+    """Return a positive interval, or None when scheduled re-indexing is off."""
+    if value is None or not str(value).strip():
+        return None
+    minutes = int(str(value).strip())
+    return minutes if minutes > 0 else None
+
+
 def library_key(path: Path, root: Path) -> str:
     """Return the posix path of a library file relative to the data root."""
     return path.resolve().relative_to(root.resolve()).as_posix()

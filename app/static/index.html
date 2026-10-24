@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache">
     <title>Talkback</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.30">
+    <link rel="stylesheet" href="/static/style.css?v=4.31">
 </head>
 <body>
     <div class="app-container">
@@ -141,6 +141,7 @@
             <aside class="library-panel">
                 <div class="panel-header">
                     <h2 class="panel-title">LIBRARY CURATOR</h2>
+                    <button class="btn-refresh" id="reindexBtn" hidden>Re-index now</button>
                     <button class="btn-refresh" id="refreshBtn">Refresh</button>
                 </div>
                 <h3 class="section-heading">Manage Your Documents</h3>
@@ -150,6 +151,7 @@
                     <div class="drop-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V6"/><path d="M8.5 9.5 12 6l3.5 3.5"/><path d="M5 16.5V19h14v-2.5"/></svg></div>
                     <h4 class="drop-title">Drop a file here</h4>
                     <p class="drop-text">Or click to choose one. It is added and indexed right away. The same name replaces that file.</p>
+                    <p class="drop-text" id="readOnlyNote" hidden>This folder is read-only. Re-index reads it and does not upload or delete files.</p>
                 </div>
                 <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.py,.js,.ts,.png,.jpg,.jpeg,.gif,.bmp,.svg,.webp,.ico,.tiff,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v" hidden>
 
@@ -257,6 +259,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.20"></script>
+    <script src="/static/script.js?v=4.21"></script>
 </body>
 </html>

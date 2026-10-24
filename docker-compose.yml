@@ -17,6 +17,11 @@ services:
       HUGGINGFACE_HUB_CACHE: /cache/huggingface/hub
       SENTENCE_TRANSFORMERS_HOME: /cache/huggingface/sentence-transformers
     volumes:
+      # Writable library used by Drop a file. Switch to a read-only mount to
+      # simulate the S: drive, and set LIBRARY_READ_ONLY=true:
+      #   - /Volumes/Engineering:/app/data:ro
+      # Optional scheduled incremental index (minutes). Leave unset to keep it off:
+      #   REINDEX_INTERVAL_MINUTES=30
       - ./data:/app/data
       - ./hf_cache:/home/appuser/.cache
     container_name: rag_api_service

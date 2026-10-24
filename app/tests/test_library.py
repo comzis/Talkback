@@ -131,6 +131,14 @@ class LibraryPlanTests(unittest.TestCase):
         self.assertEqual(embed, ["notes.pdf"])
         self.assertEqual(drop, ["notes.pdf"])
 
+    def test_read_only_defaults_off_and_interval_defaults_off(self):
+        self.assertFalse(library.read_only_requested(None))
+        self.assertFalse(library.read_only_requested(""))
+        self.assertTrue(library.read_only_requested("true"))
+        self.assertIsNone(library.reindex_minutes(None))
+        self.assertIsNone(library.reindex_minutes("0"))
+        self.assertEqual(library.reindex_minutes("30"), 30)
+
     def test_same_name_in_two_folders_are_both_indexed(self):
         signature = (10, "2026-10-24", 100)
         embed, drop = library.plan_updates(

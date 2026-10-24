@@ -737,6 +737,10 @@ body {
     max-height: 96px;
 }
 
+.library-panel.read-only .delete-file {
+    display: none;
+}
+
 .library-panel .delete-file {
     padding: 0 6px;
     font-size: 11px;
