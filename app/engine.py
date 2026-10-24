@@ -40,6 +40,7 @@ from prompts import (
     library_miss,
     named_library_files,
     should_search_library,
+    source_label,
     strip_citations,
     supporting_sources,
 )
@@ -478,10 +479,12 @@ def _source_record(node, number: int) -> dict:
     record = {
         "number": number,
         "source": file_name,
+        "path": metadata.get("relative_path") or file_name,
         "text": (node.get_text() or "")[:500],
     }
     if page not in (None, ""):
         record["page"] = str(page)
+    record["label"] = source_label(record)
     return record
 
 

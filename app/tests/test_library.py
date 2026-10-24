@@ -97,6 +97,11 @@ class PromptTests(unittest.TestCase):
         )
         self.assertEqual([item["number"] for item in uncited], [1])
         self.assertEqual(prompts.library_miss("I think it is Paris."), "The library does not cover that.")
+        self.assertEqual(
+            prompts.source_label({"path": "a/notes.pdf", "page": "3"}),
+            "a/notes.pdf · p. 3",
+        )
+        self.assertEqual(prompts.source_label({"source": "notes.pdf"}), "notes.pdf")
 
     def test_general_reply_is_not_treated_as_a_citation(self):
         self.assertFalse(prompts.answered_from_sources("Paris is the capital of France."))

@@ -529,8 +529,8 @@ function addMessage(text, role, isLoading = false, sources = []) {
             const sourceText = document.createElement('div');
             sourceText.className = 'source-text';
             const name = document.createElement('strong');
-            const label = source.source || 'Unknown';
-            name.textContent = source.page ? `${label} · p. ${source.page}` : label;
+            const label = source.label || source.path || source.source || 'Unknown';
+            name.textContent = label;
             sourceText.appendChild(name);
             if (source.text) {
                 const excerpt = document.createElement('span');

@@ -180,6 +180,15 @@ def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
     return chosen[:2] if not cited else chosen
 
 
+def source_label(source: dict) -> str:
+    """Show the folder and file, and the page when the reader stored one."""
+    path = source.get("path") or source.get("source") or "Document"
+    page = source.get("page")
+    if page not in (None, ""):
+        return f"{path} · p. {page}"
+    return str(path)
+
+
 def library_miss(answer: str) -> str:
     """Use the model's refusal when it already admits the gap."""
     cleaned = strip_citations(answer)
