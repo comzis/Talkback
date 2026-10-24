@@ -12,7 +12,7 @@ The chat window is the main view. The library, system status, and upload area si
 - Adds a file in one step. Drop a file on the library panel, or click the drop area and choose one. Talkback saves it and starts indexing. Uploading the same name replaces that file only.
 - Leaves files that have not changed in the index. New and changed files are embedded. Removed files drop their chunks.
 - Answers greetings and general questions with no sources. A question that names a library file is answered from that file. Each cited claim keeps its source number, with the page and excerpt beside it.
-- Uses `gemma2:2b` through Ollama by default, and `BAAI/bge-small-en-v1.5` for embeddings. The embedding model downloads once, on first start.
+- Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in model name. Embeddings default to `BAAI/bge-small-en-v1.5`, which you can change with `EMBED_MODEL`. The embedding model downloads once, on first start, and only when `OFFLINE_MODE=false`.
 
 LangSmith monitoring is off unless you turn it on. When it is enabled, traces leave the machine.
 
@@ -29,24 +29,22 @@ LangSmith monitoring is off unless you turn it on. When it is enabled, traces le
 ```bash
 git clone https://github.com/comzis/Talkback.git
 cd Talkback
-
-cat > .env << EOF
-OLLAMA_MODEL=gemma2:2b
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-CHROMA_HOST=chromadb
-CHROMA_PORT=8000
-EOF
+cp .env.example .env
 ```
+
+Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name.
 
 `CHROMA_PORT=8000` is the port inside the Docker network. From the host, Chroma is published on port **8002**, because 8000 is often already taken.
 
 ### 2. Pull the model and start the stack
 
 ```bash
-ollama pull gemma2:2b
+ollama pull "$OLLAMA_MODEL"
 docker compose up --build -d
 docker compose ps
 ```
+
+`ollama pull` reads the name from your shell. If the variable is only in `.env`, pass the same name explicitly.
 
 The API image is large because it includes a CPU build of PyTorch. The first start also downloads the embedding model into `./hf_cache`.
 
@@ -83,20 +81,18 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `OLLAMA_MODEL` | Model name in host Ollama | `gemma2:2b` |
+| `OLLAMA_MODEL` | Model name in host Ollama. Required. No built-in fallback | set in `.env` |
 | `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
+| `EMBED_MODEL` | Local embedding model | `BAAI/bge-small-en-v1.5` |
+| `EMBED_BATCH` | Chunks per embedding batch. Progress updates after each batch | `16` |
 | `CHROMA_HOST` | Chroma service name on the Docker network | `chromadb` |
 | `CHROMA_PORT` | Chroma port on the Docker network | `8000` |
 | `LANGCHAIN_MONITORING` | Send traces to LangSmith | off |
 | `LANGCHAIN_PROJECT` | LangSmith project name | `Talkback` |
 
-Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first:
+Pilot models must be Apache 2.0 or MIT licensed. Check the model card before you set `OLLAMA_MODEL`.
 
-```bash
-ollama pull llama3
-```
-
-`gemma2:2b` is the fast default. A larger local model holds a longer, more careful answer more steadily.
+Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first with `ollama pull`, using the name from the model card.
 
 If files in `./data` are not writable inside the container, rebuild the API with your user id:
 
@@ -117,7 +113,7 @@ Talkback/
 │   ├── prompts.py        # When to search, and how a citation is kept
 │   ├── library.py        # Which files to add, replace, or leave indexed
 │   ├── files.py          # Safe filenames and the library listing
-│   ├── monitoring.py     # Optional LangSmith traces
+│   ├── config.py         # Model, embedding, and timeout settings
 │   ├── static/           # Chat UI
 │   ├── tests/            # Library plan, prompts, and citation checks
 │   ├── requirements.txt
@@ -160,7 +156,7 @@ cd app && python3 -m unittest tests.test_library
 **The model is missing.** Pull it on the host, not in a container:
 
 ```bash
-ollama pull gemma2:2b
+ollama pull <model-from-the-model-card>
 ollama list
 ```
 

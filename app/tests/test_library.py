@@ -4,6 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import os
+
+import config
 import files
 import library
 import progress
@@ -203,6 +206,30 @@ class LibraryPlanTests(unittest.TestCase):
         self.assertIn("inlock campaign v4.pdf", names)
         self.assertEqual(names.count("Python Basics.pdf"), 2)
         self.assertLessEqual(len(chosen), 4)
+
+
+class ConfigTests(unittest.TestCase):
+    def test_embed_defaults_and_required_chat_model(self):
+        saved = {name: os.environ.get(name) for name in ("EMBED_MODEL", "EMBED_BATCH", "OLLAMA_MODEL")}
+        try:
+            os.environ.pop("EMBED_MODEL", None)
+            os.environ.pop("EMBED_BATCH", None)
+            os.environ.pop("OLLAMA_MODEL", None)
+            self.assertEqual(config.embed_model_name(), "BAAI/bge-small-en-v1.5")
+            self.assertEqual(config.embed_batch(), 16)
+            self.assertEqual(config.configured_model(), "")
+            with self.assertRaises(ValueError):
+                config.require_ollama_model()
+            os.environ["EMBED_BATCH"] = "4"
+            self.assertEqual(config.embed_batch(), 4)
+            os.environ["OLLAMA_MODEL"] = "pilot-model"
+            self.assertEqual(config.require_ollama_model(), "pilot-model")
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
 
 class ProgressTests(unittest.TestCase):

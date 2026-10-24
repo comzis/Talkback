@@ -17,6 +17,7 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
+import config
 from files import visible_files
 from library import (
     balance_matches,
@@ -91,8 +92,6 @@ def apply_offline_mode() -> None:
     logger.info("Offline mode: the embedding model loads from the local cache only.")
 
 
-EMBED_BATCH = 1
-
 ingestion_status: dict = {
     "status": "idle",
     "progress": 0,
@@ -155,11 +154,11 @@ def init() -> None:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     connect_chroma()
     Settings.llm = Ollama(
-        model=os.getenv("OLLAMA_MODEL", "gemma2:2b"),
-        base_url=os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
-        request_timeout=300.0,
+        model=config.require_ollama_model(),
+        base_url=config.ollama_base_url(),
+        request_timeout=config.ollama_timeout(),
     )
-    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    Settings.embed_model = HuggingFaceEmbedding(model_name=config.embed_model_name())
 
 
 def connect_chroma() -> None:
@@ -408,8 +407,9 @@ def _ingest_once() -> None:
         chunk_started = time.time()
         completed_files = 0
         active_file = None
-        for offset in range(0, total, EMBED_BATCH):
-            batch = nodes[offset:offset + EMBED_BATCH]
+        batch_size = config.embed_batch()
+        for offset in range(0, total, batch_size):
+            batch = nodes[offset:offset + batch_size]
             index.insert_nodes(batch)
             done = min(offset + len(batch), total)
             ingestion_status.update(ingest_metrics(done, total, time.time() - chunk_started))

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from typing import List
 import asyncio
 
+import config
 import engine
 from files import InvalidFilename, get_file_type, safe_relative_path, stored_filename, visible_files
 from llama_index.core import Settings
@@ -374,7 +375,7 @@ async def list_llm_models():
     """
     try:
         import httpx
-        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_base = config.ollama_base_url()
         ollama_url = f"{ollama_base}/api/tags"
         
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -390,7 +391,7 @@ async def list_llm_models():
                     })
                 
                 # Get the current model from environment
-                current_model = os.getenv("OLLAMA_MODEL", "gemma2:2b")
+                current_model = config.configured_model()
                 
                 return {
                     "models": models,
@@ -411,7 +412,7 @@ async def select_llm_model(request: LLMSelectRequest):
     try:
         import httpx
         # First verify the model exists
-        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_base = config.ollama_base_url()
         ollama_url = f"{ollama_base}/api/tags"
         
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -426,11 +427,10 @@ async def select_llm_model(request: LLMSelectRequest):
                 if not model_found:
                     raise HTTPException(status_code=404, detail=f"Model '{request.model}' not found. Available models: {model_names}")
                 
-                ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
                 Settings.llm = Ollama(
                     model=request.model,
-                    base_url=ollama_base,
-                    request_timeout=300.0,
+                    base_url=config.ollama_base_url(),
+                    request_timeout=config.ollama_timeout(),
                 )
                 os.environ["OLLAMA_MODEL"] = request.model
                 engine.cached_index = None
@@ -461,7 +461,7 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
         )
     try:
         import httpx
-        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_base = config.ollama_base_url()
         ollama_url = f"{ollama_base}/api/pull"
         
         # Start the pull in background
@@ -499,7 +499,7 @@ async def get_llm_status():
     try:
         import httpx
         import time
-        ollama_base = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        ollama_base = config.ollama_base_url()
         ollama_url = f"{ollama_base}/api/tags"
         
         start_time = time.time()
@@ -509,7 +509,7 @@ async def get_llm_status():
             
             if response.status_code == 200:
                 models = response.json().get("models", [])
-                model_name = os.getenv("OLLAMA_MODEL", "gemma2:2b")
+                model_name = config.configured_model()
                 model_available = any(m.get("name", "").startswith(model_name) for m in models)
                 
                 return {
