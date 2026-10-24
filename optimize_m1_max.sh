@@ -1,4 +1,5 @@
 #!/bin/bash
+# macOS only. Do not run this on Windows.
 # M1 MAX 64GB Optimization Script
 # Optimizes RAG Chatbot for high-performance MacBook Pro
 

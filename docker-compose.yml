@@ -3,8 +3,8 @@ services:
     build:
       context: ./app
       args:
-        UID: "502"
-        GID: "20"
+        UID: ${UID:-502}
+        GID: ${GID:-20}
     ports:
       - "8001:8001"
     depends_on:
@@ -37,6 +37,8 @@ services:
 
   chromadb:
     image: chromadb/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "FALSE"
     ports:
       - "8002:8000"
     volumes:
