@@ -89,6 +89,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `RETRIEVE_CANDIDATES` | Chunks retrieved before the per-file cap | `8` |
 | `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
 | `RETRIEVE_PER_FILE` | Maximum chunks from one file | `2` |
+| `RELEVANCE_THRESHOLD` | Best e5 score required before a library answer | `0.82` |
 | `OLLAMA_CONTEXT` | Ollama context window (`num_ctx`) | `4096` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |
 | `TORCH_THREADS` | Torch CPU threads | half the cores |

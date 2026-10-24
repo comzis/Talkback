@@ -35,16 +35,14 @@ from library import (
 )
 from progress import ingest_metrics
 from prompts import (
-    asks_about_library,
+    GENERAL_NOTICE,
+    UNMATCHED_SOURCE_NOTE,
     assistant_prompt,
     cited_source_indexes,
-    excerpts_mention,
     explanation_prompt,
-    library_miss,
     named_library_files,
     should_search_library,
     source_label,
-    strip_citations,
     supporting_sources,
 )
 
@@ -604,8 +602,15 @@ def _stream_deltas(prompt: str, temperature: float | None = None):
             llm.temperature = previous
 
 
-def _stream_prompt(prompt: str, temperature: float | None, sources: list | None, about_library: bool, query: str):
-    """Stream one completion, then the sources that the finished text actually used."""
+def _library_matches(nodes) -> bool:
+    scores = [getattr(node, "score", None) for node in nodes]
+    return embeddings.relevant_enough(scores, config.relevance_threshold())
+
+
+def _stream_prompt(prompt: str, temperature: float | None, sources: list | None, notice: str | None = None):
+    """Stream one completion. A notice is sent before the first token."""
+    if notice:
+        yield {"event": "notice", "data": {"text": notice}}
     parts: list[str] = []
     for delta in _stream_deltas(prompt, temperature):
         parts.append(delta)
@@ -620,15 +625,10 @@ def _stream_prompt(prompt: str, temperature: float | None, sources: list | None,
     if used and not cited_source_indexes(reply):
         marks = " ".join(f"[{source['number']}]" for source in used)
         extra = f" {marks}"
-        reply = f"{reply}{extra}"
         yield {"event": "token", "data": {"text": extra}}
     if not used:
-        if about_library:
-            reply = library_miss(reply)
-        else:
-            reply = _complete(assistant_prompt(query))
-        logger.info("Query answered as assistant")
-        yield {"event": "replace", "data": {"text": reply}}
+        logger.info("Query kept the library draft without a matching source")
+        yield {"event": "footnote", "data": {"text": UNMATCHED_SOURCE_NOTE}}
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
         return
@@ -643,24 +643,23 @@ def iter_answer(query: str):
     wait_for_models()
     try:
         if collection_count() == 0 or not should_search_library(query):
-            yield from _stream_prompt(assistant_prompt(query), None, None, False, query)
+            yield from _stream_prompt(assistant_prompt(query), None, None)
             return
         index = get_or_create_cached_index()
         indexed, _legacy = indexed_documents()
         library_files = sorted(indexed)
-        about_library = asks_about_library(query, library_files)
         nodes = _retrieve_nodes(index, query, library_files)
-        sources = [_source_record(node, number) for number, node in enumerate(nodes, 1)]
-        mentioned = excerpts_mention(query, [source["text"] for source in sources])
-        if not about_library and not mentioned:
-            yield from _stream_prompt(assistant_prompt(query), None, None, False, query)
+        if not _library_matches(nodes):
+            logger.info("Retrieval score below %s. Answering generally.", config.relevance_threshold())
+            yield from _stream_prompt(assistant_prompt(query), None, None, GENERAL_NOTICE)
             return
+        sources = [_source_record(node, number) for number, node in enumerate(nodes, 1)]
         prompt = explanation_prompt(
             query,
             library_files,
             [f"{source['source']}\n{source['text']}" for source in sources],
         )
-        yield from _stream_prompt(prompt, 0.1, sources, about_library, query)
+        yield from _stream_prompt(prompt, 0.1, sources)
     except Exception:
         logger.exception("Query failed")
         raise
@@ -675,12 +674,21 @@ def answer_query(query: str) -> dict:
     """Answer from the library when it applies, and as an assistant otherwise."""
     text: list[str] = []
     sources: list = []
+    notice = None
+    footnote = None
     for event in iter_answer(query):
         kind = event["event"]
         if kind == "token":
             text.append(event["data"]["text"])
-        elif kind == "replace":
-            text = [event["data"]["text"]]
+        elif kind == "notice":
+            notice = event["data"]["text"]
+        elif kind == "footnote":
+            footnote = event["data"]["text"]
         elif kind == "sources":
             sources = event["data"]["sources"]
-    return {"response": "".join(text).strip(), "sources": sources}
+    return {
+        "response": "".join(text).strip(),
+        "sources": sources,
+        "notice": notice,
+        "footnote": footnote,
+    }

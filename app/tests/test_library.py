@@ -229,6 +229,7 @@ class ConfigTests(unittest.TestCase):
                 "OLLAMA_CONTEXT",
                 "OLLAMA_KEEP_ALIVE",
                 "TORCH_THREADS",
+                "RELEVANCE_THRESHOLD",
             )
         }
         try:
@@ -263,6 +264,8 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.retrieve_per_file(), 2)
             self.assertEqual(config.ollama_context(), 4096)
             self.assertEqual(config.ollama_keep_alive(), "30m")
+            os.environ.pop("RELEVANCE_THRESHOLD", None)
+            self.assertEqual(config.relevance_threshold(), 0.82)
             self.assertGreaterEqual(config.torch_threads(), 1)
         finally:
             for name, value in saved.items():
@@ -311,6 +314,11 @@ class EmbeddingIdentityTests(unittest.TestCase):
         )
         self.assertFalse(embeddings.is_e5("BAAI/bge-m3"))
         self.assertTrue(embeddings.is_e5("intfloat/multilingual-e5-small"))
+        self.assertTrue(embeddings.relevant_enough([0.875, 0.79], 0.82))
+        self.assertFalse(embeddings.relevant_enough([0.777, 0.76], 0.82))
+        self.assertTrue(embeddings.relevant_enough([None], 0.82))
+        self.assertEqual(prompts.GENERAL_NOTICE, "No matching documents found; answering generally.")
+        self.assertEqual(prompts.UNMATCHED_SOURCE_NOTE, "No source could be matched to this answer.")
 
 
 class MultilingualRetrievalTests(unittest.TestCase):

@@ -1049,6 +1049,28 @@ body {
     background: var(--accent-purple);
 }
 
+.message-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: min(480px, 85%);
+}
+
+.message-notice,
+.message-footnote {
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--text-tertiary);
+}
+
+.message-notice {
+    margin-bottom: 4px;
+}
+
+.message-footnote {
+    margin-top: 4px;
+}
+
 .message-content {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border);

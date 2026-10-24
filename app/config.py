@@ -16,6 +16,9 @@ DEFAULT_RETRIEVE_LIMIT = 4
 DEFAULT_RETRIEVE_PER_FILE = 2
 DEFAULT_OLLAMA_CONTEXT = 4096
 DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
+# e5-small cosine scores on a scratch library: matching questions scored
+# about 0.88, and an unrelated question topped out at 0.78. 0.82 sits between them.
+DEFAULT_RELEVANCE_THRESHOLD = 0.82
 
 
 def _raw(name: str) -> str:
@@ -101,6 +104,17 @@ def ollama_context() -> int:
 
 def ollama_keep_alive() -> str:
     return _raw("OLLAMA_KEEP_ALIVE") or DEFAULT_OLLAMA_KEEP_ALIVE
+
+
+def relevance_threshold() -> float:
+    raw = _raw("RELEVANCE_THRESHOLD")
+    if not raw:
+        return DEFAULT_RELEVANCE_THRESHOLD
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_RELEVANCE_THRESHOLD
+    return value
 
 
 def torch_threads() -> int:

@@ -332,6 +332,36 @@ function appendSources(content, sources) {
     content.appendChild(sourcesEl);
 }
 
+function showNotice(messageId, text) {
+    const body = document.getElementById(messageId)?.querySelector('.message-body');
+    if (!body) return;
+    let note = body.querySelector('.message-notice');
+    if (!note) {
+        note = document.createElement('div');
+        note.className = 'message-notice';
+        body.insertBefore(note, body.querySelector('.message-content'));
+    }
+    note.textContent = text;
+    const content = body.querySelector('.message-content');
+    if (content && content.textContent === 'Thinking...') content.textContent = '';
+    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+function showFootnote(messageId, text) {
+    const body = document.getElementById(messageId)?.querySelector('.message-body');
+    if (!body) return;
+    let note = body.querySelector('.message-footnote');
+    if (!note) {
+        note = document.createElement('div');
+        note.className = 'message-footnote';
+        const content = body.querySelector('.message-content');
+        if (content) content.after(note);
+        else body.appendChild(note);
+    }
+    note.textContent = text;
+    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
 function setMessageBody(messageId, text, sources) {
     const content = document.getElementById(messageId)?.querySelector('.message-content');
     if (!content) return;
@@ -396,15 +426,15 @@ async function sendMessage() {
             const step = await reader.read();
             buffer += decoder.decode(step.value || new Uint8Array(), { stream: !step.done });
             buffer = consumeSseBuffer(buffer, (eventName, data) => {
-                if (eventName === 'token') {
+                if (eventName === 'notice') {
+                    showNotice(messageId, data.text || '');
+                } else if (eventName === 'token') {
                     if (!sawToken) streamed = '';
                     sawToken = true;
                     streamed += data.text || '';
                     setMessageBody(messageId, streamed);
-                } else if (eventName === 'replace') {
-                    streamed = data.text || '';
-                    sawToken = true;
-                    setMessageBody(messageId, streamed);
+                } else if (eventName === 'footnote') {
+                    showFootnote(messageId, data.text || '');
                 } else if (eventName === 'sources') {
                     setMessageBody(messageId, streamed, data.sources || []);
                 } else if (eventName === 'error') {
@@ -620,12 +650,15 @@ function addMessage(text, role, isLoading = false, sources = []) {
     avatar.className = 'message-avatar';
     avatar.textContent = role === 'user' ? 'U' : 'A';
 
+    const body = document.createElement('div');
+    body.className = 'message-body';
     const content = document.createElement('div');
     content.className = 'message-content';
     content.textContent = isLoading ? 'Thinking...' : String(text ?? '').trim();
+    body.appendChild(content);
     if (sources && sources.length > 0) appendSources(content, sources);
 
-    message.append(avatar, content);
+    message.append(avatar, body);
     elements.chatMessages.appendChild(message);
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
     return messageId;

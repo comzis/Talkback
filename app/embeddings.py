@@ -68,6 +68,18 @@ def collection_embed_model(metadata: dict | None, count: int) -> str | None:
     return LEGACY_EMBED_MODEL
 
 
+def relevant_enough(scores: list[float | None], threshold: float) -> bool:
+    """True when the best retrieval score clears the threshold.
+
+    Missing scores stay on the library path so a store that omits them
+    does not drop every citation.
+    """
+    numbers = [score for score in scores if score is not None]
+    if not numbers:
+        return True
+    return max(numbers) >= threshold
+
+
 def full_reindex_required(metadata: dict | None, count: int, current: str) -> bool:
     stored = collection_embed_model(metadata, count)
     if stored is None:

@@ -35,6 +35,10 @@ def citation_prompt(library_files: list[str]) -> str:
     )
 
 
+GENERAL_NOTICE = "No matching documents found; answering generally."
+UNMATCHED_SOURCE_NOTE = "No source could be matched to this answer."
+
+
 def assistant_prompt(query: str) -> str:
     """Prompt for a direct assistant reply with no document requirement."""
     return (
