@@ -318,6 +318,13 @@ class EmbeddingIdentityTests(unittest.TestCase):
         self.assertFalse(embeddings.relevant_enough([0.777, 0.76], 0.82))
         self.assertTrue(embeddings.relevant_enough([None], 0.82))
         self.assertEqual(prompts.GENERAL_NOTICE, "No matching documents found; answering generally.")
+        compare_path = Path(__file__).resolve().parents[2] / "scripts" / "compare_models.py"
+        spec = importlib.util.spec_from_file_location("compare_models", compare_path)
+        compare_models = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(compare_models)
+        self.assertEqual(compare_models.tokens_per_second(8, 80_000_000), 100)
+        self.assertIsNone(compare_models.tokens_per_second(0, 80_000_000))
+        self.assertEqual(len(compare_models.PROMPTS), 3)
         self.assertEqual(prompts.UNMATCHED_SOURCE_NOTE, "No source could be matched to this answer.")
 
 
