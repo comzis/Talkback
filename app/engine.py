@@ -125,6 +125,11 @@ def reindex_required() -> bool:
     return _reindex_required
 
 
+def files_waiting() -> bool:
+    """True when the folder has files and the vector collection is empty."""
+    return collection_count() == 0 and bool(visible_files(UPLOAD_DIR))
+
+
 def _fresh_status(**overrides) -> dict:
     status = {
         "status": "idle",

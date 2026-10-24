@@ -181,6 +181,7 @@ async def get_system_status():
         "offline_mode": engine.offline_mode(),
         "library_read_only": engine.library_read_only(),
         "reindex_required": engine.reindex_required(),
+        "files_waiting": engine.files_waiting(),
         "embed_model": config.embed_model_name(),
         "database": {
             "status": "unknown",

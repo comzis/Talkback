@@ -796,9 +796,15 @@ async function checkSystemStatus() {
         if (elements.reindexBtn) elements.reindexBtn.hidden = !state.readOnly;
         if (elements.dropZone) elements.dropZone.hidden = state.readOnly;
         if (elements.readOnlyNote) elements.readOnlyNote.hidden = !state.readOnly;
-        const needsRebuild = Boolean(data.reindex_required);
-        if (elements.rebuildBtn) elements.rebuildBtn.hidden = !needsRebuild;
-        if (elements.rebuildNote) elements.rebuildNote.hidden = !needsRebuild;
+        const modelChanged = Boolean(data.reindex_required);
+        const filesWaiting = Boolean(data.files_waiting);
+        if (elements.rebuildBtn) elements.rebuildBtn.hidden = !(modelChanged || filesWaiting);
+        if (elements.rebuildNote) {
+            elements.rebuildNote.hidden = !(modelChanged || filesWaiting);
+            elements.rebuildNote.textContent = modelChanged
+                ? 'Full re-index needed. The embedding model changed, so these vectors cannot be queried.'
+                : 'These files are not indexed yet.';
+        }
     } catch (error) {
         console.error('Error checking system status:', error);
         setTrafficLight(elements.apiLight, 'red');
