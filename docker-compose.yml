@@ -42,7 +42,8 @@ services:
     ports:
       - "8002:8000"
     volumes:
-      - ./chroma_data:/chroma/chroma
+      # This image keeps its database in /data. A mount on /chroma/chroma is ignored.
+      - ./chroma_data:/data
     container_name: chromadb_service
     restart: unless-stopped
     healthcheck:
