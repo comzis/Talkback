@@ -3,15 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache">
     <title>Talkback</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.12">
+    <link rel="stylesheet" href="/static/style.css?v=4.30">
 </head>
 <body>
     <div class="app-container">
+            <!-- Right: Chat Studio -->
+            <section class="chat-panel">
+                <div class="panel-header">
+                    <span class="status-badge" id="chatStatus">Talkback</span>
+                </div>
+                
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="ambient-message">
+                            <p class="ambient-text">Ask me anything, or paste a passage. I explain the text and cite your documents when they apply.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-area">
+                        <textarea
+                            id="chatInput"
+                            class="chat-input"
+                            rows="1"
+                            placeholder="Ask anything, or paste lines to explain"
+                        ></textarea>
+                        <button class="btn-send" id="sendBtn">Send</button>
+                    </div>
+                    <p class="input-hint">Enter to send · Shift+Enter for a new line · Paste a passage to have it explained</p>
+                </div>
+            </section>
+        <aside class="side-column">
         <!-- Hero Section -->
         <header class="hero-section">
             <div class="hero-content">
-                <h1 class="hero-title">Talkback</h1>
                 <p class="hero-description">Curate your library, ground responses, and chat freely—even before documents are uploaded.</p>
                 <div class="hero-badges">
                     <span class="badge">Library: <span id="docCount">0</span> docs</span>
@@ -115,7 +141,7 @@
                         <div class="pulse-status" id="monitoringStatus">Disabled</div>
                         <div class="monitoring-config">
                             <input type="text" id="langsmithApiKey" class="config-input" placeholder="LangSmith API Key (ls__...)" />
-                            <input type="text" id="langsmithProject" class="config-input" placeholder="Project Name (optional)" value="Secure RAG Monitoring" />
+                            <input type="text" id="langsmithProject" class="config-input" placeholder="Project Name (optional)" value="Talkback" />
                             <button class="pulse-btn" id="enableMonitoringBtn">Enable Monitoring</button>
                         </div>
                         <div class="monitoring-links">
@@ -127,28 +153,7 @@
             </div>
         </header>
 
-        <!-- Feature Cards -->
-        <div class="feature-cards">
-            <div class="feature-card">
-                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l2 2h9v9.5h-17z"/></svg></div>
-                <h3 class="feature-title">Curated Uploads</h3>
-                <p class="feature-text">New files are added to the library. Uploading the same name updates that file only.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14v9H8.5L5 18.5z"/></svg></div>
-                <h3 class="feature-title">Ambient Chat</h3>
-                <p class="feature-text">Start conversations instantly. The assistant gracefully falls back to general knowledge when needed.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="11" width="12" height="8" rx="1"/><path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11"/></svg></div>
-                <h3 class="feature-title">Local & Private</h3>
-                <p class="feature-text">Chat and vectors stay on this machine. The embedding model is downloaded once, on first start.</p>
-            </div>
-        </div>
-
-        <!-- Main Content -->
-        <div class="main-layout">
-            <!-- Left: Library Curator -->
+            <!-- Library -->
             <aside class="library-panel">
                 <div class="panel-header">
                     <h2 class="panel-title">LIBRARY CURATOR</h2>
@@ -159,18 +164,10 @@
                 <!-- Drop Zone -->
                 <div class="drop-zone" id="dropZone">
                     <div class="drop-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V6"/><path d="M8.5 9.5 12 6l3.5 3.5"/><path d="M5 16.5V19h14v-2.5"/></svg></div>
-                    <h4 class="drop-title">Drop files anywhere</h4>
-                    <p class="drop-text">New files are added to the library. Uploading the same name updates that file only.</p>
+                    <h4 class="drop-title">Drop a file here</h4>
+                    <p class="drop-text">Or click to choose one. It is added and indexed right away. The same name replaces that file.</p>
                 </div>
                 <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.py,.js,.ts,.png,.jpg,.jpeg,.gif,.bmp,.svg,.webp,.ico,.tiff,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v" hidden>
-                
-                <!-- Action Buttons -->
-                <div class="action-row">
-                    <button class="btn btn-primary" id="uploadBtn">Upload Files</button>
-                    <button class="btn btn-secondary" id="processBtn">
-                        Process Library
-                    </button>
-                </div>
 
                 <!-- File Type Stats -->
                 <div class="file-stats-grid">
@@ -221,42 +218,37 @@
                 <div class="upload-queue">
                     <div class="queue-header">
                         <span class="queue-title">Upload Queue</span>
-                        <span class="queue-count" id="queueCount">0 selected</span>
+                        <span class="queue-count" id="queueCount">Ready</span>
                     </div>
                     <div class="queue-list" id="queueList">
                         <!-- Files will be added here -->
                     </div>
                 </div>
             </aside>
-
-            <!-- Right: Chat Studio -->
-            <section class="chat-panel">
-                <div class="panel-header">
-                    <span class="status-badge" id="chatStatus">Assistant</span>
+            <div class="feature-cards">
+            <div class="feature-card">
+                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l2 2h9v9.5h-17z"/></svg></div>
+                <div>
+                    <h3 class="feature-title">Curated Uploads</h3>
+                    <p class="feature-text">New files are added to the library. Uploading the same name updates that file only.</p>
                 </div>
-                <h3 class="section-heading">Chat with Your Library</h3>
-                
-                <div class="chat-container">
-                    <div class="chat-messages" id="chatMessages">
-                        <div class="ambient-message">
-                            <h4 class="ambient-title">Ready for a question</h4>
-                            <p class="ambient-text">Ask me anything, or paste a passage. I explain the text and cite your documents when they apply.</p>
-                        </div>
-                    </div>
-                    
-                    <div class="chat-input-area">
-                        <textarea
-                            id="chatInput"
-                            class="chat-input"
-                            rows="1"
-                            placeholder="Ask anything, or paste lines to explain"
-                        ></textarea>
-                        <button class="btn-send" id="sendBtn">Send</button>
-                    </div>
-                    <p class="input-hint">Enter to send · Shift+Enter for a new line · Paste a passage to have it explained</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14v9H8.5L5 18.5z"/></svg></div>
+                <div>
+                    <h3 class="feature-title">Ambient Chat</h3>
+                    <p class="feature-text">Start conversations instantly. The assistant gracefully falls back to general knowledge when needed.</p>
                 </div>
-            </section>
-        </div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="11" width="12" height="8" rx="1"/><path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11"/></svg></div>
+                <div>
+                    <h3 class="feature-title">Local & Private</h3>
+                    <p class="feature-text">Chat and vectors stay on this machine. The embedding model is downloaded once, on first start.</p>
+                </div>
+            </div>
+            </div>
+        </aside>
     </div>
 
     <!-- Model Selector Modal -->
@@ -281,6 +273,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.12"></script>
+    <script src="/static/script.js?v=4.17"></script>
 </body>
 </html>

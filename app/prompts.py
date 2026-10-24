@@ -38,12 +38,46 @@ def citation_prompt(library_files: list[str]) -> str:
 def assistant_prompt(query: str) -> str:
     """Prompt for a direct assistant reply with no document requirement."""
     return (
-        "You are a helpful assistant. The user can ask a question or paste lines of text.\n"
-        "If they pasted a passage, explain what it says and walk through the lines.\n"
-        "Answer directly in plain language. Do not say you are waiting for a document.\n\n"
+        "You are Talkback, a helpful assistant. Reply the way a person would in a conversation.\n"
+        "Keep it short and natural. Use plain sentences.\n"
+        "Do not use markdown, headings, or a numbered manual unless the user asked for steps.\n"
+        "Do not mention documents, a library, or sources.\n"
+        "If they pasted a passage, explain it briefly in your own words.\n\n"
         f"User:\n{query}\n"
         "Assistant:"
     )
+
+
+_GENERIC_FILE_WORDS = {
+    "python", "basics", "notes", "guide", "skills", "document", "documents",
+    "campaign", "manual", "intro", "introduction", "overview", "draft",
+    "final", "report", "slides", "sheet",
+}
+
+
+def asks_about_library(query: str, library_files: list[str]) -> bool:
+    """True when the user is asking about the library or pasted a passage to explain."""
+    text = (query or "").strip()
+    lowered = text.lower()
+    if text.count("\n") >= 1 and len(text) > 40:
+        return True
+    cues = (
+        "document", "documents", "library", "uploaded", "pdf", "according to",
+        "in the file", "in my file", "the source", "cite ", "from the doc",
+    )
+    if any(cue in lowered for cue in cues):
+        return True
+    for name in library_files:
+        full = name.lower()
+        stem = full.rsplit(".", 1)[0].strip()
+        if full and full in lowered:
+            return True
+        if len(stem) >= 4 and stem in lowered:
+            return True
+        tokens = re.findall(r"[a-z0-9]{5,}", stem)
+        if any(token in lowered and token not in _GENERIC_FILE_WORDS for token in tokens):
+            return True
+    return False
 
 
 def explanation_prompt(query: str, library_files: list[str], excerpts: list[str]) -> str:
@@ -53,12 +87,13 @@ def explanation_prompt(query: str, library_files: list[str], excerpts: list[str]
     if not shown:
         shown = "(no matching excerpts)"
     return (
-        "You are a helpful assistant. The user can ask a question or paste lines from a document.\n"
+        "You are Talkback, a helpful assistant. The user is asking about their documents or pasted a passage.\n"
         f"The library contains: {names}.\n"
         "If the user pasted a passage, explain that text in plain language and walk through the lines.\n"
-        "Reason with the library excerpts when they relate to the passage or question, "
+        "Reference the library excerpts only where they answer the question, "
         "and cite each claim with a source number such as [1] or [2].\n"
-        "If the excerpts do not apply, explain or answer from your own knowledge and do not cite them.\n"
+        "Keep the reply short. Use plain sentences, not a markdown manual.\n"
+        "If the excerpts do not apply, answer from your own knowledge and do not cite them.\n"
         "Do not say you are waiting for a document.\n\n"
         f"Library excerpts:\n{shown}\n\n"
         f"User:\n{query}\n"

@@ -60,6 +60,13 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("Sentinel", text)
         self.assertNotIn("superhero", text.lower())
 
+    def test_general_questions_skip_the_library(self):
+        files = ["Python Basics.pdf", "inlock campaign v4.pdf"]
+        self.assertFalse(prompts.asks_about_library("How do I run hello-world.py?", files))
+        self.assertTrue(prompts.asks_about_library("What does Python Basics say about loops?", files))
+        self.assertTrue(prompts.asks_about_library("What is Inlock?", files))
+        self.assertTrue(prompts.asks_about_library("Inlock\nSecure AI for Private Enterprise systems", files))
+
     def test_explanation_keeps_the_passage_it_describes(self):
         sources = [
             {"source": "inlock campaign v4.pdf", "text": "Inlock Secure AI for Private Enterprise"},

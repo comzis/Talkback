@@ -28,7 +28,7 @@ class LangChainMonitor:
 
     def __init__(self) -> None:
         self.enabled = os.getenv("LANGCHAIN_MONITORING", "false").lower() in {"1", "true", "yes"}
-        self.project_name = os.getenv("LANGCHAIN_PROJECT", "Secure RAG Monitoring")
+        self.project_name = os.getenv("LANGCHAIN_PROJECT", "Talkback")
         self.client: Optional[Client] = None
 
         if not self.enabled:

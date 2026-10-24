@@ -29,6 +29,14 @@ app = FastAPI(title="Secure Local RAG API")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+@app.middleware("http")
+async def disable_asset_cache(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 engine.init()
 
 class QueryRequest(BaseModel):
@@ -46,7 +54,7 @@ class LLMPullRequest(BaseModel):
 
 class MonitoringConfigRequest(BaseModel):
     api_key: str = ""
-    project: str = "Secure RAG Monitoring"
+    project: str = "Talkback"
     enabled: bool = True
 
 @app.post("/ingest")
@@ -284,35 +292,39 @@ async def root():
     """Serve the chatbot interface."""
     try:
         with open(STATIC_DIR / "index.html", "r") as f:
-            return f.read()
+            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache"})
     except FileNotFoundError:
         return HTMLResponse(content="<h1>Chatbot interface not found</h1>", status_code=404)
 
 @app.post("/upload")
-async def upload_files(files: List[UploadFile] = File(...)):
+async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)):
     """
-    Upload one or more files to the data directory for ingestion.
+    Save files into the library and index them in the same request.
     """
     try:
-        uploaded_files = []
-        
+        named_files = []
         for file in files:
             try:
-                safe_name = stored_filename(file.filename)
+                named_files.append((file, stored_filename(file.filename)))
             except InvalidFilename:
                 raise HTTPException(status_code=400, detail="Invalid filename")
+
+        uploaded_files = []
+        for file, safe_name in named_files:
             file_path = engine.UPLOAD_DIR / safe_name
-            
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            
             uploaded_files.append(safe_name)
             logger.info(f"Uploaded file: {safe_name}")
-        
+
+        if engine.begin_ingestion():
+            background_tasks.add_task(engine.process_ingestion)
+
         return {
-            "message": f"Successfully uploaded {len(uploaded_files)} file(s).",
+            "message": f"Added {len(uploaded_files)} file(s) and started indexing.",
             "files": uploaded_files,
             "uploaded_count": len(uploaded_files),
+            "status": "processing",
         }
         
     except HTTPException:

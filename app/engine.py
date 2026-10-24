@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -20,7 +21,13 @@ from files import visible_files
 from library import balance_matches, disk_signature, indexed_signature, plan_updates
 from monitoring import LangChainMonitor
 from progress import ingest_metrics
-from prompts import assistant_prompt, explanation_prompt, strip_citations, supporting_sources
+from prompts import (
+    asks_about_library,
+    assistant_prompt,
+    explanation_prompt,
+    strip_citations,
+    supporting_sources,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -205,13 +212,33 @@ def delete_chunks_for_file(filename: str) -> int:
     return len(ids)
 
 
+_ingest_lock = threading.Lock()
+_ingest_again = False
+
+
 def begin_ingestion() -> bool:
-    """Mark ingestion as running. Return False when a job is already active."""
-    if ingestion_status["status"] == "processing":
-        return False
-    ingestion_status.clear()
-    ingestion_status.update(_fresh_status(status="processing", message="Starting ingestion..."))
-    return True
+    """Mark ingestion as running. Queue another pass when a job is already active."""
+    global _ingest_again
+    with _ingest_lock:
+        if ingestion_status.get("status") == "processing":
+            _ingest_again = True
+            return False
+        _ingest_again = False
+        ingestion_status.clear()
+        ingestion_status.update(_fresh_status(status="processing", message="Starting ingestion..."))
+        return True
+
+
+def _take_followup() -> bool:
+    """Start another pass when files arrived while the last one was running."""
+    global _ingest_again
+    with _ingest_lock:
+        if not _ingest_again:
+            return False
+        _ingest_again = False
+        ingestion_status.clear()
+        ingestion_status.update(_fresh_status(status="processing", message="Starting ingestion..."))
+        return True
 
 
 def _touch_resources() -> None:
@@ -236,6 +263,14 @@ def _finish_kept(started: float, message: str, files: int) -> None:
 
 
 def process_ingestion() -> None:
+    """Add new or changed files, and index anything that arrived during the pass."""
+    while True:
+        _ingest_once()
+        if not _take_followup():
+            return
+
+
+def _ingest_once() -> None:
     """Add new or changed files without dropping documents already indexed."""
     global cached_index
 
@@ -378,6 +413,10 @@ def answer_query(query: str) -> dict:
 
         index = get_or_create_cached_index()
         library_files = sorted(indexed_documents())
+        if not asks_about_library(query, library_files):
+            reply = assistant_reply(query)
+            monitor.end_run(query_run_id, outputs={"status": "assistant"})
+            return {"response": reply, "sources": []}
         nodes = BalancedRetriever(index).retrieve(query)
         sources = []
         for node in nodes:

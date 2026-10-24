@@ -27,8 +27,6 @@ const state = {
 const elements = {
     dropZone: document.getElementById('dropZone'),
     fileInput: document.getElementById('fileInput'),
-    uploadBtn: document.getElementById('uploadBtn'),
-    processBtn: document.getElementById('processBtn'),
     refreshBtn: document.getElementById('refreshBtn'),
     chatInput: document.getElementById('chatInput'),
     sendBtn: document.getElementById('sendBtn'),
@@ -107,8 +105,6 @@ function initializeEventListeners() {
     elements.fileInput.addEventListener('change', handleFileSelect);
     
     // Buttons
-    elements.uploadBtn.addEventListener('click', uploadFiles);
-    elements.processBtn.addEventListener('click', processDocuments);
     elements.refreshBtn.addEventListener('click', refreshAll);
     elements.changeModelBtn.addEventListener('click', () => elements.modelModal.style.display = 'flex');
     elements.closeModal.addEventListener('click', () => elements.modelModal.style.display = 'none');
@@ -148,54 +144,46 @@ function handleDrop(e) {
     e.preventDefault();
     elements.dropZone.style.borderColor = '';
     elements.dropZone.style.background = '';
-    const files = Array.from(e.dataTransfer.files);
-    state.selectedFiles = files;
-    updateQueue();
-    showToast(`${files.length} file(s) ready to upload`, 'info');
+    addFiles(Array.from(e.dataTransfer.files));
 }
 
 function handleFileSelect(e) {
-    const files = Array.from(e.target.files);
-    state.selectedFiles = files;
-    updateQueue();
-    showToast(`${files.length} file(s) selected`, 'info');
+    addFiles(Array.from(e.target.files));
+    e.target.value = '';
 }
 
-// File Upload
-async function uploadFiles() {
-    if (state.selectedFiles.length === 0) {
-        showToast('Please select files first', 'error');
-        return;
-    }
-    
+async function addFiles(files) {
+    if (!files || files.length === 0 || state.adding) return;
+
+    state.adding = true;
+    state.selectedFiles = files;
+    updateQueue();
+
     const formData = new FormData();
-    state.selectedFiles.forEach(file => formData.append('files', file));
-    
+    files.forEach(file => formData.append('files', file));
+
     try {
-        elements.uploadBtn.disabled = true;
-        elements.uploadBtn.textContent = 'Uploading...';
-        
         const response = await fetch('/upload', {
             method: 'POST',
             body: formData
         });
-        
         const data = await response.json();
-        
+
         if (response.ok) {
-            const count = data.uploaded_count ?? (data.files ? data.files.length : 0);
-            showToast(`Uploaded ${count} file(s)`, 'success');
+            const count = data.uploaded_count ?? files.length;
+            showToast(`Added ${count} file(s). Indexing started.`, 'success');
             state.selectedFiles = [];
             updateQueue();
             loadFiles();
+            checkIngestionStatus();
         } else {
             showToast(data.detail || data.error || 'Upload failed', 'error');
         }
     } catch (error) {
         showToast('Upload error: ' + error.message, 'error');
     } finally {
-        elements.uploadBtn.disabled = false;
-        elements.uploadBtn.textContent = 'Upload Files';
+        state.adding = false;
+        updateQueue();
     }
 }
 
@@ -269,54 +257,11 @@ function updateFileStats() {
 }
 
 function updateQueue() {
-    elements.queueCount.textContent = `${state.selectedFiles.length} selected`;
-    
-    if (state.selectedFiles.length === 0) {
-        elements.queueList.innerHTML = '';
-        return;
-    }
-    
-    elements.queueList.innerHTML = state.selectedFiles.map(file => `
-        <div class="queue-item">${escapeHtml(file.name)}</div>
-    `).join('');
-}
-
-// Process Documents
-async function processDocuments() {
-    if (state.files.length === 0) {
-        showToast('No files to process', 'error');
-        return;
-    }
-    
-    try {
-        elements.processBtn.disabled = true;
-        elements.processBtn.textContent = 'Processing...';
-        elements.ingestionStatus.textContent = 'Processing...';
-        setTrafficLight(elements.ingestionLight, 'orange');
-        
-        const response = await fetch('/ingest', {
-            method: 'POST'
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            showToast(data.message || 'Processing started', 'info');
-            elements.ingestionStatus.textContent = 'Processing';
-            setTrafficLight(elements.ingestionLight, 'orange');
-        } else {
-            showToast(data.detail || data.error || 'Processing failed', 'error');
-            elements.ingestionStatus.textContent = 'Error';
-            setTrafficLight(elements.ingestionLight, 'red');
-        }
-    } catch (error) {
-        showToast('Processing error: ' + error.message, 'error');
-        elements.ingestionStatus.textContent = 'Error';
-        setTrafficLight(elements.ingestionLight, 'red');
-    } finally {
-        elements.processBtn.disabled = false;
-        elements.processBtn.textContent = 'Process Library';
-    }
+    const count = state.selectedFiles.length;
+    elements.queueCount.textContent = state.adding ? `Adding ${count}` : 'Ready';
+    elements.queueList.innerHTML = state.selectedFiles.map(file =>
+        `<div class="queue-item">${escapeHtml(file.name)}</div>`
+    ).join('');
 }
 
 // Chat
@@ -539,44 +484,53 @@ function resizeChatInput() {
 
 function addMessage(text, role, isLoading = false, sources = []) {
     const messageId = `msg-${++messageSeq}`;
-    const avatar = role === 'user' ? 'U' : 'A';
-    
     const ambient = elements.chatMessages.querySelector('.ambient-message');
     if (ambient) ambient.remove();
-    
-    const finalText = escapeHtml(text);
-    
-    let sourcesHTML = '';
+
+    const message = document.createElement('div');
+    message.className = `message ${role}`;
+    message.id = messageId;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.textContent = role === 'user' ? 'U' : 'A';
+
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    content.textContent = isLoading ? 'Thinking...' : String(text ?? '').trim();
+
     if (sources && sources.length > 0) {
-        sourcesHTML = `
-            <div class="message-sources">
-                <div class="sources-title">Sources</div>
-                ${sources.map((source, index) => `
-                    <div class="source-item">
-                        <div class="source-number">${index + 1}</div>
-                        <div class="source-text">
-                            <strong>${escapeHtml(source.source || 'Unknown')}</strong>
-                            ${source.text ? `<br><span style="font-size: 12px; color: rgba(255,255,255,0.5);">${escapeHtml(source.text.substring(0, 150))}...</span>` : ''}
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
+        const sourcesEl = document.createElement('div');
+        sourcesEl.className = 'message-sources';
+        const title = document.createElement('div');
+        title.className = 'sources-title';
+        title.textContent = 'Sources';
+        sourcesEl.appendChild(title);
+        sources.forEach((source, index) => {
+            const item = document.createElement('div');
+            item.className = 'source-item';
+            const number = document.createElement('div');
+            number.className = 'source-number';
+            number.textContent = String(index + 1);
+            const sourceText = document.createElement('div');
+            sourceText.className = 'source-text';
+            const name = document.createElement('strong');
+            name.textContent = source.source || 'Unknown';
+            sourceText.appendChild(name);
+            if (source.text) {
+                const excerpt = document.createElement('span');
+                excerpt.textContent = ` ${source.text.substring(0, 150)}...`;
+                sourceText.appendChild(excerpt);
+            }
+            item.append(number, sourceText);
+            sourcesEl.appendChild(item);
+        });
+        content.appendChild(sourcesEl);
     }
-    
-    const messageHTML = `
-        <div class="message ${role}" id="${messageId}">
-            <div class="message-avatar">${avatar}</div>
-            <div class="message-content">
-                ${isLoading ? 'Thinking...' : finalText}
-                ${sourcesHTML}
-            </div>
-        </div>
-    `;
-    
-    elements.chatMessages.insertAdjacentHTML('beforeend', messageHTML);
+
+    message.append(avatar, content);
+    elements.chatMessages.appendChild(message);
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
-    
     return messageId;
 }
 
@@ -669,7 +623,7 @@ async function addModel() {
 // Monitoring
 async function enableMonitoring() {
     const apiKey = elements.langsmithApiKey.value.trim();
-    const project = elements.langsmithProject.value.trim() || 'Secure RAG Monitoring';
+    const project = elements.langsmithProject.value.trim() || 'Talkback';
     
     if (!apiKey && elements.monitoringStatus.textContent === 'Disabled') {
         showToast('Please enter your LangSmith API key', 'error');
@@ -736,7 +690,7 @@ async function checkSystemStatus() {
             elements.dbStatus.textContent = 'Connected';
             elements.dbDetail.textContent = `${count} documents`;
             setTrafficLight(elements.dbLight, 'green');
-            elements.chatStatus.textContent = 'Assistant';
+            elements.chatStatus.textContent = 'Talkback';
         } else {
             elements.dbStatus.textContent = 'Disconnected';
             elements.dbDetail.textContent = 'No connection';
@@ -757,7 +711,7 @@ async function checkSystemStatus() {
         if (data.monitoring?.enabled) {
             elements.monitoringStatus.textContent = 'Enabled';
             setTrafficLight(elements.monitoringLight, 'green');
-            elements.langsmithProject.value = data.monitoring.project || 'Secure RAG Monitoring';
+            elements.langsmithProject.value = data.monitoring.project || 'Talkback';
             elements.enableMonitoringBtn.textContent = 'Disable Monitoring';
         } else {
             elements.monitoringStatus.textContent = 'Disabled';
