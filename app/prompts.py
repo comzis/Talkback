@@ -3,7 +3,7 @@
 import re
 
 _CITATION = re.compile(r"\[\d+\]")
-_WORD = re.compile(r"[a-z0-9]{4,}")
+_WORD = re.compile(r"[a-z0-9]{2,}")
 _REFUSAL = re.compile(
     r"cannot find|can't find|do not contain|does not contain|don't contain|"
     r"not in the (retrieved|uploaded|library|sources|documents)",
@@ -14,6 +14,9 @@ _STOP = {
     "which", "about", "there", "their", "would", "could", "should", "into",
     "using", "does", "they", "them", "than", "then", "also", "just", "only",
     "some", "such", "answer", "question",
+    "is", "in", "the", "of", "to", "an", "it", "on", "for", "and", "or",
+    "be", "at", "by", "my", "me", "do", "if", "so", "we", "you", "are",
+    "was", "were", "can", "how", "who", "why", "not", "but", "its",
 }
 
 
@@ -37,6 +40,7 @@ def citation_prompt(library_files: list[str]) -> str:
 
 GENERAL_NOTICE = "No matching documents found; answering generally."
 UNMATCHED_SOURCE_NOTE = "No source could be matched to this answer."
+NOT_INDEXED_NOTICE = "These files are in the library folder but are not indexed yet."
 
 
 def assistant_prompt(query: str) -> str:
@@ -65,6 +69,15 @@ _SMALL_TALK = re.compile(
 )
 
 
+def _names_file(token: str, lowered: str) -> bool:
+    """True when a filename token appears in the question as its own word."""
+    if token in _GENERIC_FILE_WORDS:
+        return False
+    if len(token) < 5:
+        return re.search(rf"\b{re.escape(token)}\b", lowered) is not None
+    return token in lowered
+
+
 def named_library_files(query: str, library_files: list[str]) -> list[str]:
     """Return library filenames the question actually names."""
     lowered = (query or "").lower()
@@ -72,9 +85,9 @@ def named_library_files(query: str, library_files: list[str]) -> list[str]:
     for name in library_files:
         full = name.lower()
         stem = full.rsplit(".", 1)[0].strip()
-        tokens = re.findall(r"[a-z0-9]{5,}", stem)
+        tokens = re.findall(r"[a-z0-9]{2,}", stem)
         named = (full and full in lowered) or (len(stem) >= 4 and stem in lowered)
-        named = named or any(token in lowered and token not in _GENERIC_FILE_WORDS for token in tokens)
+        named = named or any(_names_file(token, lowered) for token in tokens)
         if named:
             matched.append(name)
     return matched

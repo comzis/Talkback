@@ -751,7 +751,21 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: var(--spacing-sm);
     margin-bottom: var(--spacing-sm);
+}
+
+.panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--spacing-xs);
+}
+
+.rebuild-note {
+    margin: 0 0 var(--spacing-sm);
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
 }
 
 .panel-title {

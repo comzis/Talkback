@@ -41,6 +41,7 @@ async def disable_asset_cache(request, call_next):
 
 engine.init()
 engine.start_reindex_schedule()
+engine.start_initial_index()
 
 class QueryRequest(BaseModel):
     query: str

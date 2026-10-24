@@ -755,7 +755,16 @@ async function checkSystemStatus() {
     try {
         const response = await fetch('/system/status');
         const data = await response.json();
-        
+        const modelChanged = Boolean(data.reindex_required);
+        const filesWaiting = Boolean(data.files_waiting);
+        if (elements.rebuildBtn) elements.rebuildBtn.hidden = !(modelChanged || filesWaiting);
+        if (elements.rebuildNote) {
+            elements.rebuildNote.hidden = !(modelChanged || filesWaiting);
+            elements.rebuildNote.textContent = modelChanged
+                ? 'Full re-index needed. The embedding model changed, so these vectors cannot be queried.'
+                : 'These files are not indexed yet.';
+        }
+
         // API Status
         if (data.api?.status === 'online') {
             elements.apiStatus.textContent = 'Online';
@@ -796,15 +805,6 @@ async function checkSystemStatus() {
         if (elements.reindexBtn) elements.reindexBtn.hidden = !state.readOnly;
         if (elements.dropZone) elements.dropZone.hidden = state.readOnly;
         if (elements.readOnlyNote) elements.readOnlyNote.hidden = !state.readOnly;
-        const modelChanged = Boolean(data.reindex_required);
-        const filesWaiting = Boolean(data.files_waiting);
-        if (elements.rebuildBtn) elements.rebuildBtn.hidden = !(modelChanged || filesWaiting);
-        if (elements.rebuildNote) {
-            elements.rebuildNote.hidden = !(modelChanged || filesWaiting);
-            elements.rebuildNote.textContent = modelChanged
-                ? 'Full re-index needed. The embedding model changed, so these vectors cannot be queried.'
-                : 'These files are not indexed yet.';
-        }
     } catch (error) {
         console.error('Error checking system status:', error);
         setTrafficLight(elements.apiLight, 'red');

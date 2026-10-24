@@ -83,6 +83,15 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(prompts.asks_about_library("Inlock\nSecure AI for Private Enterprise systems", files))
         self.assertFalse(prompts.should_search_library("hello"))
         self.assertFalse(prompts.should_search_library("What is 2 + 2?"))
+        self.assertTrue(prompts.should_search_library("What is in the CV?"))
+        self.assertEqual(
+            prompts.named_library_files("What is in the CV?", ["Milorad Stevanovic CV.pdf"]),
+            ["Milorad Stevanovic CV.pdf"],
+        )
+        self.assertEqual(
+            prompts.named_library_files("What is 2 + 2?", ["Milorad Stevanovic CV.pdf"]),
+            [],
+        )
         self.assertTrue(prompts.excerpts_mention(
             "What privacy rules does the campaign describe?",
             ["Inlock is privacy-first for private enterprise."],
@@ -265,7 +274,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.ollama_context(), 4096)
             self.assertEqual(config.ollama_keep_alive(), "30m")
             os.environ.pop("RELEVANCE_THRESHOLD", None)
-            self.assertEqual(config.relevance_threshold(), 0.82)
+            self.assertEqual(config.relevance_threshold(), 0.75)
             self.assertGreaterEqual(config.torch_threads(), 1)
         finally:
             for name, value in saved.items():
@@ -318,6 +327,10 @@ class EmbeddingIdentityTests(unittest.TestCase):
         self.assertFalse(embeddings.relevant_enough([0.777, 0.76], 0.82))
         self.assertTrue(embeddings.relevant_enough([None], 0.82))
         self.assertEqual(prompts.GENERAL_NOTICE, "No matching documents found; answering generally.")
+        self.assertEqual(
+            prompts.NOT_INDEXED_NOTICE,
+            "These files are in the library folder but are not indexed yet.",
+        )
         compare_path = Path(__file__).resolve().parents[2] / "scripts" / "compare_models.py"
         spec = importlib.util.spec_from_file_location("compare_models", compare_path)
         compare_models = importlib.util.module_from_spec(spec)

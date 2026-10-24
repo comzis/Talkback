@@ -41,6 +41,7 @@ from prompts import (
     cited_source_indexes,
     explanation_prompt,
     named_library_files,
+    NOT_INDEXED_NOTICE,
     should_search_library,
     source_label,
     supporting_sources,
@@ -77,6 +78,23 @@ def start_reindex_schedule() -> None:
 
     threading.Thread(target=loop, name="talkback-reindex", daemon=True).start()
     logger.info("Scheduled re-index every %s minutes.", minutes)
+
+
+def start_initial_index() -> None:
+    """Index files already on disk when the vector collection is empty."""
+    def run() -> None:
+        try:
+            wait_for_models()
+            if reindex_required() or not files_waiting():
+                return
+            if not begin_ingestion():
+                return
+            logger.info("Indexing files already in the library folder.")
+            process_ingestion()
+        except Exception:
+            logger.exception("Initial index failed")
+
+    threading.Thread(target=run, name="talkback-initial-index", daemon=True).start()
 
 
 def offline_mode() -> bool:
@@ -576,19 +594,33 @@ def _source_record(node, number: int) -> dict:
 
 
 def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str]):
-    """Search the library, and stay inside a file the question names."""
+    """Search the library. A named file is searched on its own.
+
+    Returns the nodes and whether they were limited to files the question names.
+    """
     per_file = config.retrieve_per_file()
     limit = config.retrieve_limit()
-    nodes = index.as_retriever(similarity_top_k=config.retrieve_candidates()).retrieve(query)
-    named = set(named_library_files(query, library_files))
+    named = named_library_files(query, library_files)
     if named:
-        preferred = [
-            node for node in nodes
-            if ((node.metadata or {}).get("relative_path") or (node.metadata or {}).get("file_name")) in named
-        ]
-        if preferred:
-            return balance_matches(preferred, per_file=per_file, limit=limit)
-    return balance_matches(nodes, per_file=per_file, limit=limit)
+        pinned = _retrieve_named(index, query, named)
+        if pinned:
+            return balance_matches(pinned, per_file=per_file, limit=limit), True
+    nodes = index.as_retriever(similarity_top_k=config.retrieve_candidates()).retrieve(query)
+    return balance_matches(nodes, per_file=per_file, limit=limit), False
+
+
+def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str]):
+    """Return chunks from the files the question names."""
+    from llama_index.core.vector_stores import FilterCondition, MetadataFilter, MetadataFilters
+
+    filters = MetadataFilters(
+        filters=[MetadataFilter(key="relative_path", value=name) for name in names],
+        condition=FilterCondition.OR,
+    )
+    return index.as_retriever(
+        similarity_top_k=config.retrieve_candidates(),
+        filters=filters,
+    ).retrieve(query)
 
 
 def _stream_deltas(prompt: str, temperature: float | None = None):
@@ -647,14 +679,24 @@ def iter_answer(query: str):
     logger.info("Query started (%s characters)", len(query or ""))
     wait_for_models()
     try:
-        if collection_count() == 0 or not should_search_library(query):
+        if collection_count() == 0:
+            if files_waiting() and should_search_library(query):
+                logger.info("Query skipped because the library files are not indexed yet.")
+                yield {"event": "notice", "data": {"text": NOT_INDEXED_NOTICE}}
+                yield {"event": "token", "data": {"text": "Indexing has started. Ask again once it finishes."}}
+                yield {"event": "sources", "data": {"sources": []}}
+                yield {"event": "done", "data": {}}
+                return
+            yield from _stream_prompt(assistant_prompt(query), None, None)
+            return
+        if not should_search_library(query):
             yield from _stream_prompt(assistant_prompt(query), None, None)
             return
         index = get_or_create_cached_index()
         indexed, _legacy = indexed_documents()
         library_files = sorted(indexed)
-        nodes = _retrieve_nodes(index, query, library_files)
-        if not _library_matches(nodes):
+        nodes, named_file = _retrieve_nodes(index, query, library_files)
+        if not named_file and not _library_matches(nodes):
             logger.info("Retrieval score below %s. Answering generally.", config.relevance_threshold())
             yield from _stream_prompt(assistant_prompt(query), None, None, GENERAL_NOTICE)
             return

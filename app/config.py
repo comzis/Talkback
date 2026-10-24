@@ -16,9 +16,9 @@ DEFAULT_RETRIEVE_LIMIT = 4
 DEFAULT_RETRIEVE_PER_FILE = 2
 DEFAULT_OLLAMA_CONTEXT = 4096
 DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
-# e5-small cosine scores on a scratch library: matching questions scored
-# about 0.88, and an unrelated question topped out at 0.78. 0.82 sits between them.
-DEFAULT_RELEVANCE_THRESHOLD = 0.82
+# e5-small cosine scores on the real PDFs: a CV question scored about 0.79,
+# and an unrelated question topped out at 0.65. 0.75 sits between them.
+DEFAULT_RELEVANCE_THRESHOLD = 0.75
 
 
 def _raw(name: str) -> str:
