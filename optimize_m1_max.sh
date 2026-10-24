@@ -1,5 +1,4 @@
 #!/bin/bash
-# macOS only. Do not run this on Windows.
 # M1 MAX 64GB Optimization Script
 # Optimizes RAG Chatbot for high-performance MacBook Pro
 
@@ -31,17 +30,7 @@ docker exec ollama_service ollama pull llama3:8b
 echo "✅ Model downloaded"
 echo ""
 
-echo "⚙️  Step 4: Updating configuration..."
-cat > .env << 'EOF'
-# M1 MAX 64GB Optimized Configuration
-OLLAMA_MODEL=llama3:8b
-CHROMA_HOST=chromadb
-CHROMA_PORT=8000
-EOF
-echo "✅ Configuration updated"
-echo ""
-
-echo "🔄 Step 5: Starting all services..."
+echo "🔄 Step 4: Starting all services..."
 docker compose up -d
 echo "✅ All services started"
 echo ""
@@ -55,7 +44,7 @@ echo "   OPTIMIZATION COMPLETE!"
 echo "================================================"
 echo ""
 echo "📊 Your system is now configured with:"
-echo "   ✅ llama3:8b - Latest high-quality model"
+echo "   ✅ OLLAMA_MODEL in .env was left unchanged"
 echo "   ✅ GPU acceleration (Metal) enabled"
 echo "   ✅ 8K context window"
 echo "   ✅ Optimized for 64GB RAM"

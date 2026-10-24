@@ -187,39 +187,7 @@ docker compose logs -f rag-api
 
 **A file uploaded and nothing is searchable.** Indexing runs in the background after the upload. Watch Ingestion and Embeddings in System Pulse. If the status stays on an error, read `docker compose logs rag-api`.
 
-## Windows
-
-Talkback on a Windows laptop uses Docker Desktop with the WSL2 backend. Ollama stays a Windows app so it can use the machine's CPU. It is not a container.
-
-1. Install Docker Desktop and leave the WSL2 engine selected.
-2. Cap WSL memory so Windows and Ollama still have room. Create `%UserProfile%\.wslconfig`:
-
-```ini
-[wsl2]
-memory=10GB
-processors=4
-```
-
-Then run `wsl --shutdown` and reopen Docker Desktop. A 16 GB laptop should not give all of its RAM to WSL.
-
-3. Install Ollama for Windows and pull the model named in `.env`.
-4. Copy `.env.example` to `.env`, set `OLLAMA_MODEL`, and leave `OLLAMA_BASE_URL=http://host.docker.internal:11434`.
-5. For a read-only sample folder, set `LIBRARY_READ_ONLY=true` and change the data volume in `docker-compose.yml` to a Windows path:
-
-```yaml
-- C:\DemoDocs:/app/data:ro
-```
-
-6. `UID` and `GID` in `.env` are the user inside the API image. The defaults are `502` and `20`. Change them and rebuild if the mounted folder is not readable:
-
-```bash
-docker compose build --build-arg UID=1000 --build-arg GID=1000 rag-api
-docker compose up -d
-```
-
-If the API cannot reach Ollama at `host.docker.internal:11434`, Ollama is probably listening only on localhost. Quit Ollama, set a user environment variable `OLLAMA_HOST=0.0.0.0:11434`, start Ollama again, and allow port 11434 through the Windows firewall. The compose file already maps `host.docker.internal` to the host.
-
-`M1_MAX_OPTIMIZATION.md` and `optimize_m1_max.sh` are macOS-only. Do not run them on Windows.
+Windows: see TODO.
 
 ## Demo checklist
 
@@ -227,7 +195,7 @@ Use this for the on-prem proof of concept. The promise is that no library text o
 
 1. Pick a pilot model whose model card says Apache 2.0 or MIT. Pull it on the host with `ollama pull`, and set that name as `OLLAMA_MODEL` in `.env`.
 2. Set `OFFLINE_MODE=false`, start the stack, and wait until the embedding model is cached in `./hf_cache`. Set `OFFLINE_MODE=true` and run `docker compose up -d --build rag-api`.
-3. Mount a curated sample folder read-only. In `docker-compose.yml`, replace `./data:/app/data` with a line such as `- /path/to/sample:/app/data:ro`, and set `LIBRARY_READ_ONLY=true`. Upload and delete stay hidden.
+3. Mount a curated sample folder read-only. In `docker-compose.yml`, replace `./data:/app/data` with `- ~/TalkbackDemo:/app/data:ro`, and set `LIBRARY_READ_ONLY=true`. Upload and delete stay hidden. Ollama stays on the Mac (Metal). The API and Chroma stay in Docker Desktop.
 4. Pre-index that folder while the network is still up: open Talkback and click **Re-index now**, or `curl -X POST http://localhost:8001/ingest`.
 5. Disconnect the network.
 6. Open http://localhost:8001 and ask a question. Tokens should appear as they are generated, then the folder, file, and page. `curl -X POST http://localhost:8001/llm/pull -H 'Content-Type: application/json' -d '{"model":"test"}'` returns 403.

@@ -1,5 +1,3 @@
-# macOS only. This guide is for a MacBook Pro M1 Max. Do not use it for the Windows pilot.
-
 # 🚀 M1 MAX Optimization Guide
 
 > Historical note: Ollama runs on the host (`ollama pull`), not in a container named `ollama_service`. LangSmith has been removed. Current setup is in `README.md` and `SECURITY.md`.
