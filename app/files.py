@@ -7,6 +7,20 @@ class InvalidFilename(ValueError):
     """Raised when a client filename cannot be stored safely."""
 
 
+def safe_relative_path(filename: str | None) -> str:
+    """Keep a relative library path and reject anything that leaves the data directory."""
+    original = (filename or "").strip()
+    if original.startswith("/") or original.startswith("\\"):
+        raise InvalidFilename("Invalid filename")
+    raw = original.replace("\\", "/").strip().lstrip("/")
+    if not raw or raw in {".", ".."}:
+        raise InvalidFilename("Invalid filename")
+    parts = Path(raw).parts
+    if any(part in {"", ".", ".."} or part.startswith(".") for part in parts):
+        raise InvalidFilename("Invalid filename")
+    return Path(*parts).as_posix()
+
+
 def stored_filename(filename: str | None) -> str:
     """Keep a single path segment so a name cannot leave the data directory."""
     name = Path(filename or "").name.strip()

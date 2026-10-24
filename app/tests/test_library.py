@@ -20,6 +20,12 @@ class FilenameTests(unittest.TestCase):
     def test_drops_absolute_paths(self):
         self.assertEqual(files.stored_filename("/tmp/secret.txt"), "secret.txt")
 
+    def test_relative_path_rejects_parent_segments(self):
+        self.assertEqual(files.safe_relative_path("a/notes.pdf"), "a/notes.pdf")
+        for name in ("../notes.pdf", "/tmp/notes.pdf", "a/../notes.pdf", ".hidden/notes.pdf"):
+            with self.assertRaises(files.InvalidFilename):
+                files.safe_relative_path(name)
+
     def test_rejects_empty_and_dot_names(self):
         for name in ("", ".", "..", None):
             with self.assertRaises(files.InvalidFilename):
@@ -121,6 +127,45 @@ class LibraryPlanTests(unittest.TestCase):
         embed, drop = library.plan_updates(
             {"old.pdf": (10, "2026-10-23", 100), "notes.pdf": (99, "2026-10-24", 300)},
             {"old.pdf": (10, "2026-10-23", None), "notes.pdf": (50, "2026-10-24", 250)},
+        )
+        self.assertEqual(embed, ["notes.pdf"])
+        self.assertEqual(drop, ["notes.pdf"])
+
+    def test_same_name_in_two_folders_are_both_indexed(self):
+        signature = (10, "2026-10-24", 100)
+        embed, drop = library.plan_updates(
+            {"a/notes.pdf": signature, "b/notes.pdf": signature},
+            {},
+        )
+        self.assertEqual(embed, ["a/notes.pdf", "b/notes.pdf"])
+        self.assertEqual(drop, [])
+
+    def test_delete_matches_only_the_chosen_path(self):
+        folder_a = {"relative_path": "a/notes.pdf", "file_name": "notes.pdf"}
+        folder_b = {"relative_path": "b/notes.pdf", "file_name": "notes.pdf"}
+        legacy = {"file_name": "notes.pdf"}
+        self.assertTrue(library.chunk_belongs_to(folder_a, "a/notes.pdf"))
+        self.assertFalse(library.chunk_belongs_to(folder_a, "b/notes.pdf"))
+        self.assertTrue(library.chunk_belongs_to(legacy, "notes.pdf"))
+        self.assertFalse(library.chunk_belongs_to(legacy, "b/notes.pdf"))
+        self.assertFalse(library.chunk_belongs_to(folder_b, "notes.pdf"))
+
+    def test_moved_file_is_reindexed_under_the_new_path(self):
+        signature = (10, "2026-10-24", 100)
+        embed, drop = library.index_plan(
+            {"b/notes.pdf": signature},
+            {"notes.pdf": signature},
+            {"notes.pdf"},
+        )
+        self.assertEqual(embed, ["b/notes.pdf"])
+        self.assertEqual(drop, ["notes.pdf"])
+
+    def test_legacy_root_file_is_rewritten_once(self):
+        signature = (10, "2026-10-24", 100)
+        embed, drop = library.index_plan(
+            {"notes.pdf": signature},
+            {"notes.pdf": signature},
+            {"notes.pdf"},
         )
         self.assertEqual(embed, ["notes.pdf"])
         self.assertEqual(drop, ["notes.pdf"])

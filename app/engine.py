@@ -18,7 +18,16 @@ from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from files import visible_files
-from library import balance_matches, disk_signature, indexed_signature, plan_updates
+from library import (
+    balance_matches,
+    chunk_belongs_to,
+    chunk_is_legacy,
+    chunk_key,
+    disk_signature,
+    index_plan,
+    indexed_signature,
+    library_key,
+)
 from progress import ingest_metrics
 from prompts import (
     asks_about_library,
@@ -206,30 +215,38 @@ class BalancedRetriever(BaseRetriever):
         )
 
 
-def indexed_documents() -> dict[str, tuple]:
-    """Return filename to stored signature for chunks already in the index."""
+def indexed_documents() -> tuple[dict[str, tuple], set[str]]:
+    """Return relative path to signature, and paths still stored without relative_path."""
     if chroma_collection is None or collection_count() == 0:
-        return {}
+        return {}, set()
     stored = chroma_collection.get(include=["metadatas"])
     found: dict[str, tuple] = {}
+    legacy: set[str] = set()
     for metadata in stored.get("metadatas") or []:
-        if not metadata:
+        key = chunk_key(metadata)
+        if not key:
             continue
-        name = metadata.get("file_name")
-        if name and name not in found:
-            found[name] = indexed_signature(metadata)
-    return found
+        if key not in found:
+            found[key] = indexed_signature(metadata)
+        if chunk_is_legacy(metadata):
+            legacy.add(key)
+    return found, legacy
 
 
-def delete_chunks_for_file(filename: str) -> int:
-    """Remove indexed chunks for one file and drop the in-memory index."""
+def delete_chunks_for_file(relative_path: str) -> int:
+    """Remove indexed chunks for one library path and drop the in-memory index."""
     global cached_index
     if chroma_collection is None:
         return 0
-    existing = chroma_collection.get(where={"file_name": filename})
-    ids = existing.get("ids") or []
+    ids: set[str] = set()
+    direct = chroma_collection.get(where={"relative_path": relative_path})
+    ids.update(direct.get("ids") or [])
+    named = chroma_collection.get(where={"file_name": Path(relative_path).name}, include=["metadatas"])
+    for chunk_id, metadata in zip(named.get("ids") or [], named.get("metadatas") or []):
+        if chunk_belongs_to(metadata, relative_path):
+            ids.add(chunk_id)
     if ids:
-        chroma_collection.delete(ids=ids)
+        chroma_collection.delete(ids=list(ids))
     cached_index = None
     return len(ids)
 
@@ -305,10 +322,10 @@ def _ingest_once() -> None:
         ingestion_status["progress"] = 10
 
         file_list = visible_files(UPLOAD_DIR)
-        by_name = {path.name: path for path in file_list}
-        on_disk = {name: disk_signature(path) for name, path in by_name.items()}
-        indexed = indexed_documents()
-        embed_names, drop_names = plan_updates(on_disk, indexed)
+        by_key = {library_key(path, UPLOAD_DIR): path for path in file_list}
+        on_disk = {key: disk_signature(path) for key, path in by_key.items()}
+        indexed, legacy_keys = indexed_documents()
+        embed_names, drop_names = index_plan(on_disk, indexed, legacy_keys)
         ingestion_status["total_files"] = len(embed_names)
         ingestion_status["processed_files"] = 0
         logger.info(
@@ -331,10 +348,19 @@ def _ingest_once() -> None:
             logger.info("Ingestion unchanged. %s files already indexed.", len(on_disk))
             return
 
-        paths = [by_name[name] for name in embed_names]
+        paths = [by_key[name] for name in embed_names]
+        key_by_resolved = {path.resolve(): key for key, path in by_key.items()}
         documents = SimpleDirectoryReader(input_files=[str(path) for path in paths]).load_data()
         for document in documents:
             file_path = Path(document.metadata.get("file_path", ""))
+            relative = key_by_resolved.get(file_path.resolve())
+            if relative is None and file_path.is_file():
+                try:
+                    relative = library_key(file_path, UPLOAD_DIR)
+                except ValueError:
+                    relative = file_path.name
+            if relative:
+                document.metadata["relative_path"] = relative
             if file_path.is_file():
                 document.metadata["source_mtime"] = int(file_path.stat().st_mtime)
 
@@ -360,7 +386,7 @@ def _ingest_once() -> None:
             done = min(offset + len(batch), total)
             ingestion_status.update(ingest_metrics(done, total, time.time() - chunk_started))
             ingestion_status["status"] = "processing"
-            current_name = batch[-1].metadata.get("file_name")
+            current_name = batch[-1].metadata.get("relative_path") or batch[-1].metadata.get("file_name")
             if active_file is None:
                 active_file = current_name
             elif current_name != active_file:
@@ -420,7 +446,7 @@ def _complete(prompt: str, temperature: float | None = None) -> str:
 def _source_record(node, number: int) -> dict:
     """Keep the citation number, file, page, and excerpt for one retrieved chunk."""
     metadata = node.metadata or {}
-    file_name = metadata.get("file_name") or "Document"
+    file_name = metadata.get("relative_path") or metadata.get("file_name") or "Document"
     page = metadata.get("page_label") or metadata.get("page_number")
     record = {
         "number": number,
@@ -437,7 +463,10 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
     nodes = index.as_retriever(similarity_top_k=24).retrieve(query)
     named = set(named_library_files(query, library_files))
     if named:
-        preferred = [node for node in nodes if (node.metadata or {}).get("file_name") in named]
+        preferred = [
+            node for node in nodes
+            if ((node.metadata or {}).get("relative_path") or (node.metadata or {}).get("file_name")) in named
+        ]
         if preferred:
             return balance_matches(preferred, per_file=3, limit=4)
     return balance_matches(nodes, per_file=2, limit=4)
@@ -458,7 +487,8 @@ def answer_query(query: str) -> dict:
             return {"response": reply, "sources": []}
 
         index = get_or_create_cached_index()
-        library_files = sorted(indexed_documents())
+        indexed, _legacy = indexed_documents()
+        library_files = sorted(indexed)
         about_library = asks_about_library(query, library_files)
         nodes = _retrieve_nodes(index, query, library_files)
         sources = [_source_record(node, number) for number, node in enumerate(nodes, 1)]

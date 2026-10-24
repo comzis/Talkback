@@ -15,7 +15,7 @@ from typing import List
 import asyncio
 
 import engine
-from files import InvalidFilename, get_file_type, stored_filename, visible_files
+from files import InvalidFilename, get_file_type, safe_relative_path, stored_filename, visible_files
 from llama_index.core import Settings
 from llama_index.llms.ollama import Ollama
 
@@ -273,26 +273,29 @@ async def upload_files(background_tasks: BackgroundTasks, files: List[UploadFile
         logger.error(f"Error during file upload: {e}")
         raise HTTPException(status_code=500, detail="The request could not be completed.")
 
-@app.delete("/files/{filename}")
+@app.delete("/files/{filename:path}")
 async def delete_uploaded_file(filename: str):
-    """Delete one library file and only the chunks that came from it."""
+    """Delete one library file and only the chunks that came from that relative path."""
     try:
-        safe_name = stored_filename(filename)
+        relative = safe_relative_path(filename)
     except InvalidFilename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    file_path = engine.UPLOAD_DIR / safe_name
+    file_path = (engine.UPLOAD_DIR / relative).resolve()
+    root = engine.UPLOAD_DIR.resolve()
+    if not file_path.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="Invalid filename")
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
         file_path.unlink()
-        removed = engine.delete_chunks_for_file(safe_name)
+        removed = engine.delete_chunks_for_file(relative)
     except Exception:
-        logger.exception("Failed to delete %s", safe_name)
+        logger.exception("Failed to delete %s", relative)
         raise HTTPException(status_code=500, detail="The file could not be deleted.")
 
-    return {"deleted": safe_name, "chunks_removed": removed}
+    return {"deleted": relative, "chunks_removed": removed}
 
 @app.get("/files")
 async def list_uploaded_files():
@@ -302,11 +305,11 @@ async def list_uploaded_files():
     try:
         files = []
         for file_path in visible_files(engine.UPLOAD_DIR):
-            rel_path = file_path.relative_to(engine.UPLOAD_DIR)
-            filename = rel_path.name
+            rel_path = file_path.relative_to(engine.UPLOAD_DIR).as_posix()
+            filename = Path(rel_path).name
             file_type = get_file_type(filename)
             files.append({
-                "name": str(rel_path),
+                "name": rel_path,
                 "filename": filename,
                 "size": file_path.stat().st_size,
                 "modified": file_path.stat().st_mtime,

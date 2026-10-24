@@ -301,16 +301,16 @@ function renderLibrary() {
         return;
     }
     list.innerHTML = state.files.map(file => {
-        const name = file.filename || file.name;
+        const path = file.name || file.filename;
         return `
             <div class="queue-item library-item">
-                <span>${escapeHtml(name)}</span>
-                <button type="button" class="delete-file" data-filename="${escapeHtml(name)}">Delete</button>
+                <span>${escapeHtml(path)}</span>
+                <button type="button" class="delete-file" data-path="${escapeHtml(path)}">Delete</button>
             </div>
         `;
     }).join('');
     list.querySelectorAll('.delete-file').forEach(button => {
-        button.addEventListener('click', () => deleteLibraryFile(button.dataset.filename));
+        button.addEventListener('click', () => deleteLibraryFile(button.dataset.path));
     });
 }
 
