@@ -109,11 +109,20 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
         if pinned:
             ordered = _order_nodes(pinned, query)
             _log_rerank(ordered)
-            return balance_matches(ordered, per_file=per_file, limit=limit), True
+            return _keep(ordered, per_file, limit), True
     nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
     ordered = _order_nodes(nodes, query)
     _log_rerank(ordered)
-    return balance_matches(ordered, per_file=per_file, limit=limit), False
+    return _keep(ordered, per_file, limit), False
+
+
+def _keep(nodes, per_file: int, limit: int):
+    return balance_matches(
+        nodes,
+        per_file=per_file,
+        limit=limit,
+        balance_after=config.retrieve_balance_files(),
+    )
 
 
 def _log_rerank(nodes) -> None:

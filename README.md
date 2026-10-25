@@ -108,7 +108,8 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `RERANK_THRESHOLD` | Logged only. It does not choose the path | `-7.5` |
 | `RERANK` | Set to `false` to use the similarity threshold instead | `true` |
 | `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
-| `RETRIEVE_PER_FILE` | Maximum chunks from one file | `2` |
+| `RETRIEVE_PER_FILE` | Maximum chunks from one file, once the hits span more files than `RETRIEVE_BALANCE_FILES` | `2` |
+| `RETRIEVE_BALANCE_FILES` | Per-file cap applies only above this many files. Three PDFs do not trigger it | `3` |
 | `RELEVANCE_THRESHOLD` | Best e5 score required before a library answer | `0.75` |
 | `OLLAMA_CONTEXT` | Ollama context window (`num_ctx`) | `4096` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |

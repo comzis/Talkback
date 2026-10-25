@@ -500,6 +500,17 @@ class LibraryPlanTests(unittest.TestCase):
         self.assertIn("inlock campaign v4.pdf", names)
         self.assertEqual(names.count("Python Basics.pdf"), 2)
         self.assertLessEqual(len(chosen), 4)
+        same_file = [
+            Node("bbc.pdf"),
+            Node("bbc.pdf"),
+            Node("bbc.pdf"),
+            Node("wire.pdf"),
+        ]
+        kept = library.balance_matches(same_file, per_file=2, limit=4, balance_after=3)
+        self.assertEqual(
+            [node.metadata["file_name"] for node in kept],
+            ["bbc.pdf", "bbc.pdf", "bbc.pdf", "wire.pdf"],
+        )
 
 
 class ConfigTests(unittest.TestCase):

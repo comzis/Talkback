@@ -15,6 +15,8 @@ DEFAULT_CHUNK_OVERLAP = 64
 DEFAULT_RETRIEVE_CANDIDATES = 8
 DEFAULT_RETRIEVE_LIMIT = 4
 DEFAULT_RETRIEVE_PER_FILE = 2
+# The per-file cap starts once the hits come from more files than this.
+DEFAULT_RETRIEVE_BALANCE_FILES = 3
 DEFAULT_OLLAMA_CONTEXT = 4096
 DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
 # Qwen 3.5 writes a hidden reasoning trace unless this is turned off.
@@ -121,6 +123,18 @@ def retrieve_limit() -> int:
 
 def retrieve_per_file() -> int:
     return _positive_int("RETRIEVE_PER_FILE", DEFAULT_RETRIEVE_PER_FILE)
+
+
+def retrieve_balance_files() -> int:
+    """Apply the per-file cap only when the hits span more files than this."""
+    raw = _raw("RETRIEVE_BALANCE_FILES")
+    if not raw:
+        return DEFAULT_RETRIEVE_BALANCE_FILES
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_RETRIEVE_BALANCE_FILES
+    return value if value >= 0 else DEFAULT_RETRIEVE_BALANCE_FILES
 
 
 def ollama_context() -> int:
