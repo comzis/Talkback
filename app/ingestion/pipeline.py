@@ -9,14 +9,14 @@ import time
 from pathlib import Path
 
 import psutil
-from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
+from llama_index.core import VectorStoreIndex
 from llama_index.core.node_parser import SentenceSplitter
 
 import config
 from ingestion.plan import disk_signature, index_plan, library_key, reindex_minutes
 from ingestion.progress import ingest_metrics
 from llm.client import wait_for_models
-from sources.filesystem import visible_files
+from sources.filesystem import filesystem_source
 from state import get
 from store.chroma import (
     collection_count,
@@ -75,7 +75,7 @@ def start_initial_index() -> None:
 
 def files_waiting() -> bool:
     """True when the folder has files and the vector collection is empty."""
-    return collection_count() == 0 and bool(visible_files(get().upload_dir))
+    return collection_count() == 0 and bool(filesystem_source().list_items())
 
 
 def _fresh_status(**overrides) -> dict:
@@ -188,13 +188,18 @@ def _ingest_once() -> None:
         get().ingestion_status["message"] = "Checking the library..."
         get().ingestion_status["progress"] = 10
 
-        file_list = visible_files(get().upload_dir)
-        by_key = {library_key(path, get().upload_dir): path for path in file_list}
-        on_disk = {key: disk_signature(path) for key, path in by_key.items()}
+        source = filesystem_source()
+        items = source.list_items()
+        by_key = {item.id: item for item in items}
+        on_disk = {item.id: disk_signature(Path(item.location)) for item in items}
         indexed, legacy_keys, incomplete_keys = indexed_documents()
         embed_names, drop_names = index_plan(
             on_disk, indexed, legacy_keys, incomplete_keys
         )
+        known = set(indexed) | set(legacy_keys) | set(incomplete_keys)
+        for name in source.deleted_ids(known):
+            if name not in drop_names:
+                drop_names.append(name)
         get().ingestion_status["total_files"] = len(embed_names)
         get().ingestion_status["processed_files"] = 0
         logger.info(
@@ -217,11 +222,9 @@ def _ingest_once() -> None:
             logger.info("Ingestion unchanged. %s files already indexed.", len(on_disk))
             return
 
-        paths = [by_key[name] for name in embed_names]
-        key_by_resolved = {path.resolve(): key for key, path in by_key.items()}
-        documents = SimpleDirectoryReader(
-            input_files=[str(path) for path in paths]
-        ).load_data()
+        paths = [Path(by_key[name].location) for name in embed_names]
+        key_by_resolved = {path.resolve(): key for key, path in zip(embed_names, paths)}
+        documents = source.read([str(path) for path in paths])
         for document in documents:
             file_path = Path(document.metadata.get("file_path", ""))
             relative = key_by_resolved.get(file_path.resolve())
@@ -231,7 +234,7 @@ def _ingest_once() -> None:
                 except ValueError:
                     relative = file_path.name
             if relative:
-                document.metadata["relative_path"] = relative
+                source.describe_chunk(relative, document.metadata)
             if file_path.is_file():
                 document.metadata["source_mtime"] = int(file_path.stat().st_mtime)
 

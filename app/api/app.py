@@ -19,8 +19,10 @@ import config
 import store.embeddings as embeddings
 import engine
 from state import get
+from sources.base import ReadOnlyLibrary
 from sources.filesystem import (
     InvalidFilename,
+    filesystem_source,
     get_file_type,
     safe_relative_path,
     stored_filename,
@@ -334,7 +336,9 @@ async def upload_files(
     """
     Save files into the library and index them in the same request.
     """
-    if engine.library_read_only():
+    try:
+        filesystem_source().ensure_writable("upload")
+    except ReadOnlyLibrary:
         raise HTTPException(
             status_code=403,
             detail="The library is read-only. Indexing reads the mounted folder and does not upload files.",
@@ -379,7 +383,9 @@ async def upload_files(
 @app.delete("/files/{filename:path}")
 async def delete_uploaded_file(filename: str):
     """Delete one library file and only the chunks that came from that relative path."""
-    if engine.library_read_only():
+    try:
+        filesystem_source().ensure_writable("delete")
+    except ReadOnlyLibrary:
         raise HTTPException(
             status_code=403,
             detail="The library is read-only. Indexing reads the mounted folder and does not delete files.",

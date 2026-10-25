@@ -95,6 +95,12 @@ class FilesystemSource:
         if self.read_only:
             raise ReadOnlyLibrary(action)
 
+    def describe_chunk(self, item_id: str, metadata: dict) -> None:
+        """Mark a new chunk. Existing chunks without these keys stay searchable."""
+        metadata["relative_path"] = item_id
+        metadata["source_type"] = self.source_type
+        metadata["source_id"] = item_id
+
 
 def filesystem_source() -> FilesystemSource:
     """The library folder for this process."""

@@ -6,6 +6,7 @@ import pytest
 
 from sources.base import ReadOnlyLibrary
 from sources.filesystem import FilesystemSource
+import store.embeddings as embeddings
 
 
 def test_item_id_is_the_relative_path(tmp_path: Path):
@@ -42,3 +43,23 @@ def test_read_only_refuses_upload_and_delete(tmp_path: Path):
 
 def test_writable_source_accepts_a_change(tmp_path: Path):
     FilesystemSource(tmp_path, read_only=False).ensure_writable("upload")
+
+
+def test_new_chunks_record_the_source_without_forcing_a_reindex():
+    metadata = {}
+    FilesystemSource(Path(".")).describe_chunk("notes/gate.txt", metadata)
+    assert metadata == {
+        "relative_path": "notes/gate.txt",
+        "source_type": "filesystem",
+        "source_id": "notes/gate.txt",
+    }
+    collection = {
+        "embed_model": "intfloat/multilingual-e5-small",
+        "source_type": "filesystem",
+    }
+    assert (
+        embeddings.full_reindex_required(
+            collection, 3, "intfloat/multilingual-e5-small"
+        )
+        is False
+    )
