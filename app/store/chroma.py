@@ -89,18 +89,24 @@ def get_or_create_cached_index() -> VectorStoreIndex:
 
 
 def replace_vector_collection() -> None:
-    """Drop stored vectors so the next ingest replaces the library."""
+    """Empty the library collection and keep its id.
 
-    try:
-        get().db.delete_collection("rag_collection")
-        logger.info("Removed existing rag_collection before re-ingest")
-    except Exception as exc:
-        logger.info("No existing rag_collection to remove: %s", exc)
-
-    collection = get().db.get_or_create_collection(
-        "rag_collection",
-        metadata={embeddings.EMBED_META_KEY: config.embed_model_name()},
-    )
+    delete_collection makes Chroma assign a new id. The API keeps the old
+    one, so every query 404s until that process restarts. Clearing the rows
+    leaves the id in place for both processes. An empty collection then
+    records the current embedding model, the same way a new collection does.
+    """
+    collection = get().chroma_collection
+    if collection is None:
+        collection = get().db.get_or_create_collection(
+            "rag_collection",
+            metadata={embeddings.EMBED_META_KEY: config.embed_model_name()},
+        )
+    else:
+        ids = list(collection.get(include=[]).get("ids") or [])
+        for offset in range(0, len(ids), 500):
+            collection.delete(ids=ids[offset : offset + 500])
+        logger.info("Cleared %s vectors from rag_collection", len(ids))
     get().cached_index = None
     _remember_collection(collection)
 

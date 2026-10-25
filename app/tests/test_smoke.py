@@ -91,3 +91,18 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     assert failed[0]["name"] == "bad.txt"
     assert failed[0]["index_status"] == "failed"
     assert failed[0]["index_error"] == "No readable text"
+
+    held = get().chroma_collection
+    (library / "note.txt").write_text(
+        "Target loudness is -23.0 LUFS.\n", encoding="utf-8"
+    )
+    engine.rebuild_library()
+    assert held.count() > 0
+    assert held.query(query_embeddings=[[0.0] * 8], n_results=1)["ids"][0]
+    streamed = TestClient(api_app.app).post(
+        "/query/stream",
+        json={"query": "What is the target loudness?", "history": []},
+    )
+    assert streamed.status_code == 200
+    assert "event: error" not in streamed.text
+    assert "event: token" in streamed.text
