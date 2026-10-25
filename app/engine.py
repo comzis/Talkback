@@ -25,7 +25,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 import config
-import embeddings
+import store.embeddings as embeddings
 from sources.filesystem import visible_files
 from library import (
     balance_matches,

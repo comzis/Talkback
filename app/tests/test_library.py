@@ -8,7 +8,7 @@ import importlib.util
 import os
 
 import config
-import embeddings
+import store.embeddings as embeddings
 import sources.filesystem as files
 import library
 import progress

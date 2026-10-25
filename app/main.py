@@ -16,7 +16,7 @@ from typing import List
 import asyncio
 
 import config
-import embeddings
+import store.embeddings as embeddings
 import engine
 from sources.filesystem import (
     InvalidFilename,
