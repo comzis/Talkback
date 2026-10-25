@@ -150,6 +150,8 @@ python -m pip install -r requirements-dev.txt
 python -m pytest
 ```
 
+The API image has LlamaIndex, so the skipped tests can run there. `scripts/test_in_container.sh` starts a one-off container from that image and mounts the tests in. The running API can stay up.
+
 ## API
 
 - `GET /` serves the Talkback page
