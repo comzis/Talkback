@@ -1,0 +1,33 @@
+[
+  {
+    "id": "bbc-loudness",
+    "query": "What audio loudness level do the BBC live technical delivery standards require?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "answer_contains": ["-23.0 LUFS", "1.0 LU"]
+  },
+  {
+    "id": "icmp-filter",
+    "query": "Quel filtre d'affichage de l'exemple ICMP dans Wireshark montre Protocol Unreachable ?",
+    "path": "library",
+    "file": "Traffic_analysis_with_wireshark_1746771119.pdf",
+    "page": "34",
+    "answer_contains": ["icmp.type == 3 && icmp.code == 2"]
+  },
+  {
+    "id": "ansible-modules",
+    "query": "¿Qué módulos de Ansible se usan para configurar equipos de red?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "page": "6",
+    "answer_contains": ["ios_config"]
+  },
+  {
+    "id": "srt-outage",
+    "query": "Draft a short incident update for a 10-minute SRT outage. Use placeholders for the cause, times and next steps.",
+    "path": "general",
+    "notice": "No matching documents found; answering generally.",
+    "placeholders": true
+  }
+]
