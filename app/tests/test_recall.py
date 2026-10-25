@@ -41,6 +41,15 @@ def test_recall_counts_only_questions_that_have_a_fact_page():
     assert recall_at([1, 6, 21, None], 20) == (2, 4)
 
 
+def test_rerank_candidate_and_length_defaults():
+    import os
+
+    os.environ.pop("RERANK_CANDIDATES", None)
+    os.environ.pop("RERANK_MAX_LENGTH", None)
+    assert config.rerank_candidates() == 20
+    assert config.rerank_max_length() == 512
+
+
 def test_the_rerank_threshold_keeps_main_set_library_questions():
     threshold = config.rerank_threshold()
     assert threshold == -7.5

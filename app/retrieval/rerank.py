@@ -45,6 +45,14 @@ def model_cache_dir() -> Path:
     return Path.home() / ".cache" / "huggingface" / "hub"
 
 
+def _device():
+    import torch
+
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
 def _load():
     global _model, _tokenizer
     with _lock:
@@ -53,13 +61,15 @@ def _load():
 
             name = config.rerank_model_name()
             cache = str(model_cache_dir())
-            logger.info("Loading reranker %s from %s", name, cache)
+            device = _device()
+            logger.info("Loading reranker %s from %s on %s", name, cache, device)
             _tokenizer = AutoTokenizer.from_pretrained(
                 name, cache_dir=cache, local_files_only=True
             )
             _model = AutoModelForSequenceClassification.from_pretrained(
                 name, cache_dir=cache, local_files_only=True
             )
+            _model.to(device)
             _model.eval()
     return _model, _tokenizer
 
@@ -79,10 +89,15 @@ def rerank_nodes(query: str, nodes: list):
     import torch
 
     model, tokenizer = _load()
-    pairs = [
-        [query, node.get_content() if hasattr(node, "get_content") else node.get_text()]
-        for node in nodes
-    ]
+    limit = config.rerank_max_length()
+    # The tokenizer drops anything past the cap. Cut the string first so a long
+    # chunk is not tokenised only to be thrown away.
+    char_cap = limit * 4
+    pairs = []
+    for node in nodes:
+        text = node.get_content() if hasattr(node, "get_content") else node.get_text()
+        pairs.append([query[:char_cap], (text or "")[:char_cap]])
+    device = next(model.parameters()).device
     scored: list[tuple[float, int]] = []
     with torch.no_grad():
         for start in range(0, len(pairs), 8):
@@ -92,8 +107,9 @@ def rerank_nodes(query: str, nodes: list):
                 padding=True,
                 truncation=True,
                 return_tensors="pt",
-                max_length=512,
+                max_length=limit,
             )
+            inputs = inputs.to(device)
             logits = model(**inputs, return_dict=True).logits.view(-1).float()
             for offset, score in enumerate(logits.tolist()):
                 scored.append((float(score), start + offset))

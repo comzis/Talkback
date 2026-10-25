@@ -13,7 +13,7 @@ The chat window is the main view. The library, system status, and upload area si
 - Leaves files that have not changed in the index. New and changed files are embedded. Removed files drop their chunks.
 - Answers greetings and general questions with no sources. A question that names a library file is answered from that file. Each cited claim keeps its source number, with the page and excerpt beside it.
 - Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in chat-model name. Embeddings default to `BAAI/bge-m3` (MIT, French, English, and Spanish). `intfloat/multilingual-e5-small` remains available by setting `EMBED_MODEL`. The embedding model downloads once, and only when `OFFLINE_MODE=false`.
-- Reranks the top 30 chunks with `BAAI/bge-reranker-v2-m3` (Apache-2.0, local cache) and keeps four. The library path opens when the best logit is at least `-7.5`.
+- Reranks the top 20 chunks with `BAAI/bge-reranker-v2-m3` (Apache-2.0, local cache) and keeps four. Each query-passage pair is capped at 512 tokens. On a GPU server the reranker should run on the GPU. On this Mac, in Docker, six main-set questions reached the first word in about 28 seconds at 15 or 20 candidates and about 44 seconds at 30. Main-set recall at 4 and at 8 stayed 14/15 for all three. The library path opens when the best logit is at least `-7.5`.
 - Streams the reply into the chat, then shows the folder, file, and page for each source the answer used. The **Stop** button cancels the stream. `POST /query` still returns the full answer in one response.
 
 ## Quick start
@@ -103,7 +103,8 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `CHUNK_OVERLAP` | Overlap between chunks | `64` |
 | `RETRIEVE_CANDIDATES` | Chunks retrieved before the reranker, unless `RERANK_CANDIDATES` is higher | `8` |
 | `RERANK_MODEL` | Local cross-encoder. Apache-2.0 | `BAAI/bge-reranker-v2-m3` |
-| `RERANK_CANDIDATES` | Chunks scored by the reranker | `30` |
+| `RERANK_CANDIDATES` | Chunks scored by the reranker | `20` |
+| `RERANK_MAX_LENGTH` | Token cap for each query-passage pair. Use the GPU on a GPU server | `512` |
 | `RERANK_THRESHOLD` | Best logit that still answers from the library | `-7.5` |
 | `RERANK` | Set to `false` to use the similarity threshold instead | `true` |
 | `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
