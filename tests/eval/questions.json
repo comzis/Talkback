@@ -29,6 +29,7 @@
     "id": "srt-outage",
     "query": "Draft a short incident update for a 10-minute SRT outage. Use placeholders for the cause, times and next steps.",
     "path": "general",
+    "pages": [],
     "notice": "No matching documents found; answering generally.",
     "placeholders": true
   },
@@ -75,6 +76,7 @@
     "id": "bbc-radio-peak",
     "query": "What true-peak level does the BBC standard require for radio?",
     "path": "uncovered",
+    "pages": [],
     "gap_about": "radio",
     "figure_labels": ["television", "tv"]
   },
