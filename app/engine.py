@@ -141,20 +141,26 @@ def _stream_prompt(
     notice: str | None = None,
     query: str = "",
 ):
-    """Stream one completion. A library reply is checked against the excerpts before it is shown."""
+    """Stream tokens as they arrive.
+
+    A library reply is checked against the excerpts after the stream. If that
+    check changes the wording, the correction is a footnote. Words already
+    sent stay. Citations use the checked wording.
+    """
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
     parts: list[str] = []
     library = sources is not None
     for delta in _stream_deltas(prompt, temperature):
         parts.append(delta)
-        if not library:
-            yield {"event": "token", "data": {"text": delta}}
-    reply = "".join(parts).strip()
+        yield {"event": "token", "data": {"text": delta}}
+    shown = "".join(parts).strip()
+    reply = shown
+    correction = None
     if library:
-        reply = ground_library_reply(reply, sources, query)
-        if reply:
-            yield {"event": "token", "data": {"text": reply}}
+        reply = ground_library_reply(shown, sources, query).strip()
+        if reply != shown:
+            correction = reply or "The retrieved excerpts do not support that wording."
     if sources is None:
         logger.info("Query answered as assistant")
         yield {"event": "sources", "data": {"sources": []}}
@@ -165,12 +171,19 @@ def _stream_prompt(
         marks = " ".join(f"[{source['number']}]" for source in used)
         extra = f" {marks}"
         yield {"event": "token", "data": {"text": extra}}
+    notes = []
+    if correction:
+        notes.append(correction)
     if not used:
         logger.info("Query kept the library draft without a matching source")
-        yield {"event": "footnote", "data": {"text": UNMATCHED_SOURCE_NOTE}}
+        if UNMATCHED_SOURCE_NOTE not in notes:
+            notes.append(UNMATCHED_SOURCE_NOTE)
+        yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
         return
+    if notes:
+        yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
     logger.info("Query cited %s", [source["source"] for source in used])
     for source in used:
         source["text"] = display_excerpt(source.get("text") or "", query)
@@ -179,7 +192,7 @@ def _stream_prompt(
 
 
 def iter_answer(query: str, history=None):
-    """Yield token events, then sources. Uses Ollama.stream_complete."""
+    """Yield token events as they arrive, then sources."""
     logger.info("Query started (%s characters)", len(query or ""))
     search = retrieval_text(query, history)
     wait_for_models()

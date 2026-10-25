@@ -105,7 +105,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 
 Pilot models must be Apache 2.0 or MIT licensed. Check the model card before you set `OLLAMA_MODEL`.
 
-Chat uses `POST /v1/chat/completions`. With `CHAT_BACKEND=ollama` the request includes `keep_alive` and, when `OLLAMA_THINK=false`, `reasoning_effort` set to `none`. With `CHAT_BACKEND=vllm` those Ollama fields are left out, and the model list, model switch, and model pull endpoints are disabled. The vLLM path is not tested against a real vLLM server.
+Chat uses `POST /v1/chat/completions`. With `CHAT_BACKEND=ollama` the request includes `keep_alive` and, when `OLLAMA_THINK=false`, `reasoning_effort` set to `none`. With `CHAT_BACKEND=vllm` those Ollama fields are left out, and the model list, model switch, and model pull endpoints are disabled. The vLLM path is not tested against a real vLLM server. Library answers stream as the model writes them. If a check against the excerpts changes the wording, the correction is a footnote and the words already shown stay.
 
 Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first with `ollama pull`, using the name from the model card.
 
