@@ -1,6 +1,12 @@
-"""Filename rules shared by uploads, listing, and deletion."""
+"""The mounted folder as a Source. Relative paths, hidden files, and read-only refusal."""
 
+from __future__ import annotations
+
+import os
 from pathlib import Path
+
+from ingestion.plan import library_key, read_only_requested
+from sources.base import ReadOnlyLibrary, SourceItem
 
 
 class InvalidFilename(ValueError):
@@ -47,6 +53,57 @@ def visible_files(root: Path) -> list[Path]:
         if path.is_file() and not is_hidden(path, root):
             files.append(path)
     return files
+
+
+class FilesystemSource:
+    """Today's library folder. Item ids are relative paths."""
+
+    source_type = "filesystem"
+
+    def __init__(self, root: Path, read_only: bool = False) -> None:
+        self.root = root
+        self.read_only = read_only
+
+    def list_items(self) -> list[SourceItem]:
+        items = []
+        for path in visible_files(self.root):
+            stat = path.stat()
+            items.append(
+                SourceItem(
+                    id=library_key(path, self.root),
+                    location=str(path),
+                    title=path.name,
+                    modified=stat.st_mtime,
+                    size=int(stat.st_size),
+                )
+            )
+        return items
+
+    def read(self, locations: list[str]) -> list:
+        """Same reader the ingest path used before this source existed."""
+        if not locations:
+            return []
+        from llama_index.core import SimpleDirectoryReader
+
+        return SimpleDirectoryReader(input_files=list(locations)).load_data()
+
+    def deleted_ids(self, known_ids: set[str]) -> list[str]:
+        present = {item.id for item in self.list_items()}
+        return sorted(known_ids - present)
+
+    def ensure_writable(self, action: str) -> None:
+        if self.read_only:
+            raise ReadOnlyLibrary(action)
+
+
+def filesystem_source() -> FilesystemSource:
+    """The library folder for this process."""
+    from state import get
+
+    return FilesystemSource(
+        get().upload_dir,
+        read_only=read_only_requested(os.getenv("LIBRARY_READ_ONLY")),
+    )
 
 
 def get_file_type(filename: str) -> str:
