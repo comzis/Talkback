@@ -54,14 +54,14 @@ from retrieval.search import (
     _source_record,
 )
 from llm.prompts import (
-    UNMATCHED_SOURCE_NOTE,
     notice_for_general,
+    user_line,
     assistant_prompt,
     display_excerpt,
+    excerpts_cover,
     ground_library_reply,
     cited_source_indexes,
     explanation_prompt,
-    NOT_INDEXED_NOTICE,
     clean_history,
     is_follow_up,
     retrieval_text,
@@ -149,8 +149,16 @@ def _stream_prompt(
     """
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
-    parts: list[str] = []
     library = sources is not None
+    if library and not excerpts_cover(query, sources):
+        yield {
+            "event": "token",
+            "data": {"text": user_line("not_covered", query)},
+        }
+        yield {"event": "sources", "data": {"sources": []}}
+        yield {"event": "done", "data": {}}
+        return
+    parts: list[str] = []
     for delta in _stream_deltas(prompt, temperature):
         parts.append(delta)
         yield {"event": "token", "data": {"text": delta}}
@@ -160,7 +168,7 @@ def _stream_prompt(
     if library:
         reply = ground_library_reply(shown, sources, query).strip()
         if reply != shown:
-            correction = reply or "The retrieved excerpts do not support that wording."
+            correction = reply or user_line("no_detail", query)
     if sources is None:
         logger.info("Query answered as assistant")
         yield {"event": "sources", "data": {"sources": []}}
@@ -176,8 +184,9 @@ def _stream_prompt(
         notes.append(correction)
     if not used:
         logger.info("Query kept the library draft without a matching source")
-        if UNMATCHED_SOURCE_NOTE not in notes:
-            notes.append(UNMATCHED_SOURCE_NOTE)
+        unmatched = user_line("unmatched", query)
+        if unmatched not in notes:
+            notes.append(unmatched)
         yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
@@ -202,12 +211,13 @@ def iter_answer(query: str, history=None):
                 logger.info(
                     "Query skipped because the library files are not indexed yet."
                 )
-                yield {"event": "notice", "data": {"text": NOT_INDEXED_NOTICE}}
+                yield {
+                    "event": "notice",
+                    "data": {"text": user_line("not_indexed", query)},
+                }
                 yield {
                     "event": "token",
-                    "data": {
-                        "text": "Indexing has started. Ask again once it finishes."
-                    },
+                    "data": {"text": user_line("indexing", query)},
                 }
                 yield {"event": "sources", "data": {"sources": []}}
                 yield {"event": "done", "data": {}}

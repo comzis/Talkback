@@ -27,7 +27,7 @@ def _events(monkeypatch, deltas, grounded, supported):
             "prompt",
             0.1,
             [{"number": 1, "source": "a.pdf", "text": "alpha", "page": "1"}],
-            query="loudness",
+            query="Tell me more.",
         )
     )
     return events, seen
@@ -49,6 +49,33 @@ def test_a_changed_library_answer_stays_on_screen(monkeypatch):
     assert seen["answer"] == "The level is -23.0 LUFS."
     sources = [event for event in events if event["event"] == "sources"]
     assert sources[0]["data"]["sources"][0]["source"] == "a.pdf"
+
+
+def test_an_uncovered_english_question_does_not_call_the_model(monkeypatch):
+    def fail(prompt, temperature):
+        raise AssertionError("the model should not be asked")
+
+    monkeypatch.setattr(engine, "_stream_deltas", fail)
+    events = list(
+        engine._stream_prompt(
+            "prompt",
+            0.1,
+            [
+                {
+                    "number": 1,
+                    "source": "a.pdf",
+                    "text": "Live peak is -3 dBTP.",
+                    "page": "16",
+                }
+            ],
+            query="What true-peak level does the BBC standard require for radio?",
+        )
+    )
+    tokens = [event["data"]["text"] for event in events if event["event"] == "token"]
+    assert tokens == ["The library does not cover that."]
+    assert [event for event in events if event["event"] == "sources"] == [
+        {"event": "sources", "data": {"sources": []}}
+    ]
 
 
 def test_an_unchanged_library_answer_has_no_footnote(monkeypatch):

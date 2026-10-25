@@ -7,7 +7,9 @@ _CITATION = re.compile(r"\[\d+\]")
 _WORD = re.compile(r"[a-z0-9]{2,}")
 _REFUSAL = re.compile(
     r"cannot find|can't find|do not contain|does not contain|don't contain|"
-    r"not in the (retrieved|uploaded|library|sources|documents)",
+    r"not in the (retrieved|uploaded|library|sources|documents)|"
+    r"ne couvre pas|ne contiennent pas ce|"
+    r"no cubre|no incluyen ese",
     re.IGNORECASE,
 )
 _STOP = {
@@ -121,6 +123,50 @@ def question_language(query: str) -> str:
     return "en"
 
 
+_USER_LINES = {
+    "general": {
+        "en": GENERAL_NOTICE,
+        "fr": "Aucun document correspondant ; réponse générale.",
+        "es": "No hay documentos que coincidan; respuesta general.",
+    },
+    "unmatched": {
+        "en": UNMATCHED_SOURCE_NOTE,
+        "fr": "Aucune source ne correspond à cette réponse.",
+        "es": "Ninguna fuente coincide con esta respuesta.",
+    },
+    "not_indexed": {
+        "en": NOT_INDEXED_NOTICE,
+        "fr": "Ces fichiers sont dans le dossier de la bibliothèque mais ne sont pas encore indexés.",
+        "es": "Estos archivos están en la carpeta de la biblioteca pero aún no están indexados.",
+    },
+    "indexing": {
+        "en": "Indexing has started. Ask again once it finishes.",
+        "fr": "L'indexation a commencé. Redemandez quand elle sera terminée.",
+        "es": "La indexación ha empezado. Vuelve a preguntar cuando termine.",
+    },
+    "no_example": {
+        "en": "The retrieved excerpts do not include a worked example.",
+        "fr": "Les extraits récupérés ne contiennent pas d'exemple complet.",
+        "es": "Los fragmentos recuperados no incluyen un ejemplo completo.",
+    },
+    "no_detail": {
+        "en": "The retrieved excerpts do not include that detail.",
+        "fr": "Les extraits récupérés ne contiennent pas ce détail.",
+        "es": "Los fragmentos recuperados no incluyen ese detalle.",
+    },
+    "not_covered": {
+        "en": "The library does not cover that.",
+        "fr": "La bibliothèque ne couvre pas cela.",
+        "es": "La biblioteca no cubre eso.",
+    },
+}
+
+
+def user_line(kind: str, query: str = "") -> str:
+    """A notice or fallback in the language of the question."""
+    return _USER_LINES[kind][question_language(query)]
+
+
 def outside_document_note(query: str) -> str:
     """Visible warning that a general reply is not a document fact."""
     return _OUTSIDE_DOCUMENT[question_language(query)]
@@ -138,12 +184,12 @@ def notice_for_general(
 
     Right after an earlier answer, the note is in the question's language and
     says the reply is not from the documents. A first question that misses the
-    library keeps the standing English notice.
+    library gets the general-path notice in the question's language.
     """
     if follows_previous_answer(history):
         return outside_document_note(query)
     if missed_library:
-        return GENERAL_NOTICE
+        return user_line("general", query)
     return None
 
 
@@ -254,6 +300,63 @@ def _continuation_only(query: str) -> bool:
         if word not in _STOP and word not in _CONTINUATION_WORDS
     ]
     return not words
+
+
+_GENERIC_TOPIC = {
+    "about",
+    "could",
+    "does",
+    "level",
+    "levels",
+    "peak",
+    "require",
+    "required",
+    "requirement",
+    "should",
+    "standard",
+    "standards",
+    "their",
+    "there",
+    "these",
+    "those",
+    "true",
+    "using",
+    "what",
+    "when",
+    "where",
+    "which",
+    "would",
+}
+
+
+def _in_blob(word: str, blob: str) -> bool:
+    if word in blob:
+        return True
+    return word.endswith("s") and word[:-1] in blob
+
+
+def excerpts_cover(query: str, sources: list[dict]) -> bool:
+    """False when the question names something the excerpts never say.
+
+    Measurement words such as 'level' and 'standard' do not count, so a question
+    about radio is not answered from a television peak. A pure follow-up has no
+    subject of its own. One remaining word is enough, so a French or Spanish
+    question can still match an English document.
+    """
+    if _continuation_only(query):
+        return True
+    words = [
+        word
+        for word in _loose(query).split()
+        if len(word) >= 5
+        and word not in _STOP
+        and word not in _GENERIC_TOPIC
+        and word not in _CONTINUATION_WORDS
+    ]
+    if not words:
+        return True
+    blob = _loose(_source_blob(sources))
+    return any(_in_blob(word, blob) for word in words)
 
 
 _EXAMPLE_ASK = re.compile(
@@ -844,13 +947,11 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
         if found:
             cleaned = found if not cleaned else f"{cleaned}\n{found}"
         elif not cleaned:
-            cleaned = "The retrieved excerpts do not include a worked example."
+            cleaned = user_line("no_example", query)
         else:
-            cleaned = (
-                f"{cleaned}\nThe retrieved excerpts do not include a worked example."
-            )
+            cleaned = f"{cleaned}\n{user_line('no_example', query)}"
     if not strip_citations(cleaned).strip():
-        return "The retrieved excerpts do not include that detail."
+        return user_line("no_detail", query)
     return cleaned
 
 
@@ -881,12 +982,12 @@ def source_label(source: dict) -> str:
     return str(path)
 
 
-def library_miss(answer: str) -> str:
+def library_miss(answer: str, query: str = "") -> str:
     """Use the model's refusal when it already admits the gap."""
     cleaned = strip_citations(answer)
     if cleaned and _REFUSAL.search(answer or ""):
         return cleaned
-    return "The library does not cover that."
+    return user_line("not_covered", query)
 
 
 def strip_citations(text: str) -> str:
