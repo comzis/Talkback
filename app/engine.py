@@ -58,7 +58,6 @@ from llm.prompts import (
     user_line,
     assistant_prompt,
     display_excerpt,
-    excerpts_cover,
     ground_library_reply,
     cited_source_indexes,
     explanation_prompt,
@@ -149,16 +148,8 @@ def _stream_prompt(
     """
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
-    library = sources is not None
-    if library and not excerpts_cover(query, sources):
-        yield {
-            "event": "token",
-            "data": {"text": user_line("not_covered", query)},
-        }
-        yield {"event": "sources", "data": {"sources": []}}
-        yield {"event": "done", "data": {}}
-        return
     parts: list[str] = []
+    library = sources is not None
     for delta in _stream_deltas(prompt, temperature):
         parts.append(delta)
         yield {"event": "token", "data": {"text": delta}}

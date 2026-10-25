@@ -1,0 +1,87 @@
+[
+  {
+    "id": "hold-factual-speech",
+    "query": "What loudness range should speech in a factual programme aim for?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "answer_any_of": [["6LU", "6 LU"]]
+  },
+  {
+    "id": "hold-programme-range",
+    "query": "What upper loudness range should a whole programme aim for?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "answer_any_of": [["18LU", "18 LU"]]
+  },
+  {
+    "id": "hold-line-up",
+    "query": "How soon before transmission should the technical crew call to begin the circuit line-up?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "35",
+    "answer_any_of": [["30 minutes", "thirty minutes"]]
+  },
+  {
+    "id": "hold-site-contacts",
+    "query": "How many days before transmission should the on-site contact details be emailed?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "35",
+    "answer_any_of": [["three days", "3 days"]]
+  },
+  {
+    "id": "hold-mode2",
+    "query": "De combien le commentaire hors champ doit-il dépasser le dialogue visible en mode 2 ?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "33",
+    "language": "fr",
+    "answer_any_of": [["3LU", "3 LU"]]
+  },
+  {
+    "id": "hold-no-agent",
+    "query": "¿Hay que instalar un programa residente en los equipos para poder configurarlos a distancia?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "page": "4",
+    "language": "es",
+    "answer_any_of": [["agentless", "no agent", "sin agente", "SSH"]]
+  },
+  {
+    "id": "hold-playbook",
+    "query": "¿Cómo se llama el fichero de instrucciones de automatización escrito en YAML?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "page": "4",
+    "language": "es",
+    "answer_any_of": [["playbook", "Playbook"]]
+  },
+  {
+    "id": "hold-quench",
+    "query": "Quel message d'erreur correspond au type 4 et au code 0 ?",
+    "path": "library",
+    "file": "Traffic_analysis_with_wireshark_1746771119.pdf",
+    "page": "34",
+    "language": "fr",
+    "answer_any_of": [["Source Quench", "source quench"]]
+  },
+  {
+    "id": "hold-downmix",
+    "query": "What stereo down-mix should a commissioned surround programme use?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "33",
+    "answer_any_of": [["Lo/Ro", "LoRo"]]
+  },
+  {
+    "id": "hold-rollback",
+    "query": "¿Dónde se guardan las configuraciones para poder volver atrás si hace falta?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "page": "4",
+    "language": "es",
+    "answer_any_of": [["Git", "rollback"]]
+  }
+]

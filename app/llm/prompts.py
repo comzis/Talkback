@@ -302,63 +302,6 @@ def _continuation_only(query: str) -> bool:
     return not words
 
 
-_GENERIC_TOPIC = {
-    "about",
-    "could",
-    "does",
-    "level",
-    "levels",
-    "peak",
-    "require",
-    "required",
-    "requirement",
-    "should",
-    "standard",
-    "standards",
-    "their",
-    "there",
-    "these",
-    "those",
-    "true",
-    "using",
-    "what",
-    "when",
-    "where",
-    "which",
-    "would",
-}
-
-
-def _in_blob(word: str, blob: str) -> bool:
-    if word in blob:
-        return True
-    return word.endswith("s") and word[:-1] in blob
-
-
-def excerpts_cover(query: str, sources: list[dict]) -> bool:
-    """False when the question names something the excerpts never say.
-
-    Measurement words such as 'level' and 'standard' do not count, so a question
-    about radio is not answered from a television peak. A pure follow-up has no
-    subject of its own. One remaining word is enough, so a French or Spanish
-    question can still match an English document.
-    """
-    if _continuation_only(query):
-        return True
-    words = [
-        word
-        for word in _loose(query).split()
-        if len(word) >= 5
-        and word not in _STOP
-        and word not in _GENERIC_TOPIC
-        and word not in _CONTINUATION_WORDS
-    ]
-    if not words:
-        return True
-    blob = _loose(_source_blob(sources))
-    return any(_in_blob(word, blob) for word in words)
-
-
 _EXAMPLE_ASK = re.compile(
     r"\b(give an example|an example|for example|un exemple|par exemple|un ejemplo|por ejemplo)\b"
 )

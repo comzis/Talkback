@@ -51,11 +51,32 @@ def test_a_changed_library_answer_stays_on_screen(monkeypatch):
     assert sources[0]["data"]["sources"][0]["source"] == "a.pdf"
 
 
-def test_an_uncovered_english_question_does_not_call_the_model(monkeypatch):
-    def fail(prompt, temperature):
-        raise AssertionError("the model should not be asked")
+def test_a_french_question_still_calls_the_model(monkeypatch):
+    called = {}
 
-    monkeypatch.setattr(engine, "_stream_deltas", fail)
+    def stream(prompt, temperature):
+        called["yes"] = True
+        yield "La sonie est -23.0 LUFS."
+
+    monkeypatch.setattr(engine, "_stream_deltas", stream)
+    monkeypatch.setattr(
+        engine,
+        "ground_library_reply",
+        lambda answer, sources, query="": answer,
+    )
+    monkeypatch.setattr(
+        engine,
+        "supporting_sources",
+        lambda answer, sources: [
+            {
+                "number": 1,
+                "source": "a.pdf",
+                "text": "Live loudness is -23.0 LUFS.",
+                "page": "16",
+            }
+        ],
+    )
+    monkeypatch.setattr(engine, "cited_source_indexes", lambda answer: [1])
     events = list(
         engine._stream_prompt(
             "prompt",
@@ -64,18 +85,16 @@ def test_an_uncovered_english_question_does_not_call_the_model(monkeypatch):
                 {
                     "number": 1,
                     "source": "a.pdf",
-                    "text": "Live peak is -3 dBTP.",
+                    "text": "Live loudness is -23.0 LUFS.",
                     "page": "16",
                 }
             ],
-            query="What true-peak level does the BBC standard require for radio?",
+            query="Quelle est la sonie exigée ?",
         )
     )
+    assert called.get("yes") is True
     tokens = [event["data"]["text"] for event in events if event["event"] == "token"]
-    assert tokens == ["The library does not cover that."]
-    assert [event for event in events if event["event"] == "sources"] == [
-        {"event": "sources", "data": {"sources": []}}
-    ]
+    assert tokens == ["La sonie est -23.0 LUFS."]
 
 
 def test_an_unchanged_library_answer_has_no_footnote(monkeypatch):

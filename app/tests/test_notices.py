@@ -23,20 +23,6 @@ def test_the_warning_follows_the_question_language():
     assert "documentos" in spanish
 
 
-def test_an_english_question_the_excerpts_do_not_mention_is_not_covered():
-    sources = [
-        {
-            "text": "Live programmes must not exceed -3 dBTP. The item fails above -1 dBTP."
-        }
-    ]
-    radio = "What true-peak level does the BBC standard require for radio?"
-    loudness = "What audio loudness level do the BBC live technical delivery standards require?"
-    assert prompts.excerpts_cover(radio, sources) is False
-    covered = [{"text": "Audio loudness for live technical delivery is -23.0 LUFS."}]
-    assert prompts.excerpts_cover(loudness, covered) is True
-    assert prompts.excerpts_cover("Tell me more.", sources) is True
-
-
 def test_notices_and_fallbacks_follow_the_question_language():
     assert (
         prompts.user_line("general", "Draft an incident update")

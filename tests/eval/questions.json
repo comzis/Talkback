@@ -75,5 +75,78 @@
     "id": "bbc-radio-peak",
     "query": "What true-peak level does the BBC standard require for radio?",
     "path": "uncovered"
+  },
+  {
+    "id": "fr-loudness",
+    "query": "Quelle sonie doit respecter un programme diffusé en direct, et quelle tolérance l'accompagne ?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "language": "fr",
+    "answer_contains": ["LUFS"],
+    "answer_any_of": [["-23.0", "-23,0", "-23 LUFS"], ["1.0 LU", "1.0LU", "±1", "1 LU"]]
+  },
+  {
+    "id": "es-loudness",
+    "query": "¿Qué sonoridad se exige para un programa en directo y cuál es el margen permitido?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "language": "es",
+    "answer_contains": ["LUFS"],
+    "answer_any_of": [["-23.0", "-23,0", "-23 LUFS"], ["1.0 LU", "1.0LU", "±1", "1 LU"]]
+  },
+  {
+    "id": "fr-backup-links",
+    "query": "Pour un programme d'intérêt public majeur, comment le lien principal et le lien de secours doivent-ils être disposés ?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "33",
+    "language": "fr",
+    "answer_any_of": [["geographically", "géographiquement", "geográficamente", "electrically separate", "électriquement"]]
+  },
+  {
+    "id": "es-single-link",
+    "query": "¿Cuándo basta un único enlace, sin camino de reserva?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "33",
+    "language": "es",
+    "answer_any_of": [["single link", "no backup", "enlace único", "sin reserva", "Option C", "opción C"]]
+  },
+  {
+    "id": "es-inventory",
+    "query": "¿Qué archivo enumera los dispositivos de la red y las variables de cada uno?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "pages": ["4", "6"],
+    "language": "es",
+    "answer_any_of": [["hosts.ini", "inventory", "inventario"]]
+  },
+  {
+    "id": "fr-primetime-links",
+    "query": "Que faut-il prévoir pour les liens d'une émission de première partie de soirée en direct ?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "33",
+    "language": "fr",
+    "answer_any_of": [["commonality", "single-point", "reserve", "point de défaillance", "lien de réserve"]]
+  },
+  {
+    "id": "en-volume-drift",
+    "query": "What integrated volume should a live programme sit at, and how far may that reading drift?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "answer_contains": ["LUFS"],
+    "answer_any_of": [["-23.0", "-23 LUFS"], ["1.0 LU", "1.0LU", "±1", "1 LU"]]
+  },
+  {
+    "id": "en-fallback-arrangement",
+    "query": "What fallback arrangement applies when a programme matters to audiences at home and overseas?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "33",
+    "answer_any_of": [["geographically", "electrically separate", "separately located"]]
   }
 ]

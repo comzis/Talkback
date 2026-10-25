@@ -7,7 +7,9 @@ Usage, from the repository root, while the API is listening:
 
 Each question is asked --runs times (default 3). The report shows the pass
 rate and every cited page, including a page that appears on only one run.
-This does not start the stack and does not load a model itself.
+tests/eval/heldout.json is a separate set. Score it, and do not change a
+rule because of those results. This does not start the stack and does not
+load a model itself.
 """
 
 from __future__ import annotations
@@ -32,6 +34,15 @@ SPANISH = re.compile(
 )
 FRENCH = re.compile(
     r"[àâçéèêëïîôùûüœ]|\b(?:les|des|une|dans|avec|filtre|détails|details|plus de)\b",
+    re.IGNORECASE,
+)
+NOT_COVERED = re.compile(
+    r"not in the (?:documents|library|excerpts)|"
+    r"does not cover|do not cover|not covered|"
+    r"do not (?:state|include|contain)|does not (?:state|include|contain)|"
+    r"ne couvre pas|pas dans les documents|ne contient pas|"
+    r"no cubre|no está en los documentos|no contiene|"
+    r"ne portent pas sur|no trata de",
     re.IGNORECASE,
 )
 _UNIT = re.compile(r"(\d)\s*(dBTP|LUFS|LKFS|dBFS|LU)\b", re.IGNORECASE)
@@ -87,6 +98,14 @@ def _sources(events: list[dict]) -> list[dict]:
     return found
 
 
+def _footnote(events: list[dict]) -> str:
+    return "\n".join(
+        event["data"].get("text", "")
+        for event in events
+        if event["event"] == "footnote"
+    )
+
+
 def _notices(events: list[dict]) -> list[str]:
     return [
         event["data"].get("text", "") for event in events if event["event"] == "notice"
@@ -116,6 +135,9 @@ def judge(case: dict, events: list[dict]) -> list[str]:
         for needle in case.get("answer_contains") or []:
             if _fold(needle) not in answer:
                 problems.append(f"answer omitted {needle}")
+        for group in case.get("answer_any_of") or []:
+            if not any(_fold(needle) in answer for needle in group):
+                problems.append("answer omitted one of " + " / ".join(group))
         cards = _fold(" ".join(source.get("text") or "" for source in sources))
         for needle in case.get("card_contains") or []:
             if _fold(needle) not in cards:
@@ -125,10 +147,11 @@ def judge(case: dict, events: list[dict]) -> list[str]:
         if case.get("language") == "fr" and not FRENCH.search(answer):
             problems.append("answer was not in French")
     elif case["path"] == "uncovered":
-        if sources:
-            problems.append("cited a document")
-        if FIGURE.search(answer):
+        shown = _fold(answer + "\n" + _footnote(events))
+        if FIGURE.search(shown):
             problems.append("invented a figure")
+        elif sources and not NOT_COVERED.search(shown):
+            problems.append("cited a document without saying it is not covered")
     elif case["path"] == "general":
         if case["notice"] not in notices:
             problems.append("missing the general-path notice")
@@ -182,6 +205,12 @@ def summarise(case: dict, runs: list[list[dict]]) -> tuple[int, list[str]]:
         line = f"  {index} {mark}  {detail}"
         if problems:
             line += "  " + "; ".join(problems)
+            if case.get("path") == "uncovered":
+                preview = " ".join(_answer(events).split())
+                note = " ".join(_footnote(events).split())
+                if note:
+                    preview = f"{preview} [footnote: {note}]"
+                line += "  answer: " + preview[:500]
         lines.append(line)
     pages = ", ".join(seen) if seen else "none"
     header = f"{passed}/{len(runs)}  {case['id']}  pages seen: {pages}"

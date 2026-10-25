@@ -167,11 +167,47 @@ def test_an_uncovered_question_must_not_invent_a_figure():
         _token("Radio requires -3 dBTP."),
         _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
     ]
-    problems = runner.judge(case, invented)
-    assert "cited a document" in problems
-    assert "invented a figure" in problems
+    assert "invented a figure" in runner.judge(case, invented)
     refusal = [
         _token("The library documents do not state a true-peak level for radio."),
-        {"event": "sources", "data": {"sources": []}},
+        _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
     ]
     assert runner.judge(case, refusal) == []
+    cited = [
+        _token("See the live television section."),
+        _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
+    ]
+    assert runner.judge(case, cited) == [
+        "cited a document without saying it is not covered"
+    ]
+
+
+def test_cross_language_questions_do_not_name_the_products():
+    banned = ("wireshark", "ansible", "bbc", "icmp", "cisco")
+    cases = {case["id"]: case for case in runner.load_cases()}
+    ids = {
+        "fr-loudness",
+        "es-loudness",
+        "fr-backup-links",
+        "es-single-link",
+        "es-inventory",
+        "fr-primetime-links",
+        "en-volume-drift",
+        "en-fallback-arrangement",
+    }
+    assert ids <= set(cases)
+    for case_id in ids:
+        query = cases[case_id]["query"].lower()
+        assert not any(name in query for name in banned)
+    french = [
+        _token("La sonie est -23,0 LUFS, tolérance 1 LU."),
+        _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
+    ]
+    assert runner.judge(cases["fr-loudness"], french) == []
+
+
+def test_held_out_questions_are_separate():
+    held = runner.load_cases(runner.ROOT / "tests" / "eval" / "heldout.json")
+    main = {case["id"] for case in runner.load_cases()}
+    assert 8 <= len(held) <= 10
+    assert {case["id"] for case in held}.isdisjoint(main)
