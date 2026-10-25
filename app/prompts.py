@@ -10,13 +10,67 @@ _REFUSAL = re.compile(
     re.IGNORECASE,
 )
 _STOP = {
-    "that", "this", "with", "from", "your", "have", "what", "when", "where",
-    "which", "about", "there", "their", "would", "could", "should", "into",
-    "using", "does", "they", "them", "than", "then", "also", "just", "only",
-    "some", "such", "answer", "question",
-    "is", "in", "the", "of", "to", "an", "it", "on", "for", "and", "or",
-    "be", "at", "by", "my", "me", "do", "if", "so", "we", "you", "are",
-    "was", "were", "can", "how", "who", "why", "not", "but", "its",
+    "that",
+    "this",
+    "with",
+    "from",
+    "your",
+    "have",
+    "what",
+    "when",
+    "where",
+    "which",
+    "about",
+    "there",
+    "their",
+    "would",
+    "could",
+    "should",
+    "into",
+    "using",
+    "does",
+    "they",
+    "them",
+    "than",
+    "then",
+    "also",
+    "just",
+    "only",
+    "some",
+    "such",
+    "answer",
+    "question",
+    "is",
+    "in",
+    "the",
+    "of",
+    "to",
+    "an",
+    "it",
+    "on",
+    "for",
+    "and",
+    "or",
+    "be",
+    "at",
+    "by",
+    "my",
+    "me",
+    "do",
+    "if",
+    "so",
+    "we",
+    "you",
+    "are",
+    "was",
+    "were",
+    "can",
+    "how",
+    "who",
+    "why",
+    "not",
+    "but",
+    "its",
 }
 
 
@@ -68,8 +122,7 @@ def format_history(history) -> str:
     if not turns:
         return ""
     lines = [
-        f"{'User' if role == 'user' else 'Assistant'}: {text}"
-        for role, text in turns
+        f"{'User' if role == 'user' else 'Assistant'}: {text}" for role, text in turns
     ]
     return (
         "Earlier in this conversation:\n"
@@ -86,7 +139,9 @@ _FOLLOW_UP = re.compile(
     r"walk me through|walk through|break it down|break down|explain that|explain this)\b",
     re.IGNORECASE,
 )
-_EXAMPLE_ASK = re.compile(r"\b(give an example|an example|for example)\b", re.IGNORECASE)
+_EXAMPLE_ASK = re.compile(
+    r"\b(give an example|an example|for example)\b", re.IGNORECASE
+)
 _STEPS_ASK = re.compile(
     r"\b(each step|step by step|the steps|explain the steps|explain each)\b",
     re.IGNORECASE,
@@ -121,13 +176,18 @@ def retrieval_text(query: str, history=None) -> str:
     if not turns or not is_follow_up(current):
         return current
     users = [
-        text for role, text in turns
+        text
+        for role, text in turns
         if role == "user" and not is_follow_up(text) and not _SMALL_TALK.match(text)
     ]
     topic = users[-1] if users else ""
     if _EXAMPLE_ASK.search(current) or _STEPS_ASK.search(current):
         anchor = _topic_anchor(topic)
-        focus = "practical example filter" if _EXAMPLE_ASK.search(current) else "filter operator example"
+        focus = (
+            "practical example filter"
+            if _EXAMPLE_ASK.search(current)
+            else "filter operator example"
+        )
         return "\n".join(part for part in (current, focus, anchor) if part)
     words = [word for word in _WORD.findall(current.lower()) if word not in _STOP]
     spoken = ""
@@ -140,7 +200,8 @@ def retrieval_text(query: str, history=None) -> str:
 def _topic_anchor(text: str) -> str:
     """The most specific word of the earlier question, kept so a follow-up finds that document."""
     words = [
-        word for word in re.findall(r"[A-Za-z0-9]{5,}", text or "")
+        word
+        for word in re.findall(r"[A-Za-z0-9]{5,}", text or "")
         if word.lower() not in _STOP
     ]
     if not words:
@@ -170,9 +231,22 @@ def assistant_prompt(query: str, history=None) -> str:
 
 
 _GENERIC_FILE_WORDS = {
-    "python", "basics", "notes", "guide", "skills", "document", "documents",
-    "manual", "intro", "introduction", "overview", "draft",
-    "final", "report", "slides", "sheet",
+    "python",
+    "basics",
+    "notes",
+    "guide",
+    "skills",
+    "document",
+    "documents",
+    "manual",
+    "intro",
+    "introduction",
+    "overview",
+    "draft",
+    "final",
+    "report",
+    "slides",
+    "sheet",
 }
 _SMALL_TALK = re.compile(
     r"^(hi|hello|hey|thanks|thank you|ok|okay|yo|good morning|good afternoon|good evening)\b",
@@ -211,8 +285,17 @@ def asks_about_library(query: str, library_files: list[str]) -> bool:
     if text.count("\n") >= 1 and len(text) > 40:
         return True
     cues = (
-        "document", "documents", "library", "uploaded", "pdf", "according to",
-        "in the file", "in my file", "the source", "cite ", "from the doc",
+        "document",
+        "documents",
+        "library",
+        "uploaded",
+        "pdf",
+        "according to",
+        "in the file",
+        "in my file",
+        "the source",
+        "cite ",
+        "from the doc",
     )
     if any(cue in lowered for cue in cues):
         return True
@@ -239,7 +322,9 @@ def excerpts_mention(query: str, texts: list[str]) -> bool:
     return any(word in blob for word in words)
 
 
-def explanation_prompt(query: str, library_files: list[str], excerpts: list[str], history=None) -> str:
+def explanation_prompt(
+    query: str, library_files: list[str], excerpts: list[str], history=None
+) -> str:
     """Prompt that explains pasted text and reasons only with library excerpts."""
     names = ", ".join(library_files) if library_files else "(none yet)"
     shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(excerpts, 1))
@@ -304,7 +389,8 @@ def _excerpt_supports(answer: str, text: str) -> bool:
     """True when the reply repeats distinctive wording from one excerpt."""
     cleaned = strip_citations(answer).lower()
     words = [
-        word for word in _WORD.findall((text or "").lower())
+        word
+        for word in _WORD.findall((text or "").lower())
         if word not in _STOP and len(word) >= 5
     ]
     hits = sum(1 for word in dict.fromkeys(words) if _has_word(cleaned, word))
@@ -327,7 +413,13 @@ _EXAMPLE_LEAD = re.compile(
 
 
 def _flat(text: str) -> str:
-    text = (text or "").replace("“", '"').replace("”", '"').replace("’", "'").replace("‘", "'")
+    text = (
+        (text or "")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("’", "'")
+        .replace("‘", "'")
+    )
     return re.sub(r"\s+", " ", text).casefold()
 
 
@@ -344,7 +436,9 @@ def _shows_example(text: str, blob: str) -> bool:
     """True when the reply still contains a filter or command that the excerpts contain."""
     if _CONTAINS_LITERAL.search(text) or _COMPARE.search(text):
         return True
-    return any(not _unsupported_fragment(match, blob) for match in _INLINE.findall(text))
+    return any(
+        not _unsupported_fragment(match, blob) for match in _INLINE.findall(text)
+    )
 
 
 def _sentence_invents(sentence: str, blob: str) -> bool:
@@ -360,13 +454,76 @@ def _sentence_invents(sentence: str, blob: str) -> bool:
 
 
 _PDF_WORD = {
-    "a", "an", "as", "at", "be", "by", "do", "if", "in", "is", "it", "no", "of", "on",
-    "or", "so", "to", "we", "and", "the", "for", "not", "you", "but", "can", "its",
-    "may", "any", "all", "has", "are", "was", "one", "our", "out", "use", "see",
-    "how", "with", "from", "that", "this", "have", "your", "into", "over", "than",
-    "then", "them", "they", "what", "when", "will", "also", "each", "just", "only",
-    "some", "more", "most", "such", "want", "view", "byte", "after", "take", "look",
-    "due", "per", "via",
+    "a",
+    "an",
+    "as",
+    "at",
+    "be",
+    "by",
+    "do",
+    "if",
+    "in",
+    "is",
+    "it",
+    "no",
+    "of",
+    "on",
+    "or",
+    "so",
+    "to",
+    "we",
+    "and",
+    "the",
+    "for",
+    "not",
+    "you",
+    "but",
+    "can",
+    "its",
+    "may",
+    "any",
+    "all",
+    "has",
+    "are",
+    "was",
+    "one",
+    "our",
+    "out",
+    "use",
+    "see",
+    "how",
+    "with",
+    "from",
+    "that",
+    "this",
+    "have",
+    "your",
+    "into",
+    "over",
+    "than",
+    "then",
+    "them",
+    "they",
+    "what",
+    "when",
+    "will",
+    "also",
+    "each",
+    "just",
+    "only",
+    "some",
+    "more",
+    "most",
+    "such",
+    "want",
+    "view",
+    "byte",
+    "after",
+    "take",
+    "look",
+    "due",
+    "per",
+    "via",
 }
 _EXAMPLE_HEAD = re.compile(r"Example\s+\d+\s*:", re.IGNORECASE)
 _FILTER_SPAN = re.compile(
@@ -390,11 +547,12 @@ def display_excerpt(text: str, query: str = "") -> str:
         match = re.search(r"contains\s+[\"“']|==", body, re.IGNORECASE)
     if not match:
         return body[:limit]
-    return body[match.start():match.start() + limit].lstrip()
+    return body[match.start() : match.start() + limit].lstrip()
 
 
 def repair_pdf_spacing(text: str) -> str:
     """Join words the PDF extractor split, such as 'cont ain'."""
+
     def once(line: str) -> str:
         tokens = line.split(" ")
         changed = True
@@ -406,9 +564,13 @@ def repair_pdf_spacing(text: str) -> str:
                 left = tokens[index]
                 right = tokens[index + 1] if index + 1 < len(tokens) else ""
                 broken = (
-                    left and right
+                    left
+                    and right
                     and (
-                        (len(left) == 1 and right[:2].lower() in {"ft", "ck", "ng", "sr", "tl"})
+                        (
+                            len(left) == 1
+                            and right[:2].lower() in {"ft", "ck", "ng", "sr", "tl"}
+                        )
                         or (
                             left.lower() not in _PDF_WORD
                             and right.lower() not in _PDF_WORD
@@ -428,7 +590,9 @@ def repair_pdf_spacing(text: str) -> str:
             tokens = merged
         return " ".join(tokens)
 
-    return "\n".join(re.sub(r" {2,}", " ", once(line)) for line in (text or "").split("\n"))
+    return "\n".join(
+        re.sub(r" {2,}", " ", once(line)) for line in (text or "").split("\n")
+    )
 
 
 def _filter_span(text: str):
@@ -443,8 +607,12 @@ def _example_blocks(text: str) -> list[str]:
     marks = list(_EXAMPLE_HEAD.finditer(text or ""))
     blocks = []
     for index, mark in enumerate(marks):
-        end = marks[index + 1].start() if index + 1 < len(marks) else min(len(text), mark.end() + 650)
-        block = text[mark.start():end].strip()
+        end = (
+            marks[index + 1].start()
+            if index + 1 < len(marks)
+            else min(len(text), mark.end() + 650)
+        )
+        block = text[mark.start() : end].strip()
         if _filter_span(block):
             blocks.append(block)
     return blocks
@@ -485,11 +653,11 @@ def _format_example(block: str) -> tuple[str, list[str]]:
     span = _filter_span(block)
     http = re.search(r"https?://", block, re.IGNORECASE)
     if http and (span is None or http.start() < span.start()):
-        prose = block[:http.start()].strip()
+        prose = block[: http.start()].strip()
         filt = re.sub(r"\s+", " ", span.group(0)).strip() if span else ""
         block = f"{prose} {filt}".strip()
     elif span:
-        block = block[:span.end()]
+        block = block[: span.end()]
     flat = re.sub(r"\s+", " ", block).strip()
     flat = re.sub(
         r"^(Example\s+\d+\s*:\s*.{0,50}?)(?=\s+(?:If|Suppose|One|To|There|The|You|When|Several)\b)",
@@ -524,7 +692,9 @@ def _steps_from_sources(sources: list[dict], query: str) -> str | None:
     title, sentences = _format_example(block)
     if not sentences:
         return None
-    numbered = "\n".join(f"{index}. {sentence}" for index, sentence in enumerate(sentences, 1))
+    numbered = "\n".join(
+        f"{index}. {sentence}" for index, sentence in enumerate(sentences, 1)
+    )
     mark = f" [{number}]" if number else ""
     return f"{title}{mark}\n{numbered}"
 
@@ -572,7 +742,8 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
     cleaned = "\n".join(kept).strip()
     if not _shows_example(cleaned, blob):
         cleaned = "\n".join(
-            sentence for sentence in cleaned.split("\n")
+            sentence
+            for sentence in cleaned.split("\n")
             if not _EXAMPLE_LEAD.match(sentence.strip())
         ).strip()
     if asks_for_example(query) and not _shows_example(cleaned, blob):
@@ -582,7 +753,9 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
         elif not cleaned:
             cleaned = "The retrieved excerpts do not include a worked example."
         else:
-            cleaned = f"{cleaned}\nThe retrieved excerpts do not include a worked example."
+            cleaned = (
+                f"{cleaned}\nThe retrieved excerpts do not include a worked example."
+            )
     if not strip_citations(cleaned).strip():
         return "The retrieved excerpts do not include that detail."
     return cleaned
@@ -592,7 +765,9 @@ def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
     """Keep excerpts whose wording the reply uses, preferring numbers it cited."""
     if not answer or _REFUSAL.search(answer):
         return []
-    cited = [number for number in cited_source_indexes(answer) if 1 <= number <= len(sources)]
+    cited = [
+        number for number in cited_source_indexes(answer) if 1 <= number <= len(sources)
+    ]
     pool = cited or list(range(1, len(sources) + 1))
     chosen = []
     for number in pool:

@@ -54,9 +54,30 @@ def get_file_type(filename: str) -> str:
     ext = Path(filename).suffix.lower()
     doc_exts = {".pdf", ".doc", ".docx", ".odt", ".txt", ".md", ".rst", ".rtf", ".epub"}
     code_exts = {
-        ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".go",
-        ".rs", ".php", ".rb", ".swift", ".kt", ".sh", ".bash", ".zsh", ".yaml",
-        ".yml", ".html", ".css", ".scss", ".less",
+        ".py",
+        ".js",
+        ".ts",
+        ".jsx",
+        ".tsx",
+        ".java",
+        ".cpp",
+        ".c",
+        ".h",
+        ".go",
+        ".rs",
+        ".php",
+        ".rb",
+        ".swift",
+        ".kt",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".yaml",
+        ".yml",
+        ".html",
+        ".css",
+        ".scss",
+        ".less",
     }
     data_exts = {".xlsx", ".xls", ".csv", ".json", ".xml"}
     image_exts = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"}

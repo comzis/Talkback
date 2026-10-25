@@ -12,7 +12,12 @@ from pathlib import Path
 import chromadb
 import psutil
 import torch
-from llama_index.core import Settings, SimpleDirectoryReader, StorageContext, VectorStoreIndex
+from llama_index.core import (
+    Settings,
+    SimpleDirectoryReader,
+    StorageContext,
+    VectorStoreIndex,
+)
 from llama_index.core.retrievers import BaseRetriever
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
@@ -78,7 +83,9 @@ def start_reindex_schedule() -> None:
                 logger.info("Scheduled re-index skipped until a full re-index.")
                 continue
             if not begin_ingestion():
-                logger.info("Scheduled re-index skipped because indexing is already running.")
+                logger.info(
+                    "Scheduled re-index skipped because indexing is already running."
+                )
                 continue
             logger.info("Scheduled re-index started.")
             process_ingestion()
@@ -89,6 +96,7 @@ def start_reindex_schedule() -> None:
 
 def start_initial_index() -> None:
     """Index files on disk that are missing or were only partly stored."""
+
     def run() -> None:
         try:
             wait_for_models()
@@ -117,13 +125,16 @@ def apply_offline_mode() -> None:
     that imported the library first.
     """
     if not offline_mode():
-        logger.info("OFFLINE_MODE is off. Setup may download a missing embedding model.")
+        logger.info(
+            "OFFLINE_MODE is off. Setup may download a missing embedding model."
+        )
         return
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["HF_DATASETS_OFFLINE"] = "1"
     try:
         import huggingface_hub.constants as hf_constants
+
         hf_constants.HF_HUB_OFFLINE = True
     except Exception:
         logger.exception("Could not mark Hugging Face offline")
@@ -196,9 +207,15 @@ def init() -> None:
         "CHROMA_HOST": "ChromaDB host address",
         "CHROMA_PORT": "ChromaDB port number",
     }
-    missing = [f"{name} ({description})" for name, description in required.items() if not os.getenv(name)]
+    missing = [
+        f"{name} ({description})"
+        for name, description in required.items()
+        if not os.getenv(name)
+    ]
     if missing:
-        message = "Missing required environment variables:\n" + "\n".join(f"  - {item}" for item in missing)
+        message = "Missing required environment variables:\n" + "\n".join(
+            f"  - {item}" for item in missing
+        )
         logger.error(message)
         raise ValueError(message)
 
@@ -258,7 +275,9 @@ def _remember_collection(collection) -> None:
 
     count = collection.count()
     current = config.embed_model_name()
-    _reindex_required = embeddings.full_reindex_required(collection.metadata, count, current)
+    _reindex_required = embeddings.full_reindex_required(
+        collection.metadata, count, current
+    )
     if count == 0:
         meta = dict(collection.metadata or {})
         if meta.get(embeddings.EMBED_META_KEY) != current:
@@ -268,7 +287,9 @@ def _remember_collection(collection) -> None:
     chroma_collection = collection
     vector_store = ChromaVectorStore(chroma_collection=collection)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
-    logger.info("Embedding model %s. Full re-index required: %s", current, _reindex_required)
+    logger.info(
+        "Embedding model %s. Full re-index required: %s", current, _reindex_required
+    )
 
 
 def connect_chroma() -> None:
@@ -350,7 +371,13 @@ def rebuild_library() -> None:
 class BalancedRetriever(BaseRetriever):
     """Retrieve across the library instead of letting one large file fill every slot."""
 
-    def __init__(self, index: VectorStoreIndex, candidate_k: int = 12, per_file: int = 2, limit: int = 4):
+    def __init__(
+        self,
+        index: VectorStoreIndex,
+        candidate_k: int = 12,
+        per_file: int = 2,
+        limit: int = 4,
+    ):
         self._inner = index.as_retriever(similarity_top_k=candidate_k)
         self._per_file = per_file
         self._limit = limit
@@ -380,7 +407,9 @@ def delete_chunks_for_file(relative_path: str) -> int:
     ids: set[str] = set()
     direct = chroma_collection.get(where={"relative_path": relative_path})
     ids.update(direct.get("ids") or [])
-    named = chroma_collection.get(where={"file_name": Path(relative_path).name}, include=["metadatas"])
+    named = chroma_collection.get(
+        where={"file_name": Path(relative_path).name}, include=["metadatas"]
+    )
     for chunk_id, metadata in zip(named.get("ids") or [], named.get("metadatas") or []):
         if chunk_belongs_to(metadata, relative_path):
             ids.add(chunk_id)
@@ -403,7 +432,9 @@ def begin_ingestion() -> bool:
             return False
         _ingest_again = False
         ingestion_status.clear()
-        ingestion_status.update(_fresh_status(status="processing", message="Starting ingestion..."))
+        ingestion_status.update(
+            _fresh_status(status="processing", message="Starting ingestion...")
+        )
         return True
 
 
@@ -415,7 +446,9 @@ def _take_followup() -> bool:
             return False
         _ingest_again = False
         ingestion_status.clear()
-        ingestion_status.update(_fresh_status(status="processing", message="Starting ingestion..."))
+        ingestion_status.update(
+            _fresh_status(status="processing", message="Starting ingestion...")
+        )
         return True
 
 
@@ -433,18 +466,20 @@ def _note_indexed() -> None:
 def _finish_kept(started: float, message: str, files: int) -> None:
     kept = collection_count()
     _note_indexed()
-    ingestion_status.update(_fresh_status(
-        status="completed",
-        message=message,
-        progress=100,
-        current=kept,
-        total=kept,
-        total_files=files,
-        processed_files=files,
-        start_time=started,
-        cpu_percent=ingestion_status["cpu_percent"],
-        memory_percent=ingestion_status["memory_percent"],
-    ))
+    ingestion_status.update(
+        _fresh_status(
+            status="completed",
+            message=message,
+            progress=100,
+            current=kept,
+            total=kept,
+            total_files=files,
+            processed_files=files,
+            start_time=started,
+            cpu_percent=ingestion_status["cpu_percent"],
+            memory_percent=ingestion_status["memory_percent"],
+        )
+    )
 
 
 def process_ingestion() -> None:
@@ -472,7 +507,9 @@ def _ingest_once() -> None:
         by_key = {library_key(path, UPLOAD_DIR): path for path in file_list}
         on_disk = {key: disk_signature(path) for key, path in by_key.items()}
         indexed, legacy_keys, incomplete_keys = indexed_documents()
-        embed_names, drop_names = index_plan(on_disk, indexed, legacy_keys, incomplete_keys)
+        embed_names, drop_names = index_plan(
+            on_disk, indexed, legacy_keys, incomplete_keys
+        )
         ingestion_status["total_files"] = len(embed_names)
         ingestion_status["processed_files"] = 0
         logger.info(
@@ -488,8 +525,8 @@ def _ingest_once() -> None:
         if not embed_names:
             message = (
                 f"Kept {len(on_disk)} documents already in the library. Nothing new to add."
-                if on_disk else
-                "Library is empty."
+                if on_disk
+                else "Library is empty."
             )
             _finish_kept(started, message, len(on_disk))
             logger.info("Ingestion unchanged. %s files already indexed.", len(on_disk))
@@ -497,7 +534,9 @@ def _ingest_once() -> None:
 
         paths = [by_key[name] for name in embed_names]
         key_by_resolved = {path.resolve(): key for key, path in by_key.items()}
-        documents = SimpleDirectoryReader(input_files=[str(path) for path in paths]).load_data()
+        documents = SimpleDirectoryReader(
+            input_files=[str(path) for path in paths]
+        ).load_data()
         for document in documents:
             file_path = Path(document.metadata.get("file_path", ""))
             relative = key_by_resolved.get(file_path.resolve())
@@ -512,7 +551,11 @@ def _ingest_once() -> None:
                 document.metadata["source_mtime"] = int(file_path.stat().st_mtime)
 
         if not documents:
-            _finish_kept(started, "No readable text in the new files. Existing documents were kept.", len(on_disk))
+            _finish_kept(
+                started,
+                "No readable text in the new files. Existing documents were kept.",
+                len(on_disk),
+            )
             logger.info("Ingestion found no readable text in %s", embed_names)
             return
 
@@ -523,15 +566,21 @@ def _ingest_once() -> None:
         total = len(nodes)
         ingestion_status["total"] = total
         ingestion_status["current"] = 0
-        ingestion_status["message"] = f"Adding {total} chunks from {len(embed_names)} file(s)..."
+        ingestion_status["message"] = (
+            f"Adding {total} chunks from {len(embed_names)} file(s)..."
+        )
         logger.info("Adding %s chunks from %s", total, embed_names)
 
-        index = VectorStoreIndex.from_vector_store(vector_store, storage_context=storage_context)
+        index = VectorStoreIndex.from_vector_store(
+            vector_store, storage_context=storage_context
+        )
         chunk_started = time.time()
         batch_size = config.embed_batch()
         nodes_by_file: dict[str, list] = {}
         for node in nodes:
-            key = (node.metadata or {}).get("relative_path") or (node.metadata or {}).get("file_name")
+            key = (node.metadata or {}).get("relative_path") or (
+                node.metadata or {}
+            ).get("file_name")
             nodes_by_file.setdefault(key, []).append(node)
         done = 0
         completed_files = 0
@@ -541,10 +590,12 @@ def _ingest_once() -> None:
                 continue
             ingestion_status["current_file"] = name
             for offset in range(0, len(file_nodes), batch_size):
-                batch = file_nodes[offset:offset + batch_size]
+                batch = file_nodes[offset : offset + batch_size]
                 index.insert_nodes(batch)
                 done += len(batch)
-                ingestion_status.update(ingest_metrics(done, total, time.time() - chunk_started))
+                ingestion_status.update(
+                    ingest_metrics(done, total, time.time() - chunk_started)
+                )
                 ingestion_status["status"] = "processing"
                 ingestion_status["processed_files"] = completed_files
                 ingestion_status["message"] = f"Embedded {done} of {total} new chunks"
@@ -558,19 +609,21 @@ def _ingest_once() -> None:
         cached_index = index
         library_total = collection_count()
         _note_indexed()
-        ingestion_status.update(_fresh_status(
-            status="completed",
-            message=f"Added {total} chunks from {len(embed_names)} file(s). Existing documents were kept.",
-            progress=100,
-            current=library_total,
-            total=library_total,
-            total_files=len(on_disk),
-            processed_files=len(embed_names),
-            chunks_per_second=round(speed, 2),
-            cpu_percent=ingestion_status["cpu_percent"],
-            memory_percent=ingestion_status["memory_percent"],
-            start_time=started,
-        ))
+        ingestion_status.update(
+            _fresh_status(
+                status="completed",
+                message=f"Added {total} chunks from {len(embed_names)} file(s). Existing documents were kept.",
+                progress=100,
+                current=library_total,
+                total=library_total,
+                total_files=len(on_disk),
+                processed_files=len(embed_names),
+                chunks_per_second=round(speed, 2),
+                cpu_percent=ingestion_status["cpu_percent"],
+                memory_percent=ingestion_status["memory_percent"],
+                start_time=started,
+            )
+        )
         logger.info(
             "Ingestion complete. Added %s chunks from %s. Library now has %s chunks.",
             total,
@@ -591,7 +644,9 @@ def _mark_file_complete(relative_path: str) -> None:
     """Stamp every stored chunk only after that file's batches have all been inserted."""
     if chroma_collection is None:
         raise RuntimeError("Chroma is not connected")
-    stored = chroma_collection.get(where={"relative_path": relative_path}, include=["metadatas"])
+    stored = chroma_collection.get(
+        where={"relative_path": relative_path}, include=["metadatas"]
+    )
     ids = list(stored.get("ids") or [])
     metas = [dict(meta or {}) for meta in (stored.get("metadatas") or [])]
     if not ids or len(ids) != len(metas):
@@ -600,8 +655,8 @@ def _mark_file_complete(relative_path: str) -> None:
         meta["index_complete"] = True
     for offset in range(0, len(ids), 100):
         chroma_collection.update(
-            ids=ids[offset:offset + 100],
-            metadatas=metas[offset:offset + 100],
+            ids=ids[offset : offset + 100],
+            metadatas=metas[offset : offset + 100],
         )
 
 
@@ -653,15 +708,34 @@ def _prefer_focused(nodes, query: str):
     if not (asks_for_example(query) or asks_for_steps(query)):
         return _prefer_prose(nodes)
     skip = {
-        "give", "detailed", "explanation", "each", "practical",
-        "that", "this", "with", "from", "your", "what", "about",
-        "have", "would", "could", "should", "into", "using",
+        "give",
+        "detailed",
+        "explanation",
+        "each",
+        "practical",
+        "that",
+        "this",
+        "with",
+        "from",
+        "your",
+        "what",
+        "about",
+        "have",
+        "would",
+        "could",
+        "should",
+        "into",
+        "using",
     }
-    needles = [word for word in re.findall(r"[a-z0-9]{4,}", query.lower()) if word not in skip]
+    needles = [
+        word for word in re.findall(r"[a-z0-9]{4,}", query.lower()) if word not in skip
+    ]
+
     def key(node):
         text = (node.get_text() or "").lower()
         hits = sum(word in text for word in needles)
         return (-hits, text.count("http") >= 3, -(getattr(node, "score", 0) or 0))
+
     return sorted(nodes, key=key)
 
 
@@ -683,14 +757,22 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
     if named:
         pinned = _retrieve_named(index, query, named, candidates)
         if pinned:
-            return balance_matches(_prefer_focused(pinned, query), per_file=per_file, limit=limit), True
+            return balance_matches(
+                _prefer_focused(pinned, query), per_file=per_file, limit=limit
+            ), True
     nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
-    return balance_matches(_prefer_focused(nodes, query), per_file=per_file, limit=limit), False
+    return balance_matches(
+        _prefer_focused(nodes, query), per_file=per_file, limit=limit
+    ), False
 
 
 def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str], top_k: int):
     """Return chunks from the files the question names."""
-    from llama_index.core.vector_stores import FilterCondition, MetadataFilter, MetadataFilters
+    from llama_index.core.vector_stores import (
+        FilterCondition,
+        MetadataFilter,
+        MetadataFilters,
+    )
 
     filters = MetadataFilters(
         filters=[MetadataFilter(key="relative_path", value=name) for name in names],
@@ -723,7 +805,13 @@ def _library_matches(nodes) -> bool:
     return embeddings.relevant_enough(scores, config.relevance_threshold())
 
 
-def _stream_prompt(prompt: str, temperature: float | None, sources: list | None, notice: str | None = None, query: str = ""):
+def _stream_prompt(
+    prompt: str,
+    temperature: float | None,
+    sources: list | None,
+    notice: str | None = None,
+    query: str = "",
+):
     """Stream one completion. A library reply is checked against the excerpts before it is shown."""
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
@@ -769,9 +857,16 @@ def iter_answer(query: str, history=None):
     try:
         if collection_count() == 0:
             if files_waiting() and should_search_library(search):
-                logger.info("Query skipped because the library files are not indexed yet.")
+                logger.info(
+                    "Query skipped because the library files are not indexed yet."
+                )
                 yield {"event": "notice", "data": {"text": NOT_INDEXED_NOTICE}}
-                yield {"event": "token", "data": {"text": "Indexing has started. Ask again once it finishes."}}
+                yield {
+                    "event": "token",
+                    "data": {
+                        "text": "Indexing has started. Ask again once it finishes."
+                    },
+                }
                 yield {"event": "sources", "data": {"sources": []}}
                 yield {"event": "done", "data": {}}
                 return
@@ -785,11 +880,20 @@ def iter_answer(query: str, history=None):
         library_files = sorted(indexed)
         nodes, named_file = _retrieve_nodes(index, search, library_files)
         follow_up = bool(clean_history(history)) and is_follow_up(query)
-        if not nodes or (not named_file and not follow_up and not _library_matches(nodes)):
-            logger.info("Retrieval score below %s. Answering generally.", config.relevance_threshold())
-            yield from _stream_prompt(assistant_prompt(query, history), None, None, GENERAL_NOTICE)
+        if not nodes or (
+            not named_file and not follow_up and not _library_matches(nodes)
+        ):
+            logger.info(
+                "Retrieval score below %s. Answering generally.",
+                config.relevance_threshold(),
+            )
+            yield from _stream_prompt(
+                assistant_prompt(query, history), None, None, GENERAL_NOTICE
+            )
             return
-        sources = [_source_record(node, number, query) for number, node in enumerate(nodes, 1)]
+        sources = [
+            _source_record(node, number, query) for number, node in enumerate(nodes, 1)
+        ]
         prompt = explanation_prompt(
             query,
             library_files,

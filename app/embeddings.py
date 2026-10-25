@@ -13,9 +13,7 @@ from __future__ import annotations
 
 LEGACY_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 EMBED_META_KEY = "embed_model"
-REINDEX_MESSAGE = (
-    "Full re-index needed. The embedding model changed, so the current vectors cannot be queried."
-)
+REINDEX_MESSAGE = "Full re-index needed. The embedding model changed, so the current vectors cannot be queried."
 
 
 def is_e5(model_name: str) -> bool:
