@@ -143,10 +143,11 @@ Static files and Python are copied into the API image. After a UI or Python chan
 docker compose up -d --build rag-api
 ```
 
-Run the unit tests from `app/`. They do not load the model or Chroma.
+Run the unit tests from the repository root. They do not load the model or Chroma. Two tests stay skipped unless LlamaIndex and the local embedding cache are already installed.
 
 ```bash
-cd app && python3 -m unittest tests.test_library
+python -m pip install -r requirements-dev.txt
+python -m pytest
 ```
 
 ## API

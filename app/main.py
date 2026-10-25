@@ -176,7 +176,6 @@ async def get_system_status():
     Comprehensive system status including API, LLM, Database, and alarms.
     """
     import time
-    import httpx
     
     status = {
         "timestamp": time.time(),
@@ -215,7 +214,7 @@ async def get_system_status():
                 "component": "llm",
                 "message": f"LLM is {llm_status.get('status', 'unknown')}: {llm_status.get('error', 'Unknown error')}"
             })
-    except Exception as e:
+    except Exception:
         status["llm"]["status"] = "error"
         logger.exception("Failed to check LLM status")
         status["llm"]["error"] = "The language model could not be reached."
@@ -231,7 +230,7 @@ async def get_system_status():
         status["database"]["status"] = "online"
         status["database"]["connected"] = True
         status["database"]["collection_count"] = collection_count
-    except Exception as e:
+    except Exception:
         status["database"]["status"] = "offline"
         status["database"]["connected"] = False
         logger.exception("Database connection error")
@@ -570,7 +569,7 @@ async def get_llm_status():
                     "error": f"Ollama returned status {response.status_code}",
                     "response_time_ms": round(response_time, 2)
                 }
-    except Exception as e:
+    except Exception:
         logger.exception("Error checking LLM status")
         return {
             "status": "offline",
