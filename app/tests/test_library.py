@@ -277,15 +277,11 @@ class PromptTests(unittest.TestCase):
         self.assertFalse(prompts.should_search_library("What is 2 + 2?"))
         self.assertTrue(prompts.should_search_library("What is in the CV?"))
         self.assertEqual(
-            prompts.named_library_files(
-                "What is in the CV?", ["Example CV.pdf"]
-            ),
+            prompts.named_library_files("What is in the CV?", ["Example CV.pdf"]),
             ["Example CV.pdf"],
         )
         self.assertEqual(
-            prompts.named_library_files(
-                "What is 2 + 2?", ["Example CV.pdf"]
-            ),
+            prompts.named_library_files("What is 2 + 2?", ["Example CV.pdf"]),
             [],
         )
         self.assertTrue(
