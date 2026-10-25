@@ -44,13 +44,18 @@ def is_hidden(path: Path, root: Path) -> bool:
     return any(part.startswith(".") for part in relative.parts)
 
 
+def is_macos_metadata(path: Path) -> bool:
+    """True for Finder sidecars and .DS_Store."""
+    return path.name == ".DS_Store" or path.name.startswith("._")
+
+
 def visible_files(root: Path) -> list[Path]:
     """Files under root that ingest and the library list should show."""
     if not root.exists():
         return []
     files = []
     for path in root.rglob("*"):
-        if path.is_file() and not is_hidden(path, root):
+        if path.is_file() and not is_hidden(path, root) and not is_macos_metadata(path):
             files.append(path)
     return files
 

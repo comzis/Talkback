@@ -24,6 +24,16 @@ def test_item_id_is_the_relative_path(tmp_path: Path):
     assert items[0].location == str(target)
 
 
+def test_listing_skips_macos_metadata(tmp_path: Path):
+    (tmp_path / "guide.pdf").write_bytes(b"%PDF")
+    (tmp_path / "._guide.pdf").write_bytes(b"sidecar")
+    (tmp_path / ".DS_Store").write_bytes(b"store")
+
+    assert [item.id for item in FilesystemSource(tmp_path).list_items()] == [
+        "guide.pdf"
+    ]
+
+
 def test_deleted_ids_are_known_ids_that_left(tmp_path: Path):
     (tmp_path / "keep.txt").write_text("a", encoding="utf-8")
     source = FilesystemSource(tmp_path)
