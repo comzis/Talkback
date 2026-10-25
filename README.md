@@ -17,13 +17,29 @@ The chat window is the main view. The library, system status, and upload area si
 
 ## Quick start
 
-### Prerequisites
+Talkback needs Docker, Ollama on the host, about 8 GB of RAM, and several GB of free disk for the image and model. The same compose file runs on a Mac and on a Linux server. `host.docker.internal` is mapped to the host gateway, so the container reaches Ollama on either machine.
 
-- Docker Desktop
-- [Ollama](https://ollama.com/) running on the host
-- About 8 GB of RAM and several GB of free disk for the image and model
+### Mac
 
-### 1. Clone and configure
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Ollama](https://ollama.com/). The image builds as UID `502` and GID `20` unless you override them. If the library files are not readable in the container, rebuild with your ids:
+
+```bash
+docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
+docker compose up -d
+```
+
+### Linux server
+
+Install Docker Engine and the Docker Compose plugin, and install Ollama on the host so it can use the machine's GPU. Build as the user that owns the library folder. The Mac default of UID `502` will not match a typical server account.
+
+```bash
+docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
+docker compose up -d
+```
+
+Keep port 8001 bound to `127.0.0.1`. Put a reverse proxy in front of it if other machines need the page. Do not publish Chroma.
+
+### Configure and start
 
 ```bash
 git clone https://github.com/comzis/Talkback.git
@@ -33,9 +49,7 @@ cp .env.example .env
 
 Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name. Set `LIBRARY_PATH` to the absolute path of the document folder. Compose mounts that folder at `/app/data` for the API and the indexer, and refuses to start when it is missing.
 
-`CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The API is published on `127.0.0.1:8001` only.
-
-### 2. Pull the model and start the stack
+`CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The file-status database is in `./status`. The API is published on `127.0.0.1:8001` only.
 
 ```bash
 ollama pull "$OLLAMA_MODEL"
@@ -47,11 +61,9 @@ docker compose ps
 
 The API image is large because it includes a CPU build of PyTorch. With `OFFLINE_MODE=true` (the default) the container exports the Hugging Face offline flags before Python starts, and the embedding model loads only from `./hf_cache`. Download it once with `OFFLINE_MODE=false`, then turn offline mode back on. See the demo checklist.
 
-### 3. Open Talkback
+Open http://localhost:8001
 
-http://localhost:8001
-
-Drop a file into the library panel. Indexing starts on its own. Then ask in the chat.
+Drop a file into the library panel, or put files in `LIBRARY_PATH` and let the indexer pick them up. Then ask in the chat.
 
 There is no login. The API listens on all interfaces inside the container and is published only on `127.0.0.1:8001`, so other devices on the network cannot open it.
 
@@ -116,7 +128,7 @@ docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" rag-a
 docker compose up -d
 ```
 
-The compose file currently builds as UID `502` and GID `20`.
+On a Mac the compose file builds as UID `502` and GID `20` unless you pass other ids. On a Linux server, pass `UID` and `GID` from `id -u` and `id -g`, as in the Linux quick start.
 
 ## Layout
 
