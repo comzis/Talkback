@@ -37,8 +37,9 @@ from prompts import (
     GENERAL_NOTICE,
     UNMATCHED_SOURCE_NOTE,
     assistant_prompt,
+    display_excerpt,
     ground_library_reply,
-    repair_pdf_spacing,
+    prompt_passage,
     cited_source_indexes,
     explanation_prompt,
     named_library_files,
@@ -617,22 +618,8 @@ def _complete(prompt: str, temperature: float | None = None) -> str:
         llm.temperature = previous
 
 
-def _excerpt_window(text: str, query: str) -> str:
-    """Keep a short clip. An example or a procedure starts at the worked lines."""
-    limit = 900 if asks_for_example(query) or asks_for_steps(query) else 500
-    body = repair_pdf_spacing(text or "")
-    if not (asks_for_example(query) or asks_for_steps(query)):
-        return body[:limit]
-    match = re.search(r"example\s+\d+\s*:", body, re.IGNORECASE)
-    if not match:
-        match = re.search(r"contains\s+[\"“']|==", body, re.IGNORECASE)
-    if not match:
-        return body[:limit]
-    return body[match.start():match.start() + limit].lstrip()
-
-
 def _source_record(node, number: int, query: str = "") -> dict:
-    """Keep the citation number, file, page, and excerpt for one retrieved chunk."""
+    """Keep the citation number, file, page, and the full chunk for one retrieved passage."""
     metadata = node.metadata or {}
     file_name = metadata.get("relative_path") or metadata.get("file_name") or "Document"
     page = metadata.get("page_label") or metadata.get("page_number")
@@ -640,7 +627,7 @@ def _source_record(node, number: int, query: str = "") -> dict:
         "number": number,
         "source": file_name,
         "path": metadata.get("relative_path") or file_name,
-        "text": _excerpt_window(node.get_text() or "", query),
+        "text": prompt_passage(node.get_text() or ""),
     }
     if page not in (None, ""):
         record["page"] = str(page)
@@ -768,6 +755,8 @@ def _stream_prompt(prompt: str, temperature: float | None, sources: list | None,
         yield {"event": "done", "data": {}}
         return
     logger.info("Query cited %s", [source["source"] for source in used])
+    for source in used:
+        source["text"] = display_excerpt(source.get("text") or "", query)
     yield {"event": "sources", "data": {"sources": used}}
     yield {"event": "done", "data": {}}
 

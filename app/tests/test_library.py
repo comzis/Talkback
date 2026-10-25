@@ -70,6 +70,23 @@ class PromptTests(unittest.TestCase):
         self.assertIn("language of the user's question", explanation)
         self.assertIn("original language", prompts.assistant_prompt("bonjour"))
         self.assertIn("Inlock\nSecure AI for Private Enterprise", explanation)
+        padding = "The guide discusses packet filters and ICMP messages. " * 12
+        fact = "(icmp.type == 3 && icmp.code == 2) || (icmp.type == 4 && icmp.code == 0)"
+        chunk = f"{padding} {fact}"
+        self.assertGreater(chunk.find("icmp.type"), 500)
+        passage = prompts.prompt_passage(chunk)
+        self.assertIn(fact, passage)
+        card = prompts.display_excerpt(chunk, "Quel filtre ICMP ?")
+        self.assertNotIn("icmp.type", card)
+        self.assertLessEqual(len(card), 500)
+        reached = prompts.explanation_prompt("Quel filtre ?", ["wire.pdf"], [passage])
+        self.assertIn(fact, reached)
+        grounded_fact = prompts.ground_library_reply(
+            f"The filter is {fact}. [1]",
+            [{"number": 1, "text": passage}],
+            "Quel filtre ?",
+        )
+        self.assertIn(fact, grounded_fact)
         self.assertEqual(prompts.cited_source_indexes("See [1] and later [1] then [3]."), [1, 3])
         self.assertNotIn("Sentinel", text)
         self.assertNotIn("superhero", text.lower())

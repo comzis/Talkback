@@ -802,6 +802,14 @@ body {
     margin-bottom: var(--spacing-lg);
 }
 
+.read-only-label {
+    margin: 0 0 var(--spacing-md);
+    font-size: var(--font-sm);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
 .btn-refresh {
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid var(--border);

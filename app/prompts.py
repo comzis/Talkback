@@ -374,6 +374,25 @@ _FILTER_SPAN = re.compile(
 )
 
 
+def prompt_passage(text: str) -> str:
+    """Full chunk text for the prompt and the grounding check."""
+    return repair_pdf_spacing(text or "")
+
+
+def display_excerpt(text: str, query: str = "") -> str:
+    """Short clip for the source card. An example or a procedure starts at the worked lines."""
+    limit = 900 if asks_for_example(query) or asks_for_steps(query) else 500
+    body = repair_pdf_spacing(text or "")
+    if not (asks_for_example(query) or asks_for_steps(query)):
+        return body[:limit]
+    match = re.search(r"example\s+\d+\s*:", body, re.IGNORECASE)
+    if not match:
+        match = re.search(r"contains\s+[\"“']|==", body, re.IGNORECASE)
+    if not match:
+        return body[:limit]
+    return body[match.start():match.start() + limit].lstrip()
+
+
 def repair_pdf_spacing(text: str) -> str:
     """Join words the PDF extractor split, such as 'cont ain'."""
     def once(line: str) -> str:

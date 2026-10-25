@@ -39,6 +39,7 @@ const elements = {
     reindexConfirmNo: document.getElementById('reindexConfirmNo'),
     reindexMeta: document.getElementById('reindexMeta'),
     readOnlyNote: document.getElementById('readOnlyNote'),
+    readOnlyLabel: document.getElementById('readOnlyLabel'),
     rebuildNote: document.getElementById('rebuildNote'),
     chatInput: document.getElementById('chatInput'),
     sendBtn: document.getElementById('sendBtn'),
@@ -859,6 +860,7 @@ async function checkSystemStatus() {
         document.querySelector('.library-panel')?.classList.toggle('read-only', state.readOnly);
         if (elements.dropZone) elements.dropZone.hidden = state.readOnly;
         if (elements.readOnlyNote) elements.readOnlyNote.hidden = !state.readOnly;
+        if (elements.readOnlyLabel) elements.readOnlyLabel.hidden = !state.readOnly;
     } catch (error) {
         console.error('Error checking system status:', error);
         setTrafficLight(elements.apiLight, 'red');
