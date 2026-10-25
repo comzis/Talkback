@@ -1,0 +1,288 @@
+"""SQLite file status. Planning reads this table instead of every chunk.
+
+The file lives on a local volume. A missing index_complete marker is unfinished,
+the same rule as classify_stored_chunks, so a finished library is not embedded again.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import time
+from collections import Counter
+from pathlib import Path
+
+from ingestion.plan import chunk_key, classify_stored_chunks
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS file_status (
+    source_type TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    size INTEGER,
+    modified_day TEXT,
+    mtime INTEGER,
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    last_error TEXT,
+    indexed_at REAL,
+    PRIMARY KEY (source_type, item_id)
+)
+"""
+
+
+class StatusStore:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._db: sqlite3.Connection | None = None
+
+    def open(self) -> None:
+        if self._db is not None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._db = sqlite3.connect(self.path)
+        self._db.row_factory = sqlite3.Row
+        self._db.execute(_SCHEMA)
+        self._db.commit()
+
+    def close(self) -> None:
+        if self._db is not None:
+            self._db.close()
+            self._db = None
+
+    def _conn(self) -> sqlite3.Connection:
+        self.open()
+        assert self._db is not None
+        return self._db
+
+    def empty(self) -> bool:
+        row = self._conn().execute("SELECT COUNT(*) AS n FROM file_status").fetchone()
+        return int(row["n"]) == 0
+
+    def migrate(self, metadatas: list[dict | None]) -> None:
+        """Fill an empty table from chunk metadata. A second call leaves it alone."""
+        if not self.empty():
+            return
+        self._write_chunks(metadatas)
+
+    def rebuild(self, metadatas: list[dict | None]) -> None:
+        """Replace the table with what the index holds now."""
+        conn = self._conn()
+        conn.execute("DELETE FROM file_status")
+        conn.commit()
+        self._write_chunks(metadatas)
+
+    def _write_chunks(self, metadatas: list[dict | None]) -> None:
+        complete, legacy, incomplete = classify_stored_chunks(metadatas)
+        counts = Counter(key for metadata in metadatas if (key := chunk_key(metadata)))
+        unfinished = set(legacy) | set(incomplete)
+        for item_id, signature in complete.items():
+            if item_id in unfinished:
+                continue
+            size, day, mtime = signature
+            self._upsert(
+                "filesystem",
+                item_id,
+                size=size,
+                modified_day=day,
+                mtime=None if mtime is None else int(mtime),
+                chunk_count=counts[item_id],
+                status="complete",
+                last_error=None,
+                indexed_at=time.time(),
+            )
+        for item_id in sorted(unfinished):
+            self._upsert(
+                "filesystem",
+                item_id,
+                size=None,
+                modified_day=None,
+                mtime=None,
+                chunk_count=counts[item_id],
+                status="pending",
+                last_error=None,
+                indexed_at=None,
+            )
+
+    def planning_sets(self) -> tuple[dict[str, tuple], set[str], set[str]]:
+        """Complete signatures, no legacy set, and ids that still need a pass.
+
+        Pending and failed rows are the unfinished set. index_plan retries those
+        the way it retries a chunk with no index_complete marker.
+        """
+        indexed: dict[str, tuple] = {}
+        unfinished: set[str] = set()
+        for row in self._conn().execute("SELECT * FROM file_status"):
+            if row["status"] == "complete":
+                indexed[row["item_id"]] = (
+                    int(row["size"] or 0),
+                    str(row["modified_day"] or ""),
+                    None if row["mtime"] is None else int(row["mtime"]),
+                )
+            elif row["status"] in {"pending", "failed"}:
+                unfinished.add(row["item_id"])
+        return indexed, set(), unfinished
+
+    def mark_pending(self, source_type: str, item_id: str) -> None:
+        self._upsert(
+            source_type,
+            item_id,
+            size=None,
+            modified_day=None,
+            mtime=None,
+            chunk_count=0,
+            status="pending",
+            last_error=None,
+            indexed_at=None,
+        )
+
+    def mark_complete(
+        self,
+        source_type: str,
+        item_id: str,
+        signature: tuple,
+        chunk_count: int,
+    ) -> None:
+        size, day, mtime = signature
+        self._upsert(
+            source_type,
+            item_id,
+            size=int(size),
+            modified_day=str(day),
+            mtime=None if mtime is None else int(mtime),
+            chunk_count=chunk_count,
+            status="complete",
+            last_error=None,
+            indexed_at=time.time(),
+        )
+
+    def mark_failed(self, source_type: str, item_id: str, error: str) -> None:
+        self._upsert(
+            source_type,
+            item_id,
+            size=None,
+            modified_day=None,
+            mtime=None,
+            chunk_count=0,
+            status="failed",
+            last_error=error,
+            indexed_at=None,
+        )
+
+    def fail_pending(self, error: str) -> None:
+        """A caught ingest error. A killed process leaves the row pending."""
+        conn = self._conn()
+        conn.execute(
+            "UPDATE file_status SET status = 'failed', last_error = ? WHERE status = 'pending'",
+            (error,),
+        )
+        conn.commit()
+
+    def forget(self, source_type: str, item_id: str) -> None:
+        conn = self._conn()
+        conn.execute(
+            "DELETE FROM file_status WHERE source_type = ? AND item_id = ?",
+            (source_type, item_id),
+        )
+        conn.commit()
+
+    def get(self, source_type: str, item_id: str) -> dict | None:
+        row = (
+            self._conn()
+            .execute(
+                "SELECT * FROM file_status WHERE source_type = ? AND item_id = ?",
+                (source_type, item_id),
+            )
+            .fetchone()
+        )
+        return dict(row) if row else None
+
+    def failed_rows(self) -> list[dict]:
+        rows = self._conn().execute(
+            "SELECT * FROM file_status WHERE status = 'failed' ORDER BY item_id"
+        )
+        return [dict(row) for row in rows]
+
+    def _upsert(
+        self,
+        source_type: str,
+        item_id: str,
+        *,
+        size: int | None,
+        modified_day: str | None,
+        mtime: int | None,
+        chunk_count: int,
+        status: str,
+        last_error: str | None,
+        indexed_at: float | None,
+    ) -> None:
+        conn = self._conn()
+        conn.execute(
+            """
+            INSERT INTO file_status (
+                source_type, item_id, size, modified_day, mtime,
+                chunk_count, status, last_error, indexed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_type, item_id) DO UPDATE SET
+                size = excluded.size,
+                modified_day = excluded.modified_day,
+                mtime = excluded.mtime,
+                chunk_count = excluded.chunk_count,
+                status = excluded.status,
+                last_error = excluded.last_error,
+                indexed_at = excluded.indexed_at
+            """,
+            (
+                source_type,
+                item_id,
+                size,
+                modified_day,
+                mtime,
+                chunk_count,
+                status,
+                last_error,
+                indexed_at,
+            ),
+        )
+        conn.commit()
+
+
+def _chunk_metadatas():
+    from state import get
+    from store.chroma import collection_count
+
+    collection = get().chroma_collection
+    if collection is None or collection_count() == 0:
+        return []
+    stored = collection.get(include=["metadatas"])
+    return stored.get("metadatas") or []
+
+
+def main(argv: list[str] | None = None) -> None:
+    """migrate copies Chroma metadata into an empty table. rebuild replaces the table."""
+    import os
+    import sys
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args not in (["migrate"], ["rebuild"]):
+        raise SystemExit("Usage: python -m store.status_db migrate|rebuild")
+    from state import activate, get
+    from store.chroma import connect_chroma
+
+    os.environ.setdefault("STATUS_DIR", "/app/status")
+    activate()
+    connect_chroma()
+    store = StatusStore(get().status_dir / "library.sqlite")
+    store.open()
+    metadatas = _chunk_metadatas()
+    if args == ["migrate"]:
+        store.migrate(metadatas)
+    else:
+        store.rebuild(metadatas)
+    indexed, _legacy, unfinished = store.planning_sets()
+    print(
+        f"{args[0]}: {len(indexed)} complete, {len(unfinished)} unfinished, "
+        f"{len(store.failed_rows())} failed"
+    )
+
+
+if __name__ == "__main__":
+    main()

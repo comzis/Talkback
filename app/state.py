@@ -23,6 +23,7 @@ class Talkback:
         self.cached_index = None
         self.needs_reindex = False
         self.upload_dir = Path(os.getenv("RAG_DATA_DIR", "/app/data"))
+        self.status_dir = Path(os.getenv("STATUS_DIR", "/app/status"))
         self.last_indexed_at: float | None = None
         self.ingest_lock = threading.Lock()
         self.ingest_again = False
