@@ -111,7 +111,7 @@ def main() -> None:
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     from llama_index.llms.ollama import Ollama
 
-    from library import balance_matches
+    from ingestion.plan import balance_matches
 
     threads = profile["torch_threads"]
     if threads == "half":

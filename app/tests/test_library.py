@@ -10,8 +10,8 @@ import os
 import config
 import store.embeddings as embeddings
 import sources.filesystem as files
-import library
-import progress
+import ingestion.plan as library
+import ingestion.progress as progress
 import llm.prompts as prompts
 
 

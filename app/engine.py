@@ -27,7 +27,7 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 import config
 import store.embeddings as embeddings
 from sources.filesystem import visible_files
-from library import (
+from ingestion.plan import (
     balance_matches,
     chunk_belongs_to,
     classify_stored_chunks,
@@ -37,7 +37,7 @@ from library import (
     read_only_requested,
     reindex_minutes,
 )
-from progress import ingest_metrics
+from ingestion.progress import ingest_metrics
 from llm.prompts import (
     GENERAL_NOTICE,
     UNMATCHED_SOURCE_NOTE,
