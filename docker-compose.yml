@@ -17,9 +17,8 @@ services:
       HUGGINGFACE_HUB_CACHE: /cache/huggingface/hub
       SENTENCE_TRANSFORMERS_HOME: /cache/huggingface/sentence-transformers
     volumes:
-      # Writable library used by Drop a file. For the Mac demo, mount a local
-      # folder read-only and set LIBRARY_READ_ONLY=true:
-      #   - ~/TalkbackDemo:/app/data:ro
+      # Writable library. Drop a file saves into ./data.
+      # Read-only demo folder: ~/TalkbackDemo:/app/data:ro and LIBRARY_READ_ONLY=true
       # Optional scheduled incremental index (minutes). Leave unset to keep it off:
       #   REINDEX_INTERVAL_MINUTES=30
       - ./data:/app/data

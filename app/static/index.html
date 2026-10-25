@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache">
     <title>Talkback</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.34">
+    <link rel="stylesheet" href="/static/style.css?v=4.41">
 </head>
 <body>
     <div class="app-container">
@@ -21,7 +21,6 @@
                             <p class="ambient-text">Ask me anything, or paste a passage. I explain the text and cite your documents when they apply.</p>
                         </div>
                     </div>
-                    
                     <div class="chat-input-area">
                         <textarea
                             id="chatInput"
@@ -50,37 +49,29 @@
                 <h3 class="pulse-title">SYSTEM PULSE</h3>
                 <div class="pulse-grid">
                     <div class="pulse-card" id="apiCard">
-                        <div class="pulse-header">
-                            <div class="pulse-label">API</div>
-                            <div class="traffic-light green" id="apiLight"></div>
-                        </div>
+                        <div class="pulse-label">API</div>
                         <div class="pulse-status" id="apiStatus">Online</div>
                         <div class="pulse-detail">FastAPI health</div>
+                        <div class="traffic-light green" id="apiLight"></div>
                     </div>
                     <div class="pulse-card" id="databaseCard">
-                        <div class="pulse-header">
-                            <div class="pulse-label">DATABASE</div>
-                            <div class="traffic-light green" id="dbLight"></div>
-                        </div>
+                        <div class="pulse-label">DATABASE</div>
                         <div class="pulse-status" id="dbStatus">Connected</div>
                         <div class="pulse-detail" id="dbDetail">0 documents</div>
+                        <div class="traffic-light green" id="dbLight"></div>
                     </div>
                     <div class="pulse-card" id="ingestionCard">
-                        <div class="pulse-header">
-                            <div class="pulse-label">INGESTION</div>
-                            <div class="traffic-light green" id="ingestionLight"></div>
-                        </div>
+                        <div class="pulse-label">INGESTION</div>
                         <div class="pulse-status" id="ingestionStatus">Ready</div>
                         <div class="pulse-detail">Background tasks</div>
+                        <div class="traffic-light green" id="ingestionLight"></div>
                     </div>
                     <div class="pulse-card" id="llmCard">
-                        <div class="pulse-header">
-                            <div class="pulse-label">LLM</div>
-                            <div class="traffic-light green" id="llmLight"></div>
-                        </div>
+                        <div class="pulse-label">LLM</div>
                         <div class="pulse-status" id="llmStatus">Ready</div>
                         <div class="pulse-detail" id="llmModel">Ollama · llama3-8b</div>
                         <button class="pulse-btn" id="changeModelBtn">Change Model</button>
+                        <div class="traffic-light green" id="llmLight"></div>
                     </div>
                     <div class="pulse-card pulse-card-wide" id="embeddingCard">
                         <div class="pulse-header">
@@ -214,7 +205,7 @@
                 </div>
 
                 <!-- Upload Queue -->
-                <div class="upload-queue">
+                <div class="upload-queue library-files">
                     <div class="queue-header">
                         <span class="queue-title">Library</span>
                     </div>
@@ -230,29 +221,6 @@
                     </div>
                 </div>
             </aside>
-            <div class="feature-cards">
-            <div class="feature-card">
-                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l2 2h9v9.5h-17z"/></svg></div>
-                <div>
-                    <h3 class="feature-title">Curated Uploads</h3>
-                    <p class="feature-text">New files are added to the library. Uploading the same name updates that file only.</p>
-                </div>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14v9H8.5L5 18.5z"/></svg></div>
-                <div>
-                    <h3 class="feature-title">Ambient Chat</h3>
-                    <p class="feature-text">Start conversations instantly. The assistant gracefully falls back to general knowledge when needed.</p>
-                </div>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="11" width="12" height="8" rx="1"/><path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11"/></svg></div>
-                <div>
-                    <h3 class="feature-title">Local & Private</h3>
-                    <p class="feature-text">Chat and vectors stay on this machine. With offline mode on, the embedding model loads from the local cache.</p>
-                </div>
-            </div>
-            </div>
         </aside>
     </div>
 
@@ -278,6 +246,6 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/script.js?v=4.28"></script>
+    <script src="/static/script.js?v=4.35"></script>
 </body>
 </html>

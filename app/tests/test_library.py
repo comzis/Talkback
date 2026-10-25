@@ -81,6 +81,101 @@ class PromptTests(unittest.TestCase):
         self.assertTrue(prompts.asks_about_library("What is Inlock?", files))
         self.assertTrue(prompts.asks_about_library("What does the campaign say about privacy?", files))
         self.assertTrue(prompts.asks_about_library("Inlock\nSecure AI for Private Enterprise systems", files))
+        earlier = [("user", "What does Arbitration Agreement.pdf say about fees?")]
+        self.assertIn("Arbitration Agreement.pdf", prompts.retrieval_text("What about the deadline?", earlier))
+        self.assertEqual(prompts.retrieval_text("What about the deadline?", None), "What about the deadline?")
+        follow_up = prompts.explanation_prompt(
+            "What about the deadline?",
+            ["Arbitration Agreement.pdf"],
+            ["The deadline is Monday."],
+            earlier,
+        )
+        self.assertIn("Earlier in this conversation", follow_up)
+        self.assertIn("What about the deadline?", follow_up)
+        self.assertIn("Arbitration Agreement.pdf", follow_up)
+        self.assertTrue(prompts.should_search_library(prompts.retrieval_text("and fees?", earlier)))
+        snort = [
+            ("user", "how to use snort"),
+            ("assistant", "Snort detects attacks on the network."),
+            ("user", "Give an example"),
+            ("assistant", "What would you like an example of?"),
+        ]
+        self.assertTrue(prompts.is_follow_up("Give an example"))
+        self.assertTrue(prompts.is_follow_up("snort"))
+        self.assertTrue(prompts.is_follow_up("Give a detailed explanation of each step for the operator"))
+        self.assertFalse(prompts.is_follow_up("How do you analyze network traffic with Wireshark?"))
+        self.assertFalse(prompts.is_follow_up("hello"))
+        self.assertFalse(prompts.is_follow_up("how to use snort"))
+        wireshark = [("user", "How do you analyze network traffic with Wireshark?")]
+        steps = prompts.retrieval_text("Give a detailed explanation of each step for the operator", wireshark)
+        self.assertIn("Wireshark", steps)
+        self.assertIn("operator", steps)
+        self.assertIn("practical example", prompts.retrieval_text("Give an example", wireshark))
+        self.assertIn("concrete example", prompts.explanation_prompt("Give an example", [], ["Example 4 uses contains."]))
+        self.assertEqual(prompts.repair_pdf_spacing("just a fter the header"), "just after the header")
+        self.assertEqual(prompts.repair_pdf_spacing("packets that cont ain a byte"), "packets that contain a byte")
+        self.assertEqual(prompts.repair_pdf_spacing("to view UDP packets"), "to view UDP packets")
+        invented = "Here is an example of a capture filter:\n```\ntcp.port == 80\n```\nThis filter shows TCP port 80. [1]"
+        chunk = (
+            "lving network problems. Example 1: UDP Packets Suppose that you want to view UDP packets "
+            "that cont ain a byte sequence of 0x90, perhaps because certain malware uses this sequence: "
+            "udp[8:4]==90:90:90:03"
+        )
+        grounded = prompts.ground_library_reply(invented, [{"number": 1, "source": "wire.pdf", "text": chunk}], "Give an example")
+        self.assertNotIn("tcp.port", grounded)
+        self.assertTrue(grounded.startswith("Example 1: UDP Packets"))
+        self.assertIn("udp[8:4]==90:90:90:03", grounded)
+        self.assertIn("contain", grounded)
+        linked = (
+            "Example 1: UDP Packets Suppose that you want to view UDP packets. "
+            "http://packetlife.net/filters.pdf udp[8:4]==90:90:90:03"
+        )
+        without_links = prompts.ground_library_reply("invented", [{"number": 1, "text": linked}], "Give an example")
+        self.assertNotIn("http", without_links)
+        self.assertIn("udp[8:4]==90:90:90:03", without_links)
+        icmp = (
+            "Example 2: ICMP Packets If you decide to use Wireshark due to a frequent loss in connection. "
+            "The following example shows ICMP Protocol Unreachable or Source Quench error messages. "
+            "(icmp.type == 3 && icmp.code == 2) || (icmp.type == 4 && icmp.code == 0)"
+        )
+        steps = prompts.ground_library_reply(
+            "1. **Identify areas of concern:** Look at performance.\nLet me know if you have any other questions.",
+            [{"number": 1, "text": icmp}],
+            "Give a detailed explanation of each step for the operator",
+        )
+        self.assertIn("Protocol Unreachable", steps)
+        self.assertIn("Source Quench", steps)
+        self.assertIn("icmp.type == 3", steps)
+        self.assertNotIn("**", steps)
+        self.assertNotIn("Let me know", steps)
+        kept_filter = 'Use the filter `udp[8:4]==90:90:90:03`. [1]'
+        udp = [{"number": 1, "text": "Filters only. udp[8:4]==90:90:90:03"}]
+        quoted = prompts.ground_library_reply(kept_filter, udp, "Give an example")
+        self.assertIn("udp[8:4]", quoted)
+        self.assertNotIn("worked example", quoted)
+        invented_code = "Examine ICMP packets. Use filters for ICMP Type 3, Code 2."
+        icmp = [{"number": 1, "text": "Example 2 discusses ICMP Protocol Unreachable."}]
+        steps = prompts.ground_library_reply(
+            invented_code, icmp, "Give a detailed explanation of each step for the operator"
+        )
+        self.assertNotIn("Type 3", steps)
+        self.assertIn("ICMP", steps)
+        overview = "Wireshark is an open-source protocol analyzer and supports over 1100 protocols. [1]"
+        about = [{"number": 1, "text": "Wireshark is an open-source protocol analyser. It supports over 1100 protocols."}]
+        self.assertEqual(prompts.ground_library_reply(overview, about), overview)
+        self.assertIn("Number the steps", prompts.explanation_prompt(
+            "Give a detailed explanation of each step for the operator", [], ["The first step is to capture traffic."]
+        ))
+        found = prompts.retrieval_text("snort", snort)
+        self.assertIn("how to use snort", found)
+        self.assertIn("Snort detects attacks", found)
+
+        class Turn:
+            def __init__(self, role, content):
+                self.role = role
+                self.content = content
+        carried = prompts.clean_history([Turn("user", "how to use snort"), Turn("assistant", "Snort detects attacks.")])
+        self.assertEqual(carried, [("user", "how to use snort"), ("assistant", "Snort detects attacks.")])
         self.assertFalse(prompts.should_search_library("hello"))
         self.assertFalse(prompts.should_search_library("What is 2 + 2?"))
         self.assertTrue(prompts.should_search_library("What is in the CV?"))

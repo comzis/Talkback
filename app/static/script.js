@@ -334,7 +334,7 @@ function appendSources(content, sources) {
         sourceText.appendChild(name);
         if (source.text) {
             const excerpt = document.createElement('span');
-            const snippet = source.text.length > 180 ? `${source.text.slice(0, 180)}…` : source.text;
+            const snippet = source.text.length > 280 ? `${source.text.slice(0, 280)}…` : source.text;
             excerpt.textContent = ` ${snippet}`;
             sourceText.appendChild(excerpt);
         }
@@ -401,6 +401,41 @@ function consumeSseBuffer(buffer, onEvent) {
     return rest;
 }
 
+function priorTurns() {
+    const turns = [];
+    elements.chatMessages.querySelectorAll('.message').forEach((message) => {
+        const content = message.querySelector('.message-content');
+        if (!content) return;
+        const text = content.textContent.trim();
+        if (!text || text === 'Thinking...' || text.startsWith('Error:')) return;
+        const role = message.classList.contains('user') ? 'user' : 'assistant';
+        turns.push({ role, content: text.slice(0, 400) });
+    });
+    if (turns.length && turns[turns.length - 1].role === 'user') turns.pop();
+    return turns.slice(-8);
+}
+
+async function answerWithoutStream(query, messageId) {
+    try {
+        const response = await fetch('/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ query, history: priorTurns() })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            setMessageBody(messageId, data.detail || 'Query failed');
+            return;
+        }
+        if (data.notice) showNotice(messageId, data.notice);
+        setMessageBody(messageId, data.response || '', data.sources || []);
+        if (data.footnote) showFootnote(messageId, data.footnote);
+    } catch (error) {
+        setMessageBody(messageId, 'Error: ' + error.message);
+    }
+}
+
 async function sendMessage() {
     if (activeAnswer) {
         activeAnswer.abort();
@@ -422,13 +457,18 @@ async function sendMessage() {
     try {
         const response = await fetch('/query/stream', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query }),
+            headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+            body: JSON.stringify({ query, history: priorTurns() }),
+            cache: 'no-store',
             signal: controller.signal
         });
-        if (!response.ok || !response.body) {
+        if (!response.ok) {
             const data = await response.json().catch(() => ({}));
             setMessageBody(messageId, data.detail || 'Query failed');
+            return;
+        }
+        if (!response.body) {
+            await answerWithoutStream(query, messageId);
             return;
         }
         const reader = response.body.getReader();
@@ -458,8 +498,10 @@ async function sendMessage() {
     } catch (error) {
         if (error.name === 'AbortError') {
             setMessageBody(messageId, sawToken ? streamed : 'Stopped.');
+        } else if (!sawToken) {
+            await answerWithoutStream(query, messageId);
         } else {
-            setMessageBody(messageId, 'Error: ' + error.message);
+            setMessageBody(messageId, streamed || ('Error: ' + error.message));
         }
     } finally {
         activeAnswer = null;

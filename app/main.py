@@ -43,8 +43,14 @@ engine.init()
 engine.start_reindex_schedule()
 engine.start_initial_index()
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
 class QueryRequest(BaseModel):
     query: str
+    history: list[ChatTurn] = []
 
 class QueryResponse(BaseModel):
     response: str
@@ -127,7 +133,7 @@ async def query_index(request: QueryRequest):
     _reject_if_reindex_required()
 
     try:
-        return await asyncio.to_thread(engine.answer_query, request.query)
+        return await asyncio.to_thread(engine.answer_query, request.query, request.history)
     except Exception:
         raise HTTPException(status_code=500, detail="The query could not be completed.")
 
@@ -139,8 +145,10 @@ async def query_stream(request: QueryRequest):
     _reject_if_reindex_required()
 
     def generate():
+        # Safari drops a fetch stream that stays silent while retrieval starts.
+        yield ": open\n\n"
         try:
-            for event in engine.iter_answer(request.query):
+            for event in engine.iter_answer(request.query, request.history):
                 payload = json.dumps(event["data"], ensure_ascii=False)
                 yield f"event: {event['event']}\ndata: {payload}\n\n"
         except Exception:
@@ -150,7 +158,11 @@ async def query_stream(request: QueryRequest):
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
     )
 
 @app.get("/health")

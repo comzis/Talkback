@@ -43,7 +43,112 @@ UNMATCHED_SOURCE_NOTE = "No source could be matched to this answer."
 NOT_INDEXED_NOTICE = "These files are in the library folder but are not indexed yet."
 
 
-def assistant_prompt(query: str) -> str:
+def clean_history(history, limit: int = 8) -> list[tuple[str, str]]:
+    """Keep the latest user and assistant turns. Each turn is capped so the prompt stays small."""
+    turns = []
+    for item in history or []:
+        if isinstance(item, dict):
+            role, content = item.get("role"), item.get("content")
+        elif isinstance(item, (tuple, list)) and len(item) == 2:
+            role, content = item
+        else:
+            role, content = getattr(item, "role", None), getattr(item, "content", None)
+        if role not in ("user", "assistant"):
+            continue
+        text = " ".join(str(content or "").split())
+        if not text:
+            continue
+        turns.append((role, text[:400]))
+    return turns[-limit:]
+
+
+def format_history(history) -> str:
+    """Earlier turns, placed above the latest question."""
+    turns = clean_history(history)
+    if not turns:
+        return ""
+    lines = [
+        f"{'User' if role == 'user' else 'Assistant'}: {text}"
+        for role, text in turns
+    ]
+    return (
+        "Earlier in this conversation:\n"
+        + "\n".join(lines)
+        + "\nAnswer the latest question as a continuation of these turns. Do not start over.\n\n"
+    )
+
+
+_FOLLOW_UP = re.compile(
+    r"\b(give an example|an example|for example|tell me more|more detail|"
+    r"what about|how about|elaborate|continue|the same|another|"
+    r"each step|step by step|the steps|explain the steps|explain each|"
+    r"for the operator|for an operator|in more detail|more detailed|"
+    r"walk me through|walk through|break it down|break down|explain that|explain this)\b",
+    re.IGNORECASE,
+)
+_EXAMPLE_ASK = re.compile(r"\b(give an example|an example|for example)\b", re.IGNORECASE)
+_STEPS_ASK = re.compile(
+    r"\b(each step|step by step|the steps|explain the steps|explain each)\b",
+    re.IGNORECASE,
+)
+
+
+def asks_for_steps(query: str) -> bool:
+    """True when the user wants the procedure, not a one-line summary."""
+    return _STEPS_ASK.search(query or "") is not None
+
+
+def asks_for_example(query: str) -> bool:
+    """True when the user wants one concrete case from the document."""
+    return _EXAMPLE_ASK.search(query or "") is not None
+
+
+def is_follow_up(query: str) -> bool:
+    """True when the line continues the previous topic instead of starting a new one."""
+    text = (query or "").strip()
+    if not text or _SMALL_TALK.match(text):
+        return False
+    if _FOLLOW_UP.search(text):
+        return True
+    words = [word for word in _WORD.findall(text.lower()) if word not in _STOP]
+    return len(text) <= 20 and len(words) <= 1
+
+
+def retrieval_text(query: str, history=None) -> str:
+    """Search text for this question. A follow-up keeps the earlier topic in the search."""
+    current = (query or "").strip()
+    turns = clean_history(history)
+    if not turns or not is_follow_up(current):
+        return current
+    users = [
+        text for role, text in turns
+        if role == "user" and not is_follow_up(text) and not _SMALL_TALK.match(text)
+    ]
+    topic = users[-1] if users else ""
+    if _EXAMPLE_ASK.search(current) or _STEPS_ASK.search(current):
+        anchor = _topic_anchor(topic)
+        focus = "practical example filter" if _EXAMPLE_ASK.search(current) else "filter operator example"
+        return "\n".join(part for part in (current, focus, anchor) if part)
+    words = [word for word in _WORD.findall(current.lower()) if word not in _STOP]
+    spoken = ""
+    if len(words) <= 1:
+        assistants = [text for role, text in turns if role == "assistant"]
+        spoken = " ".join(assistants[-2:])[:180]
+    return "\n".join(part for part in (current, topic, spoken) if part)
+
+
+def _topic_anchor(text: str) -> str:
+    """The most specific word of the earlier question, kept so a follow-up finds that document."""
+    words = [
+        word for word in re.findall(r"[A-Za-z0-9]{5,}", text or "")
+        if word.lower() not in _STOP
+    ]
+    if not words:
+        return ""
+    return max(words, key=len)
+
+
+def assistant_prompt(query: str, history=None) -> str:
     """Prompt for a direct assistant reply with no document requirement."""
     return (
         "You are Talkback, a helpful assistant. Reply the way a person would in a conversation.\n"
@@ -51,8 +156,14 @@ def assistant_prompt(query: str) -> str:
         "Keep file names and quoted text in their original language.\n"
         "Keep it short and natural. Use plain sentences.\n"
         "Do not use markdown, headings, or a numbered manual unless the user asked for steps.\n"
-        "Do not mention documents, a library, or sources.\n"
-        "If they pasted a passage, explain it briefly in your own words.\n\n"
+        + (
+            "The latest line continues the conversation above. Answer it from those turns. "
+            "Do not greet the user and do not ask which topic they mean.\n"
+            if clean_history(history)
+            else "Do not mention documents, a library, or sources.\n"
+        )
+        + "If they pasted a passage, explain it briefly in your own words.\n\n"
+        f"{format_history(history)}"
         f"User:\n{query}\n"
         "Assistant:"
     )
@@ -128,12 +239,26 @@ def excerpts_mention(query: str, texts: list[str]) -> bool:
     return any(word in blob for word in words)
 
 
-def explanation_prompt(query: str, library_files: list[str], excerpts: list[str]) -> str:
+def explanation_prompt(query: str, library_files: list[str], excerpts: list[str], history=None) -> str:
     """Prompt that explains pasted text and reasons only with library excerpts."""
     names = ", ".join(library_files) if library_files else "(none yet)"
     shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(excerpts, 1))
     if not shown:
         shown = "(no matching excerpts)"
+    if _STEPS_ASK.search(query or ""):
+        shape = (
+            "The user asked for the steps. Walk through each step the excerpts describe, in order. "
+            "Number the steps as 1. 2. 3. Use only what the excerpts say.\n"
+        )
+    elif _EXAMPLE_ASK.search(query or ""):
+        shape = (
+            "The user asked for an example. Give one concrete example from the excerpts, "
+            "copying the filter, command, or action exactly. "
+            "If the excerpts do not show one, say the excerpts do not include a worked example. "
+            "Do not invent a filter or a command.\n"
+        )
+    else:
+        shape = "Keep the reply short. Use plain sentences, not a markdown manual.\n"
     return (
         "You are Talkback. The user is asking about their documents or pasted a passage.\n"
         "Reply in the language of the user's question, even when a source is in another language. "
@@ -143,7 +268,8 @@ def explanation_prompt(query: str, library_files: list[str], excerpts: list[str]
         "Answer from the library excerpts below. Do not add facts from outside those excerpts.\n"
         "End the answer with the excerpt number in brackets, such as [1].\n"
         "If the excerpts do not contain the answer, say that the library does not cover it and do not cite a number.\n"
-        "Keep the reply short. Use plain sentences, not a markdown manual.\n\n"
+        f"{shape}\n"
+        f"{format_history(history)}"
         f"Library excerpts:\n{shown}\n\n"
         f"User:\n{query}\n"
         "Assistant:"
@@ -183,6 +309,264 @@ def _excerpt_supports(answer: str, text: str) -> bool:
     ]
     hits = sum(1 for word in dict.fromkeys(words) if _has_word(cleaned, word))
     return hits >= 2
+
+
+_FENCE = re.compile(r"```[a-z]*\n?([\s\S]*?)```", re.IGNORECASE)
+_INLINE = re.compile(r"`([^`]{2,120})`")
+_COMPARE = re.compile(
+    r"\b[A-Za-z][\w.]*(?:\[[^\]]+\])?\s*(?:==|!=)\s*[A-Za-z0-9_:.\-\[\]]{1,60}"
+)
+_CONTAINS_LITERAL = re.compile(r"\bcontains\s+[\"“'][^\"”']{1,60}[\"”']", re.IGNORECASE)
+_DOTTED = re.compile(r"\b[A-Za-z]{2,}(?:\.[A-Za-z0-9]{2,})+\b")
+_LONG_NUMBER = re.compile(r"\b\d{2,}\b")
+_CODE = re.compile(r"\b(?:type|code)\s+\d+\b", re.IGNORECASE)
+_EXAMPLE_LEAD = re.compile(
+    r"^(here(?:'s| is)|this (?:filter|example)|use this|an example of)\b",
+    re.IGNORECASE,
+)
+
+
+def _flat(text: str) -> str:
+    text = (text or "").replace("“", '"').replace("”", '"').replace("’", "'").replace("‘", "'")
+    return re.sub(r"\s+", " ", text).casefold()
+
+
+def _source_blob(sources: list[dict]) -> str:
+    return _flat("\n".join(source.get("text") or "" for source in sources))
+
+
+def _unsupported_fragment(fragment: str, blob: str) -> bool:
+    folded = _flat(fragment).strip(" `\"'")
+    return len(folded) >= 2 and folded not in blob
+
+
+def _shows_example(text: str, blob: str) -> bool:
+    """True when the reply still contains a filter or command that the excerpts contain."""
+    if _CONTAINS_LITERAL.search(text) or _COMPARE.search(text):
+        return True
+    return any(not _unsupported_fragment(match, blob) for match in _INLINE.findall(text))
+
+
+def _sentence_invents(sentence: str, blob: str) -> bool:
+    """True when a sentence adds a filter, command, dotted name, or number the excerpts omit."""
+    body = strip_citations(sentence)
+    pieces = [match for match in _INLINE.findall(body)]
+    pieces.extend(match.group(0) for match in _COMPARE.finditer(body))
+    pieces.extend(match.group(0) for match in _CONTAINS_LITERAL.finditer(body))
+    pieces.extend(match.group(0) for match in _DOTTED.finditer(body))
+    pieces.extend(match.group(0) for match in _CODE.finditer(body))
+    pieces.extend(_LONG_NUMBER.findall(body))
+    return any(_unsupported_fragment(piece, blob) for piece in pieces)
+
+
+_PDF_WORD = {
+    "a", "an", "as", "at", "be", "by", "do", "if", "in", "is", "it", "no", "of", "on",
+    "or", "so", "to", "we", "and", "the", "for", "not", "you", "but", "can", "its",
+    "may", "any", "all", "has", "are", "was", "one", "our", "out", "use", "see",
+    "how", "with", "from", "that", "this", "have", "your", "into", "over", "than",
+    "then", "them", "they", "what", "when", "will", "also", "each", "just", "only",
+    "some", "more", "most", "such", "want", "view", "byte", "after", "take", "look",
+    "due", "per", "via",
+}
+_EXAMPLE_HEAD = re.compile(r"Example\s+\d+\s*:", re.IGNORECASE)
+_FILTER_SPAN = re.compile(
+    r"\((?:[^()\n]|\([^()\n]*\))+\)(?:\s*(?:\|\||&&)\s*\((?:[^()\n]|\([^()\n]*\))+\))*"
+)
+
+
+def repair_pdf_spacing(text: str) -> str:
+    """Join words the PDF extractor split, such as 'cont ain'."""
+    def once(line: str) -> str:
+        tokens = line.split(" ")
+        changed = True
+        while changed:
+            changed = False
+            merged = []
+            index = 0
+            while index < len(tokens):
+                left = tokens[index]
+                right = tokens[index + 1] if index + 1 < len(tokens) else ""
+                broken = (
+                    left and right
+                    and (
+                        (len(left) == 1 and right[:2].lower() in {"ft", "ck", "ng", "sr", "tl"})
+                        or (
+                            left.lower() not in _PDF_WORD
+                            and right.lower() not in _PDF_WORD
+                            and left[-1:].islower()
+                            and right[:1].islower()
+                            and (len(left) <= 3 or (len(left) <= 4 and len(right) <= 3))
+                        )
+                    )
+                )
+                if broken:
+                    merged.append(left + right)
+                    index += 2
+                    changed = True
+                    continue
+                merged.append(left)
+                index += 1
+            tokens = merged
+        return " ".join(tokens)
+
+    return "\n".join(re.sub(r" {2,}", " ", once(line)) for line in (text or "").split("\n"))
+
+
+def _filter_span(text: str):
+    """The worked filter in an excerpt, parentheses included."""
+    for match in _FILTER_SPAN.finditer(text or ""):
+        if "==" in match.group(0) or "contains" in match.group(0).lower():
+            return match
+    return _CONTAINS_LITERAL.search(text or "") or _COMPARE.search(text or "")
+
+
+def _example_blocks(text: str) -> list[str]:
+    marks = list(_EXAMPLE_HEAD.finditer(text or ""))
+    blocks = []
+    for index, mark in enumerate(marks):
+        end = marks[index + 1].start() if index + 1 < len(marks) else min(len(text), mark.end() + 650)
+        block = text[mark.start():end].strip()
+        if _filter_span(block):
+            blocks.append(block)
+    return blocks
+
+
+def _best_example(sources: list[dict], query: str = "") -> tuple[str, int] | None:
+    """The example section that best matches the question."""
+    query_l = (query or "").lower()
+    best = None
+    best_score = -1
+    for source in sources:
+        text = repair_pdf_spacing(source.get("text") or "")
+        for block in _example_blocks(text):
+            low = block.lower()
+            score = 1
+            if "operator" in query_l and "operator" in low:
+                score += 5
+            if score > best_score:
+                best_score = score
+                best = (block, int(source.get("number") or 0))
+    return best
+
+
+def _plain_reply(text: str) -> str:
+    """Drop markdown and a trailing offer of more questions."""
+    cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", text or "")
+    cleaned = re.sub(r"(?m)^\s*#+\s*", "", cleaned)
+    kept = []
+    for line in cleaned.split("\n"):
+        if re.match(r"let me know\b", line.strip(), re.IGNORECASE):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def _format_example(block: str) -> tuple[str, list[str]]:
+    """Heading, the explanation, and the filter on its own step."""
+    span = _filter_span(block)
+    http = re.search(r"https?://", block, re.IGNORECASE)
+    if http and (span is None or http.start() < span.start()):
+        prose = block[:http.start()].strip()
+        filt = re.sub(r"\s+", " ", span.group(0)).strip() if span else ""
+        block = f"{prose} {filt}".strip()
+    elif span:
+        block = block[:span.end()]
+    flat = re.sub(r"\s+", " ", block).strip()
+    flat = re.sub(
+        r"^(Example\s+\d+\s*:\s*.{0,50}?)(?=\s+(?:If|Suppose|One|To|There|The|You|When|Several)\b)",
+        r"\1\n",
+        flat,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    parts = [part.strip() for part in flat.split("\n") if part.strip()]
+    title = parts[0]
+    body = " ".join(parts[1:]) if len(parts) > 1 else ""
+    span = _filter_span(flat)
+    filter_line = re.sub(r"\s+", " ", span.group(0)).strip() if span else ""
+    sentences = []
+    for sentence in re.split(r"(?<=[.!?])\s+", body):
+        sentence = sentence.strip()
+        if filter_line:
+            sentence = sentence.replace(filter_line, "").strip(" .;")
+        if sentence and not _filter_span(sentence):
+            sentences.append(sentence)
+    if filter_line:
+        sentences.append(filter_line)
+    return title, sentences[:4]
+
+
+def _steps_from_sources(sources: list[dict], query: str) -> str | None:
+    """Number the worked example from the excerpts instead of a loose paraphrase."""
+    found = _best_example(sources, query)
+    if not found:
+        return None
+    block, number = found
+    title, sentences = _format_example(block)
+    if not sentences:
+        return None
+    numbered = "\n".join(f"{index}. {sentence}" for index, sentence in enumerate(sentences, 1))
+    mark = f" [{number}]" if number else ""
+    return f"{title}{mark}\n{numbered}"
+
+
+def _quote_example(sources: list[dict], query: str) -> str | None:
+    """One complete example, starting at its heading and ending at its filter."""
+    found = _best_example(sources, query)
+    if not found:
+        return None
+    block, number = found
+    title, sentences = _format_example(block)
+    if not sentences:
+        return None
+    mark = f" [{number}]" if number else ""
+    return f"{title}. {' '.join(sentences)}{mark}"
+
+
+def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> str:
+    """Drop filters, commands, and numbers that the retrieved excerpts do not contain."""
+    if asks_for_steps(query):
+        walked = _steps_from_sources(sources, query)
+        if walked:
+            return walked
+    if asks_for_example(query):
+        quoted = _quote_example(sources, query)
+        if quoted:
+            return quoted
+    if not answer:
+        return answer
+    answer = _plain_reply(answer)
+    blob = _source_blob(sources)
+    text = answer
+    for match in list(_FENCE.finditer(text)):
+        if _unsupported_fragment(match.group(1), blob):
+            text = text.replace(match.group(0), "")
+    kept = []
+    for line in re.split(r"\n+", text):
+        for sentence in re.split(r"(?<!\d)(?<=[.!?])\s+(?=[A-Z])", line.strip()):
+            sentence = sentence.strip()
+            if not sentence or _sentence_invents(sentence, blob):
+                continue
+            if re.fullmatch(r"(?:\[\d+\]\s*)+", sentence):
+                continue
+            kept.append(sentence)
+    cleaned = "\n".join(kept).strip()
+    if not _shows_example(cleaned, blob):
+        cleaned = "\n".join(
+            sentence for sentence in cleaned.split("\n")
+            if not _EXAMPLE_LEAD.match(sentence.strip())
+        ).strip()
+    if asks_for_example(query) and not _shows_example(cleaned, blob):
+        found = _quote_example(sources, query)
+        if found:
+            cleaned = found if not cleaned else f"{cleaned}\n{found}"
+        elif not cleaned:
+            cleaned = "The retrieved excerpts do not include a worked example."
+        else:
+            cleaned = f"{cleaned}\nThe retrieved excerpts do not include a worked example."
+    if not strip_citations(cleaned).strip():
+        return "The retrieved excerpts do not include that detail."
+    return cleaned
 
 
 def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:

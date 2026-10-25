@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -36,10 +37,17 @@ from prompts import (
     GENERAL_NOTICE,
     UNMATCHED_SOURCE_NOTE,
     assistant_prompt,
+    ground_library_reply,
+    repair_pdf_spacing,
     cited_source_indexes,
     explanation_prompt,
     named_library_files,
     NOT_INDEXED_NOTICE,
+    asks_for_example,
+    asks_for_steps,
+    clean_history,
+    is_follow_up,
+    retrieval_text,
     should_search_library,
     source_label,
     supporting_sources,
@@ -608,7 +616,21 @@ def _complete(prompt: str, temperature: float | None = None) -> str:
         llm.temperature = previous
 
 
-def _source_record(node, number: int) -> dict:
+def _excerpt_window(text: str, query: str) -> str:
+    """Keep a short clip. An example or a procedure starts at the worked lines."""
+    limit = 900 if asks_for_example(query) or asks_for_steps(query) else 500
+    body = repair_pdf_spacing(text or "")
+    if not (asks_for_example(query) or asks_for_steps(query)):
+        return body[:limit]
+    match = re.search(r"example\s+\d+\s*:", body, re.IGNORECASE)
+    if not match:
+        match = re.search(r"contains\s+[\"“']|==", body, re.IGNORECASE)
+    if not match:
+        return body[:limit]
+    return body[match.start():match.start() + limit].lstrip()
+
+
+def _source_record(node, number: int, query: str = "") -> dict:
     """Keep the citation number, file, page, and excerpt for one retrieved chunk."""
     metadata = node.metadata or {}
     file_name = metadata.get("relative_path") or metadata.get("file_name") or "Document"
@@ -617,12 +639,42 @@ def _source_record(node, number: int) -> dict:
         "number": number,
         "source": file_name,
         "path": metadata.get("relative_path") or file_name,
-        "text": (node.get_text() or "")[:500],
+        "text": _excerpt_window(node.get_text() or "", query),
     }
     if page not in (None, ""):
         record["page"] = str(page)
     record["label"] = source_label(record)
     return record
+
+
+def _prefer_prose(nodes):
+    """Keep a list of links from taking the slots a worked example needs."""
+    prose = []
+    links = []
+    for node in nodes:
+        text = (node.get_text() or "").lower()
+        if text.count("http") >= 3:
+            links.append(node)
+        else:
+            prose.append(node)
+    return prose + links
+
+
+def _prefer_focused(nodes, query: str):
+    """For an example or a procedure, prefer chunks that use those words."""
+    if not (asks_for_example(query) or asks_for_steps(query)):
+        return _prefer_prose(nodes)
+    skip = {
+        "give", "detailed", "explanation", "each", "practical",
+        "that", "this", "with", "from", "your", "what", "about",
+        "have", "would", "could", "should", "into", "using",
+    }
+    needles = [word for word in re.findall(r"[a-z0-9]{4,}", query.lower()) if word not in skip]
+    def key(node):
+        text = (node.get_text() or "").lower()
+        hits = sum(word in text for word in needles)
+        return (-hits, text.count("http") >= 3, -(getattr(node, "score", 0) or 0))
+    return sorted(nodes, key=key)
 
 
 def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str]):
@@ -632,16 +684,23 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
     """
     per_file = config.retrieve_per_file()
     limit = config.retrieve_limit()
+    candidates = config.retrieve_candidates()
+    if asks_for_steps(query):
+        per_file = max(per_file, 4)
+        limit = max(limit, 4)
+        candidates = max(candidates, 16)
+    elif asks_for_example(query):
+        candidates = max(candidates, 16)
     named = named_library_files(query, library_files)
     if named:
-        pinned = _retrieve_named(index, query, named)
+        pinned = _retrieve_named(index, query, named, candidates)
         if pinned:
-            return balance_matches(pinned, per_file=per_file, limit=limit), True
-    nodes = index.as_retriever(similarity_top_k=config.retrieve_candidates()).retrieve(query)
-    return balance_matches(nodes, per_file=per_file, limit=limit), False
+            return balance_matches(_prefer_focused(pinned, query), per_file=per_file, limit=limit), True
+    nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
+    return balance_matches(_prefer_focused(nodes, query), per_file=per_file, limit=limit), False
 
 
-def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str]):
+def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str], top_k: int):
     """Return chunks from the files the question names."""
     from llama_index.core.vector_stores import FilterCondition, MetadataFilter, MetadataFilters
 
@@ -650,7 +709,7 @@ def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str]):
         condition=FilterCondition.OR,
     )
     return index.as_retriever(
-        similarity_top_k=config.retrieve_candidates(),
+        similarity_top_k=top_k,
         filters=filters,
     ).retrieve(query)
 
@@ -676,15 +735,21 @@ def _library_matches(nodes) -> bool:
     return embeddings.relevant_enough(scores, config.relevance_threshold())
 
 
-def _stream_prompt(prompt: str, temperature: float | None, sources: list | None, notice: str | None = None):
-    """Stream one completion. A notice is sent before the first token."""
+def _stream_prompt(prompt: str, temperature: float | None, sources: list | None, notice: str | None = None, query: str = ""):
+    """Stream one completion. A library reply is checked against the excerpts before it is shown."""
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
     parts: list[str] = []
+    library = sources is not None
     for delta in _stream_deltas(prompt, temperature):
         parts.append(delta)
-        yield {"event": "token", "data": {"text": delta}}
+        if not library:
+            yield {"event": "token", "data": {"text": delta}}
     reply = "".join(parts).strip()
+    if library:
+        reply = ground_library_reply(reply, sources, query)
+        if reply:
+            yield {"event": "token", "data": {"text": reply}}
     if sources is None:
         logger.info("Query answered as assistant")
         yield {"event": "sources", "data": {"sources": []}}
@@ -706,39 +771,42 @@ def _stream_prompt(prompt: str, temperature: float | None, sources: list | None,
     yield {"event": "done", "data": {}}
 
 
-def iter_answer(query: str):
+def iter_answer(query: str, history=None):
     """Yield token events, then sources. Uses Ollama.stream_complete."""
     logger.info("Query started (%s characters)", len(query or ""))
+    search = retrieval_text(query, history)
     wait_for_models()
     try:
         if collection_count() == 0:
-            if files_waiting() and should_search_library(query):
+            if files_waiting() and should_search_library(search):
                 logger.info("Query skipped because the library files are not indexed yet.")
                 yield {"event": "notice", "data": {"text": NOT_INDEXED_NOTICE}}
                 yield {"event": "token", "data": {"text": "Indexing has started. Ask again once it finishes."}}
                 yield {"event": "sources", "data": {"sources": []}}
                 yield {"event": "done", "data": {}}
                 return
-            yield from _stream_prompt(assistant_prompt(query), None, None)
+            yield from _stream_prompt(assistant_prompt(query, history), None, None)
             return
-        if not should_search_library(query):
-            yield from _stream_prompt(assistant_prompt(query), None, None)
+        if not should_search_library(search):
+            yield from _stream_prompt(assistant_prompt(query, history), None, None)
             return
         index = get_or_create_cached_index()
         indexed, _legacy, _incomplete = indexed_documents()
         library_files = sorted(indexed)
-        nodes, named_file = _retrieve_nodes(index, query, library_files)
-        if not named_file and not _library_matches(nodes):
+        nodes, named_file = _retrieve_nodes(index, search, library_files)
+        follow_up = bool(clean_history(history)) and is_follow_up(query)
+        if not nodes or (not named_file and not follow_up and not _library_matches(nodes)):
             logger.info("Retrieval score below %s. Answering generally.", config.relevance_threshold())
-            yield from _stream_prompt(assistant_prompt(query), None, None, GENERAL_NOTICE)
+            yield from _stream_prompt(assistant_prompt(query, history), None, None, GENERAL_NOTICE)
             return
-        sources = [_source_record(node, number) for number, node in enumerate(nodes, 1)]
+        sources = [_source_record(node, number, query) for number, node in enumerate(nodes, 1)]
         prompt = explanation_prompt(
             query,
             library_files,
             [f"{source['source']}\n{source['text']}" for source in sources],
+            history,
         )
-        yield from _stream_prompt(prompt, 0.1, sources)
+        yield from _stream_prompt(prompt, 0.1, sources, query=query)
     except Exception:
         logger.exception("Query failed")
         raise
@@ -749,13 +817,13 @@ def assistant_reply(query: str) -> str:
     return _complete(assistant_prompt(query))
 
 
-def answer_query(query: str) -> dict:
+def answer_query(query: str, history=None) -> dict:
     """Answer from the library when it applies, and as an assistant otherwise."""
     text: list[str] = []
     sources: list = []
     notice = None
     footnote = None
-    for event in iter_answer(query):
+    for event in iter_answer(query, history):
         kind = event["event"]
         if kind == "token":
             text.append(event["data"]["text"])
