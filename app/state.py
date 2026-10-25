@@ -28,6 +28,7 @@ class Talkback:
         self.ingest_lock = threading.Lock()
         self.ingest_again = False
         self.models_ready = threading.Event()
+        self.chat = None
         self.ingestion_status = {
             "status": "idle",
             "progress": 0,

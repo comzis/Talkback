@@ -29,8 +29,6 @@ from sources.filesystem import (
     stored_filename,
     visible_files,
 )
-from llama_index.core import Settings
-from llama_index.llms.ollama import Ollama
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -525,14 +523,12 @@ async def select_llm_model(request: LLMSelectRequest):
                         detail=f"Model '{request.model}' not found. Available models: {model_names}",
                     )
 
-                Settings.llm = Ollama(
-                    model=request.model,
-                    base_url=config.ollama_base_url(),
-                    request_timeout=config.ollama_timeout(),
-                    context_window=config.ollama_context(),
-                    keep_alive=config.ollama_keep_alive(),
-                    thinking=config.ollama_think(),
-                )
+                chat = get().chat
+                if chat is None or not hasattr(chat, "use_model"):
+                    raise HTTPException(
+                        status_code=503, detail="The chat client is not ready."
+                    )
+                chat.use_model(request.model)
                 os.environ["OLLAMA_MODEL"] = request.model
                 get().cached_index = None
 

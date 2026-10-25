@@ -44,6 +44,18 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     def warm_with_fakes() -> None:
         Settings.llm = chat
         Settings.embed_model = MockEmbedding(embed_dim=8)
+
+        class _FakeChat:
+            def complete(self, prompt: str, temperature: float | None = None) -> str:
+                return str(chat.complete(prompt)).strip()
+
+            def stream(self, prompt: str, temperature: float | None = None):
+                for chunk in chat.stream_complete(prompt):
+                    delta = chunk.delta or ""
+                    if delta:
+                        yield delta
+
+        get().chat = _FakeChat()
         get().models_ready.set()
 
     monkeypatch.setattr(engine, "connect_chroma", connect_memory)

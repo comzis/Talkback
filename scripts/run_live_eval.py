@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 import urllib.request
 from pathlib import Path
 
@@ -153,15 +154,28 @@ def summarise(case: dict, runs: list[list[dict]]) -> tuple[int, list[str]]:
     return passed, [header, *lines]
 
 
-def ask(base_url: str, query: str, timeout: float = 180) -> list[dict]:
+def ask(
+    base_url: str, query: str, timeout: float = 180
+) -> tuple[list[dict], float | None]:
+    """Return the events and the seconds until the first token event."""
     payload = json.dumps({"query": query, "history": []}).encode()
     request = urllib.request.Request(
         base_url.rstrip("/") + "/query/stream",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
+    started = time.perf_counter()
+    first: float | None = None
+    body = bytearray()
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        return parse_sse(response.read().decode())
+        while True:
+            part = response.read(512)
+            if not part:
+                break
+            body.extend(part)
+            if first is None and b"event: token" in body:
+                first = time.perf_counter() - started
+    return parse_sse(body.decode()), first
 
 
 def main() -> int:
@@ -174,9 +188,15 @@ def main() -> int:
         parser.error("--runs must be at least 1")
     missed = 0
     for case in load_cases(args.cases):
-        runs = [ask(args.base_url, case["query"]) for _ in range(args.runs)]
+        results = [ask(args.base_url, case["query"]) for _ in range(args.runs)]
+        runs = [events for events, _first in results]
+        firsts = [first for _events, first in results]
         passed, lines = summarise(case, runs)
         missed += args.runs - passed
+        shown = ", ".join(
+            "n/a" if first is None else f"{first:.1f}s" for first in firsts
+        )
+        lines.insert(1, f"  first word {shown}")
         print("\n".join(lines))
     return 1 if missed else 0
 
