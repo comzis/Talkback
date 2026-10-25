@@ -9,7 +9,7 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
 # load_dotenv() has to run before the app modules read the environment.
-"app/main.py" = ["E402"]
+"app/api/app.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
