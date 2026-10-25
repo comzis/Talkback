@@ -56,3 +56,20 @@ def test_general_case_requires_the_notice_and_a_placeholder():
         {"event": "done", "data": {}},
     ]
     assert runner.judge(case, events) == []
+
+
+def test_repeated_runs_keep_every_cited_page():
+    case = runner.load_cases()[2]
+    page_six = [
+        _token("El módulo es ios_config."),
+        _source("Ansible_Network_Automation_1744044240.pdf", "6"),
+    ]
+    page_four = [
+        _token("El módulo es ios_config."),
+        _source("Ansible_Network_Automation_1744044240.pdf", "4"),
+    ]
+    passed, lines = runner.summarise(case, [page_four, page_six, page_six])
+    assert passed == 2
+    assert lines[0] == "2/3  ansible-modules  pages seen: 4, 6"
+    assert "p. 4" in lines[1]
+    assert "p. 6" in lines[2]

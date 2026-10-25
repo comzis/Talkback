@@ -3,9 +3,10 @@
 Usage, from the repository root, while the API is listening:
 
     python scripts/run_live_eval.py
-    python scripts/run_live_eval.py --base-url http://127.0.0.1:8001
+    python scripts/run_live_eval.py --base-url http://127.0.0.1:8001 --runs 3
 
-The questions and the facts they must contain are tests/eval/questions.json.
+Each question is asked --runs times (default 3). The report shows the pass
+rate and every cited page, including a page that appears on only one run.
 This does not start the stack and does not load a model itself.
 """
 
@@ -97,6 +98,46 @@ def judge(case: dict, events: list[dict]) -> list[str]:
     return problems
 
 
+def cited_pages(events: list[dict]) -> list[str]:
+    """Pages named on source cards, in the order the cards arrived."""
+    pages = []
+    for source in _sources(events):
+        page = source.get("page")
+        if page is None:
+            continue
+        label = str(page)
+        if label not in pages:
+            pages.append(label)
+    return pages
+
+
+def summarise(case: dict, runs: list[list[dict]]) -> tuple[int, list[str]]:
+    """Pass count and the report lines for one question."""
+    passed = 0
+    seen: list[str] = []
+    lines = []
+    for index, events in enumerate(runs, start=1):
+        problems = judge(case, events)
+        if not problems:
+            passed += 1
+        for page in cited_pages(events):
+            if page not in seen:
+                seen.append(page)
+        sources = _sources(events)
+        where = ", ".join(
+            f"{source.get('source')} p. {source.get('page')}" for source in sources
+        )
+        mark = "pass" if not problems else "fail"
+        detail = where or "; ".join(_notices(events)) or "(no cards)"
+        line = f"  {index} {mark}  {detail}"
+        if problems:
+            line += "  " + "; ".join(problems)
+        lines.append(line)
+    pages = ", ".join(seen) if seen else "none"
+    header = f"{passed}/{len(runs)}  {case['id']}  pages seen: {pages}"
+    return passed, [header, *lines]
+
+
 def ask(base_url: str, query: str, timeout: float = 180) -> list[dict]:
     payload = json.dumps({"query": query, "history": []}).encode()
     request = urllib.request.Request(
@@ -112,22 +153,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8001")
     parser.add_argument("--cases", type=Path, default=CASES)
+    parser.add_argument("--runs", type=int, default=3)
     args = parser.parse_args()
-    failed = 0
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
+    missed = 0
     for case in load_cases(args.cases):
-        events = ask(args.base_url, case["query"])
-        problems = judge(case, events)
-        sources = _sources(events)
-        where = ", ".join(
-            f"{source.get('source')} p. {source.get('page')}" for source in sources
-        )
-        mark = "pass" if not problems else "fail"
-        if problems:
-            failed += 1
-        print(f"{mark}  {case['id']}  {where or _notices(events)}")
-        if problems:
-            print("  " + "; ".join(problems))
-    return 1 if failed else 0
+        runs = [ask(args.base_url, case["query"]) for _ in range(args.runs)]
+        passed, lines = summarise(case, runs)
+        missed += args.runs - passed
+        print("\n".join(lines))
+    return 1 if missed else 0
 
 
 if __name__ == "__main__":
