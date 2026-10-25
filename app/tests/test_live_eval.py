@@ -167,12 +167,29 @@ def test_an_uncovered_question_must_not_invent_a_figure():
         _token("Radio requires -3 dBTP."),
         _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
     ]
-    assert "invented a figure" in runner.judge(case, invented)
+    assert "presented a figure as the radio value" in runner.judge(case, invented)
     refusal = [
         _token("The library documents do not state a true-peak level for radio."),
         _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
     ]
     assert runner.judge(case, refusal) == []
+    television = [
+        _token(
+            "The provided library excerpts do not contain information about "
+            "true-peak levels for radio. They only specify requirements for "
+            "live television programmes, stating that the maximum true peak "
+            "level should not exceed -3 dBTP and content will fail if it "
+            "exceeds -1 dBTP."
+        ),
+        _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
+    ]
+    assert runner.judge(case, television) == []
+    unlabelled = [
+        _token("The documents do not cover radio. The maximum true peak is -3 dBTP."),
+    ]
+    assert runner.judge(case, unlabelled) == [
+        "figure was not labelled as television / tv"
+    ]
     cited = [
         _token("See the live television section."),
         _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),

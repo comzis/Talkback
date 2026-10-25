@@ -112,6 +112,79 @@ def _notices(events: list[dict]) -> list[str]:
     ]
 
 
+def _mentions(text: str, word: str) -> bool:
+    return re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE) is not None
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [
+        part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()
+    ]
+
+
+def _has_label(text: str, labels: list[str]) -> bool:
+    return any(_mentions(text, label) for label in labels)
+
+
+def _unique(items: list[str]) -> list[str]:
+    seen: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.append(item)
+    return seen
+
+
+def _uncovered_problems(case: dict, shown: str, sources: list[dict]) -> list[str]:
+    """Score a question the library does not answer.
+
+    A figure is allowed when the reply says the subject is not covered and the
+    sentence labels that figure as another medium, such as television. A figure
+    stated as the subject's own value fails.
+    """
+    labels = [str(label) for label in case.get("figure_labels") or []]
+    subject = str(case.get("gap_about") or "")
+    if not labels:
+        problems = []
+        if FIGURE.search(shown):
+            problems.append("invented a figure")
+        elif sources and not NOT_COVERED.search(shown):
+            problems.append("cited a document without saying it is not covered")
+        return problems
+    problems = []
+    previous = ""
+    for sentence in _split_sentences(shown):
+        if not FIGURE.search(sentence):
+            previous = sentence
+            continue
+        labelled = _has_label(sentence, labels) or (
+            _has_label(previous, labels)
+            and not (subject and _mentions(sentence, subject))
+        )
+        claims_subject = (
+            subject
+            and _mentions(sentence, subject)
+            and not NOT_COVERED.search(sentence)
+        )
+        if claims_subject or (
+            subject and _mentions(sentence, subject) and not labelled
+        ):
+            problems.append(f"presented a figure as the {subject} value")
+        elif not labelled:
+            problems.append("figure was not labelled as " + " / ".join(labels))
+        previous = sentence
+    says_gap = bool(NOT_COVERED.search(shown)) and (
+        not subject or _mentions(shown, subject)
+    )
+    if not says_gap:
+        if sources and not FIGURE.search(shown):
+            problems.append("cited a document without saying it is not covered")
+        elif FIGURE.search(shown) and not any(
+            item.startswith("presented a figure") for item in problems
+        ):
+            problems.append("did not say the documents do not cover it")
+    return _unique(problems)
+
+
 def judge(case: dict, events: list[dict]) -> list[str]:
     """Return the facts that failed. An empty list means the case passed."""
     problems = []
@@ -148,10 +221,7 @@ def judge(case: dict, events: list[dict]) -> list[str]:
             problems.append("answer was not in French")
     elif case["path"] == "uncovered":
         shown = _fold(answer + "\n" + _footnote(events))
-        if FIGURE.search(shown):
-            problems.append("invented a figure")
-        elif sources and not NOT_COVERED.search(shown):
-            problems.append("cited a document without saying it is not covered")
+        problems.extend(_uncovered_problems(case, shown, sources))
     elif case["path"] == "general":
         if case["notice"] not in notices:
             problems.append("missing the general-path notice")
@@ -249,11 +319,20 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:8001")
     parser.add_argument("--cases", type=Path, default=CASES)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument(
+        "--id", action="append", default=[], help="Run only these case ids"
+    )
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
     missed = 0
     cases = load_cases(args.cases)
+    if args.id:
+        wanted = set(args.id)
+        cases = [case for case in cases if case["id"] in wanted]
+        missing = wanted - {case["id"] for case in cases}
+        if missing:
+            parser.error("unknown case id: " + ", ".join(sorted(missing)))
     by_id = {case["id"]: case for case in cases}
     for case in cases:
         results = []
