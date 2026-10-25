@@ -38,7 +38,7 @@ from library import (
     reindex_minutes,
 )
 from progress import ingest_metrics
-from prompts import (
+from llm.prompts import (
     GENERAL_NOTICE,
     UNMATCHED_SOURCE_NOTE,
     assistant_prompt,

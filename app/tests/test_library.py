@@ -12,7 +12,7 @@ import embeddings
 import files
 import library
 import progress
-import prompts
+import llm.prompts as prompts
 
 
 class FilenameTests(unittest.TestCase):
