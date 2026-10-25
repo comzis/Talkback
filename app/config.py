@@ -21,7 +21,15 @@ DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
 DEFAULT_OLLAMA_THINK = False
 # e5-small cosine scores on the real PDFs: a CV question scored about 0.79,
 # and an unrelated question topped out at 0.65. 0.75 sits between them.
+# Used only when the reranker is off.
 DEFAULT_RELEVANCE_THRESHOLD = 0.75
+# BAAI/bge-reranker-v2-m3 is Apache-2.0. It runs from the local cache.
+DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+DEFAULT_RERANK_CANDIDATES = 30
+# Main-set top logits after that reranker. Correct pages landed as low as
+# about -7.4, and the unrelated SRT draft scored about -5.2, above several
+# correct pages. -7.5 keeps every main-set library question on the library path.
+DEFAULT_RERANK_THRESHOLD = -7.5
 
 
 def _raw(name: str) -> str:
@@ -128,6 +136,32 @@ def ollama_think() -> bool:
     if not raw:
         return DEFAULT_OLLAMA_THINK
     return raw in {"1", "true", "yes"}
+
+
+def rerank_enabled() -> bool:
+    """False only when RERANK is explicitly turned off. Default is on."""
+    raw = _raw("RERANK").lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no"}
+
+
+def rerank_model_name() -> str:
+    return _raw("RERANK_MODEL") or DEFAULT_RERANK_MODEL
+
+
+def rerank_candidates() -> int:
+    return _positive_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES)
+
+
+def rerank_threshold() -> float:
+    raw = _raw("RERANK_THRESHOLD")
+    if not raw:
+        return DEFAULT_RERANK_THRESHOLD
+    try:
+        return float(raw)
+    except ValueError:
+        return DEFAULT_RERANK_THRESHOLD
 
 
 def relevance_threshold() -> float:

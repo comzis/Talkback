@@ -17,6 +17,7 @@ from llm.prompts import (
     prompt_passage,
     source_label,
 )
+from retrieval.rerank import best_rerank_score, rerank_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -101,17 +102,26 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
         candidates = max(candidates, 16)
     elif asks_for_example(query):
         candidates = max(candidates, 16)
+    if config.rerank_enabled():
+        candidates = max(candidates, config.rerank_candidates())
     named = named_library_files(query, library_files)
     if named:
         pinned = _retrieve_named(index, query, named, candidates)
         if pinned:
             return balance_matches(
-                _prefer_focused(pinned, query), per_file=per_file, limit=limit
+                _order_nodes(pinned, query), per_file=per_file, limit=limit
             ), True
     nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
     return balance_matches(
-        _prefer_focused(nodes, query), per_file=per_file, limit=limit
+        _order_nodes(nodes, query), per_file=per_file, limit=limit
     ), False
+
+
+def _order_nodes(nodes, query: str):
+    """Rerank when it is on. Otherwise prefer a prose chunk over a list of links."""
+    if config.rerank_enabled():
+        return rerank_nodes(query, nodes)
+    return _prefer_focused(nodes, query)
 
 
 def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str], top_k: int):
@@ -133,5 +143,9 @@ def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str], top_k
 
 
 def _library_matches(nodes) -> bool:
+    """The reranker logit decides the path. Similarity is the fallback."""
+    rerank_score = best_rerank_score(nodes)
+    if rerank_score is not None:
+        return rerank_score >= config.rerank_threshold()
     scores = [getattr(node, "score", None) for node in nodes]
     return embeddings.relevant_enough(scores, config.relevance_threshold())

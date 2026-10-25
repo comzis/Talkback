@@ -3,7 +3,9 @@
 import json
 from pathlib import Path
 
+import config
 from retrieval.recall import fact_pages, first_hit, recall_at, search_text
+from retrieval.rerank import best_rerank_score, clears_threshold
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,6 +39,18 @@ def test_recall_counts_only_questions_that_have_a_fact_page():
     assert recall_at([1, 6, 21, None], 4) == (1, 4)
     assert recall_at([1, 6, 21, None], 8) == (2, 4)
     assert recall_at([1, 6, 21, None], 20) == (2, 4)
+
+
+def test_the_rerank_threshold_keeps_main_set_library_questions():
+    threshold = config.rerank_threshold()
+    assert threshold == -7.5
+    assert clears_threshold(-7.4, threshold)
+    assert clears_threshold(-5.2, threshold)
+    assert not clears_threshold(-8.0, threshold)
+    kept = type("Node", (), {"metadata": {"rerank_score": -7.4}})()
+    plain = type("Node", (), {"metadata": {}})()
+    assert best_rerank_score([kept, plain]) == -7.4
+    assert best_rerank_score([plain]) is None
 
 
 def test_a_follow_up_searches_the_previous_question():
