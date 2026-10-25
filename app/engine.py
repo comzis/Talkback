@@ -54,8 +54,8 @@ from retrieval.search import (
     _source_record,
 )
 from llm.prompts import (
-    GENERAL_NOTICE,
     UNMATCHED_SOURCE_NOTE,
+    notice_for_general,
     assistant_prompt,
     display_excerpt,
     ground_library_reply,
@@ -212,10 +212,20 @@ def iter_answer(query: str, history=None):
                 yield {"event": "sources", "data": {"sources": []}}
                 yield {"event": "done", "data": {}}
                 return
-            yield from _stream_prompt(assistant_prompt(query, history), None, None)
+            yield from _stream_prompt(
+                assistant_prompt(query, history),
+                None,
+                None,
+                notice_for_general(query, history),
+            )
             return
         if not should_search_library(search):
-            yield from _stream_prompt(assistant_prompt(query, history), None, None)
+            yield from _stream_prompt(
+                assistant_prompt(query, history),
+                None,
+                None,
+                notice_for_general(query, history),
+            )
             return
         index = get_or_create_cached_index()
         indexed, _legacy, _incomplete = indexed_documents()
@@ -230,7 +240,10 @@ def iter_answer(query: str, history=None):
                 config.relevance_threshold(),
             )
             yield from _stream_prompt(
-                assistant_prompt(query, history), None, None, GENERAL_NOTICE
+                assistant_prompt(query, history),
+                None,
+                None,
+                notice_for_general(query, history, missed_library=True),
             )
             return
         sources = [

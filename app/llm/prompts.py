@@ -95,6 +95,55 @@ def citation_prompt(library_files: list[str]) -> str:
 GENERAL_NOTICE = "No matching documents found; answering generally."
 UNMATCHED_SOURCE_NOTE = "No source could be matched to this answer."
 NOT_INDEXED_NOTICE = "These files are in the library folder but are not indexed yet."
+_OUTSIDE_DOCUMENT = {
+    "en": "This answer is not from the documents and may not match them.",
+    "fr": "Cette réponse ne vient pas des documents et peut ne pas leur correspondre.",
+    "es": "Esta respuesta no procede de los documentos y puede no coincidir con ellos.",
+}
+_SPANISH_QUESTION = re.compile(
+    r"[¿¡ñ]|\b(?:qué|puedes|detalle|módulos|modulos|más)\b",
+    re.IGNORECASE,
+)
+_FRENCH_QUESTION = re.compile(
+    r"[àâçéèêëïîôùûüœ]|\b(?:donne|détails|details|filtre)\b",
+    re.IGNORECASE,
+)
+
+
+def question_language(query: str) -> str:
+    """English, French, or Spanish, from the question itself."""
+    text = query or ""
+    if _SPANISH_QUESTION.search(text):
+        return "es"
+    if _FRENCH_QUESTION.search(text):
+        return "fr"
+    return "en"
+
+
+def outside_document_note(query: str) -> str:
+    """Visible warning that a general reply is not a document fact."""
+    return _OUTSIDE_DOCUMENT[question_language(query)]
+
+
+def follows_previous_answer(history) -> bool:
+    """True when this question comes after an earlier reply in the conversation."""
+    return any(role == "assistant" for role, _text in clean_history(history))
+
+
+def notice_for_general(
+    query: str, history=None, *, missed_library: bool = False
+) -> str | None:
+    """Notice for a reply that is not using the library.
+
+    Right after an earlier answer, the note is in the question's language and
+    says the reply is not from the documents. A first question that misses the
+    library keeps the standing English notice.
+    """
+    if follows_previous_answer(history):
+        return outside_document_note(query)
+    if missed_library:
+        return GENERAL_NOTICE
+    return None
 
 
 def clean_history(history, limit: int = 8) -> list[tuple[str, str]]:
