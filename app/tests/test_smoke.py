@@ -118,6 +118,112 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     assert streamed.status_code == 200
     assert "event: error" not in streamed.text
     assert "event: token" in streamed.text
+    assert get().chroma_collection.id == held.id
+
+    client = TestClient(api_app.app)
+    upload = client.post(
+        "/upload", files={"files": ("extra.txt", b"hello", "text/plain")}
+    )
+    assert upload.status_code == 403
+    assert client.delete("/files/note.txt").status_code == 403
+
+    def events_for(query: str) -> list[dict]:
+        response = client.post("/query/stream", json={"query": query, "history": []})
+        assert response.status_code == 200
+        assert "event: error" not in response.text
+        found = []
+        for block in response.text.split("\n\n"):
+            event = "message"
+            data = ""
+            for line in block.splitlines():
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                elif line.startswith("data:"):
+                    data += line[5:].strip()
+            if data:
+                found.append({"event": event, "data": __import__("json").loads(data)})
+        return found
+
+    class _Node:
+        def __init__(self, text: str, score: float):
+            self.metadata = {"relative_path": "note.txt", "page_label": "16"}
+            self.score = score
+            self._text = text
+
+        def get_text(self) -> str:
+            return self._text
+
+    original_stream = engine._stream_deltas
+    original_retrieve = engine._retrieve_nodes
+
+    def retrieve_loudness(index, query, files):
+        return [_Node("Target loudness is -23.0 LUFS.", 0.9)], False
+
+    def stream_loudness(prompt, temperature):
+        yield "The loudness target is -23.0 LUFS. [1]"
+
+    engine._retrieve_nodes = retrieve_loudness
+    engine._stream_deltas = stream_loudness
+    library_events = events_for("What loudness target is required?")
+    kinds = [event["event"] for event in library_events]
+    assert "token" in kinds and "sources" in kinds and kinds[-1] == "done"
+    cards = [
+        source
+        for event in library_events
+        if event["event"] == "sources"
+        for source in event["data"]["sources"]
+    ]
+    assert cards and cards[0]["page"] == "16"
+
+    def retrieve_weak(index, query, files):
+        return [_Node("Target loudness is -23.0 LUFS.", 0.1)], False
+
+    engine._retrieve_nodes = retrieve_weak
+    threshold = events_for("What loudness target is required?")
+    notices = [
+        event["data"].get("text", "")
+        for event in threshold
+        if event["event"] == "notice"
+    ]
+    assert any("answering generally" in notice for notice in notices)
+    assert not any(
+        event["data"].get("sources")
+        for event in threshold
+        if event["event"] == "sources"
+    )
+
+    engine._retrieve_nodes = original_retrieve
+
+    def stream_hello(prompt, temperature):
+        yield "Hello."
+
+    engine._stream_deltas = stream_hello
+    greeting = events_for("hello")
+    assert [event["event"] for event in greeting if event["event"] == "token"] == [
+        "token"
+    ]
+    assert not any(
+        event["data"].get("sources")
+        for event in greeting
+        if event["event"] == "sources"
+    )
+
+    def stream_invented(prompt, temperature):
+        yield "The level "
+        yield "is -99 LUFS."
+
+    engine._retrieve_nodes = retrieve_loudness
+    engine._stream_deltas = stream_invented
+    invented = events_for("What loudness target is required?")
+    tokens = [event["data"]["text"] for event in invented if event["event"] == "token"]
+    assert tokens == ["The level ", "is -99 LUFS."]
+    footnotes = [
+        event["data"]["text"] for event in invented if event["event"] == "footnote"
+    ]
+    assert footnotes
+    assert "not include that detail" in footnotes[0]
+    engine._stream_deltas = original_stream
+    engine._retrieve_nodes = original_retrieve
 
     monkeypatch.setenv("CHAT_BACKEND", "vllm")
     blocked = TestClient(api_app.app)
