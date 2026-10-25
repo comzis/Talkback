@@ -16,6 +16,8 @@ DEFAULT_RETRIEVE_LIMIT = 4
 DEFAULT_RETRIEVE_PER_FILE = 2
 DEFAULT_OLLAMA_CONTEXT = 4096
 DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
+# Qwen 3.5 writes a hidden reasoning trace unless this is turned off.
+DEFAULT_OLLAMA_THINK = False
 # e5-small cosine scores on the real PDFs: a CV question scored about 0.79,
 # and an unrelated question topped out at 0.65. 0.75 sits between them.
 DEFAULT_RELEVANCE_THRESHOLD = 0.75
@@ -104,6 +106,14 @@ def ollama_context() -> int:
 
 def ollama_keep_alive() -> str:
     return _raw("OLLAMA_KEEP_ALIVE") or DEFAULT_OLLAMA_KEEP_ALIVE
+
+
+def ollama_think() -> bool:
+    """True only when OLLAMA_THINK is explicitly enabled. Default is off."""
+    raw = _raw("OLLAMA_THINK").lower()
+    if not raw:
+        return DEFAULT_OLLAMA_THINK
+    return raw in {"1", "true", "yes"}
 
 
 def relevance_threshold() -> float:

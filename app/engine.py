@@ -235,6 +235,7 @@ def _warm_up() -> None:
             request_timeout=config.ollama_timeout(),
             context_window=config.ollama_context(),
             keep_alive=config.ollama_keep_alive(),
+            thinking=config.ollama_think(),
         )
         Settings.embed_model = HuggingFaceEmbedding(
             model_name=model_name,

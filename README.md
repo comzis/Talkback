@@ -92,6 +92,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `RELEVANCE_THRESHOLD` | Best e5 score required before a library answer | `0.75` |
 | `OLLAMA_CONTEXT` | Ollama context window (`num_ctx`) | `4096` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |
+| `OLLAMA_THINK` | Send a hidden reasoning trace before the reply | `false` |
 | `TORCH_THREADS` | Torch CPU threads | half the cores |
 | `OFFLINE_MODE` | Load embeddings from the local cache and refuse `/llm/pull` | `true` |
 | `LIBRARY_READ_ONLY` | Treat the data directory as a read-only mount | `false` |

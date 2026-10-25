@@ -473,6 +473,7 @@ async def select_llm_model(request: LLMSelectRequest):
                     request_timeout=config.ollama_timeout(),
                     context_window=config.ollama_context(),
                     keep_alive=config.ollama_keep_alive(),
+                    thinking=config.ollama_think(),
                 )
                 os.environ["OLLAMA_MODEL"] = request.model
                 engine.cached_index = None

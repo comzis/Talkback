@@ -379,6 +379,7 @@ class ConfigTests(unittest.TestCase):
                 "RETRIEVE_PER_FILE",
                 "OLLAMA_CONTEXT",
                 "OLLAMA_KEEP_ALIVE",
+                "OLLAMA_THINK",
                 "TORCH_THREADS",
                 "RELEVANCE_THRESHOLD",
             )
@@ -405,6 +406,7 @@ class ConfigTests(unittest.TestCase):
                 "RETRIEVE_PER_FILE",
                 "OLLAMA_CONTEXT",
                 "OLLAMA_KEEP_ALIVE",
+                "OLLAMA_THINK",
                 "TORCH_THREADS",
             ):
                 os.environ.pop(name, None)
@@ -415,6 +417,11 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.retrieve_per_file(), 2)
             self.assertEqual(config.ollama_context(), 4096)
             self.assertEqual(config.ollama_keep_alive(), "30m")
+            self.assertFalse(config.ollama_think())
+            os.environ["OLLAMA_THINK"] = "true"
+            self.assertTrue(config.ollama_think())
+            os.environ["OLLAMA_THINK"] = "false"
+            self.assertFalse(config.ollama_think())
             os.environ.pop("RELEVANCE_THRESHOLD", None)
             self.assertEqual(config.relevance_threshold(), 0.75)
             self.assertGreaterEqual(config.torch_threads(), 1)
