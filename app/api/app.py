@@ -53,8 +53,6 @@ async def disable_asset_cache(request, call_next):
 
 engine.init()
 app.state.talkback = get()
-engine.start_reindex_schedule()
-engine.start_initial_index()
 
 
 class ChatTurn(BaseModel):
@@ -88,17 +86,11 @@ def _reject_if_reindex_required() -> None:
 
 
 @app.post("/ingest")
-async def ingest_documents(background_tasks: BackgroundTasks):
-    """
-    Ingests all documents from the local '/app/data' directory.
-    This directory is mapped from './data' on your host.
-    Runs in background and updates progress status.
-    """
+async def ingest_documents():
+    """Ask the indexer to add new or changed files. This process does not embed them."""
     _reject_if_reindex_required()
-    if not engine.begin_ingestion():
+    if not engine.enqueue_ingestion("incremental"):
         return {"message": "Ingestion already in progress", "status": "processing"}
-
-    background_tasks.add_task(engine.process_ingestion)
 
     return {
         "message": "Adding new documents. Files already indexed are kept.",
@@ -107,11 +99,10 @@ async def ingest_documents(background_tasks: BackgroundTasks):
 
 
 @app.post("/ingest/rebuild")
-async def rebuild_index(background_tasks: BackgroundTasks):
-    """Drop the collection and embed every file with the current model."""
-    if not engine.begin_ingestion():
+async def rebuild_index():
+    """Ask the indexer to drop the collection and embed every file again."""
+    if not engine.enqueue_ingestion("rebuild"):
         return {"message": "Ingestion already in progress", "status": "processing"}
-    background_tasks.add_task(engine.rebuild_library)
     return {
         "message": "Full re-index started. The old vectors are being replaced.",
         "status": "processing",
@@ -120,9 +111,10 @@ async def rebuild_index(background_tasks: BackgroundTasks):
 
 @app.get("/ingest/status")
 async def get_ingestion_status():
-    """
-    Get the current status of document ingestion.
-    """
+    """Progress written by the indexer. This process only reads it."""
+    shared = StatusStore(get().status_dir / "library.sqlite").read_job()
+    if shared:
+        return shared
     return get().ingestion_status
 
 
@@ -331,9 +323,7 @@ async def root():
 
 
 @app.post("/upload")
-async def upload_files(
-    background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)
-):
+async def upload_files(files: List[UploadFile] = File(...)):
     """
     Save files into the library and index them in the same request.
     """
@@ -362,8 +352,7 @@ async def upload_files(
 
         if engine.reindex_required():
             raise HTTPException(status_code=409, detail=embeddings.REINDEX_MESSAGE)
-        if engine.begin_ingestion():
-            background_tasks.add_task(engine.process_ingestion)
+        engine.enqueue_ingestion("incremental")
 
         return {
             "message": f"Added {len(uploaded_files)} file(s) and started indexing.",

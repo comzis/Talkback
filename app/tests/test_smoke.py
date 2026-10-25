@@ -54,9 +54,20 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
 
     with TestClient(api_app.app) as client:
         health = client.get("/health")
+        assert get().ingestion_status.get("status") == "idle"
+        queued = client.post("/ingest")
     assert health.status_code == 200
     assert health.json() == {"status": "ok"}
+    assert queued.status_code == 200
+    assert get().ingestion_status.get("status") == "idle"
+    from store.status_db import StatusStore
 
+    assert (
+        StatusStore(tmp_path / "state" / "library.sqlite").peek_request()
+        == "incremental"
+    )
+
+    engine.start_initial_index()
     deadline = time.time() + 20
     status = None
     while time.time() < deadline:
@@ -71,8 +82,6 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     assert status == "completed"
 
     (library / "bad.txt").write_text("unreadable", encoding="utf-8")
-    from store.status_db import StatusStore
-
     StatusStore(tmp_path / "state" / "library.sqlite").mark_failed(
         "filesystem", "bad.txt", "No readable text"
     )

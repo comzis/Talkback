@@ -21,6 +21,7 @@ from store.chroma import (
 )
 from ingestion.pipeline import (
     begin_ingestion,
+    enqueue_ingestion,
     files_waiting,
     process_ingestion,
     rebuild_library,
@@ -33,6 +34,7 @@ __all__ = [
     "answer_query",
     "begin_ingestion",
     "collection_count",
+    "enqueue_ingestion",
     "delete_chunks_for_file",
     "files_waiting",
     "init",

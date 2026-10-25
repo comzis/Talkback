@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 import threading
 import time
 from pathlib import Path
@@ -51,6 +52,44 @@ def _hide_from_models(node, keys: tuple[str, ...]) -> None:
             node.excluded_llm_metadata_keys.append(key)
 
 
+_heartbeat_stop: threading.Event | None = None
+
+
+def lock_holder() -> str:
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+def _publish() -> None:
+    """Copy the in-memory progress so the API process can read it."""
+    open_status().write_job(dict(get().ingestion_status))
+
+
+def _beat(holder: str, stop: threading.Event) -> None:
+    while not stop.wait(10):
+        if not open_status().refresh_lock(holder):
+            logger.error("Lost the ingest lock.")
+            return
+
+
+def _start_heartbeat(holder: str) -> None:
+    global _heartbeat_stop
+    _stop_heartbeat()
+    _heartbeat_stop = threading.Event()
+    threading.Thread(
+        target=_beat,
+        args=(holder, _heartbeat_stop),
+        name="talkback-ingest-lock",
+        daemon=True,
+    ).start()
+
+
+def _stop_heartbeat() -> None:
+    global _heartbeat_stop
+    if _heartbeat_stop is not None:
+        _heartbeat_stop.set()
+        _heartbeat_stop = None
+
+
 def start_reindex_schedule() -> None:
     """Re-run incremental indexing on a timer. Unset or 0 leaves this off."""
     minutes = reindex_minutes(os.getenv("REINDEX_INTERVAL_MINUTES"))
@@ -70,7 +109,10 @@ def start_reindex_schedule() -> None:
                 )
                 continue
             logger.info("Scheduled re-index started.")
-            process_ingestion()
+            try:
+                process_ingestion()
+            finally:
+                finish_ingestion()
 
     threading.Thread(target=loop, name="talkback-reindex", daemon=True).start()
     logger.info("Scheduled re-index every %s minutes.", minutes)
@@ -80,16 +122,21 @@ def start_initial_index() -> None:
     """Index files on disk that are missing or were only partly stored."""
 
     def run() -> None:
+        started = False
         try:
             wait_for_models()
             if reindex_required():
                 return
             if not begin_ingestion():
                 return
+            started = True
             logger.info("Checking the library for files that are not fully indexed.")
             process_ingestion()
         except Exception:
             logger.exception("Initial index failed")
+        finally:
+            if started:
+                finish_ingestion()
 
     threading.Thread(target=run, name="talkback-initial-index", daemon=True).start()
 
@@ -135,18 +182,36 @@ def rebuild_library() -> None:
     logger.info("Full re-index finished with %s", config.embed_model_name())
 
 
+def enqueue_ingestion(kind: str = "incremental") -> bool:
+    """Ask the indexer to run. False when a run already holds the lock."""
+    store = open_status()
+    store.request_run(kind)
+    return not store.lock_held()
+
+
 def begin_ingestion() -> bool:
-    """Mark ingestion as running. Queue another pass when a job is already active."""
+    """Mark ingestion as running. A second process waits its turn on the lock row."""
     with get().ingest_lock:
         if get().ingestion_status.get("status") == "processing":
             get().ingest_again = True
             return False
+        holder = lock_holder()
+        if not open_status().try_lock(holder):
+            return False
         get().ingest_again = False
+        _start_heartbeat(holder)
         get().ingestion_status.clear()
         get().ingestion_status.update(
             _fresh_status(status="processing", message="Starting ingestion...")
         )
+        _publish()
         return True
+
+
+def finish_ingestion() -> None:
+    """Release the lock row when the run that acquired it has finished."""
+    _stop_heartbeat()
+    open_status().unlock(lock_holder())
 
 
 def _take_followup() -> bool:
@@ -189,6 +254,7 @@ def _finish_kept(started: float, message: str, files: int) -> None:
             memory_percent=get().ingestion_status["memory_percent"],
         )
     )
+    _publish()
 
 
 def nodes_for_index(documents, source):
@@ -242,6 +308,7 @@ def _ingest_once() -> None:
         get().ingestion_status["status"] = "processing"
         get().ingestion_status["message"] = "Checking the library..."
         get().ingestion_status["progress"] = 10
+        _publish()
 
         source = filesystem_source()
         status = open_status()
@@ -350,6 +417,7 @@ def _ingest_once() -> None:
                     f"Embedded {done} of {total} new chunks"
                 )
                 _touch_resources()
+                _publish()
             mark_file_complete(name)
             status.mark_complete(
                 source.source_type, name, on_disk[name], len(file_nodes)
@@ -377,6 +445,7 @@ def _ingest_once() -> None:
                 start_time=started,
             )
         )
+        _publish()
         logger.info(
             "Ingestion complete. Added %s chunks from %s. Library now has %s chunks.",
             total,
@@ -392,4 +461,5 @@ def _ingest_once() -> None:
         get().ingestion_status["error"] = "Ingestion failed"
         get().ingestion_status["progress"] = 0
         get().ingestion_status["current_file"] = None
+        _publish()
         logger.error("Ingestion failed: %s", exc)
