@@ -133,7 +133,7 @@ Talkback/
 ├── hf_cache/             # Embedding model cache (gitignored)
 ├── docker-compose.yml
 ├── .env.example          # Copy to .env and set OLLAMA_MODEL
-├── SECURITY.md           # What runs where, and what may leave the machine
+├── docs/SECURITY.md      # What runs where, and what may leave the machine
 └── .env                  # Local config (gitignored)
 ```
 
@@ -201,9 +201,9 @@ Use this for the on-prem proof of concept. The promise is that no library text o
 5. Disconnect the network.
 6. Open http://127.0.0.1:8001 and ask a question about one of the files. Tokens should appear as they are generated, then the folder, file, and page. `curl -X POST http://127.0.0.1:8001/llm/pull -H 'Content-Type: application/json' -d '{"model":"test"}'` returns 403.
 
-Setup for this branch is `README.md` and `SECURITY.md`. Older notes were removed from `docs/archive/`; git history still has them.
+Setup for this branch is `README.md` and `docs/SECURITY.md`. Older notes were removed from `docs/archive/`; git history still has them.
 
-`SECURITY.md` lists the processes and ports.
+`docs/SECURITY.md` lists the processes and ports.
 
 ## Privacy
 
