@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # --- FastAPI App ---
 app = FastAPI(title="Secure Local RAG API")
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
