@@ -169,6 +169,23 @@ def _finish_kept(started: float, message: str, files: int) -> None:
     )
 
 
+def nodes_for_index(documents, source):
+    """Split, then record the source. The splitter counts metadata toward the chunk size.
+
+    relative_path and source_mtime are already on the documents, as they were
+    before source_type existed. Adding those two fields first changes the boundaries.
+    """
+    nodes = SentenceSplitter(
+        chunk_size=config.chunk_size(),
+        chunk_overlap=config.chunk_overlap(),
+    ).get_nodes_from_documents(documents)
+    for node in nodes:
+        item_id = str((node.metadata or {}).get("relative_path") or "").strip()
+        if item_id:
+            source.describe_chunk(item_id, node.metadata)
+    return nodes
+
+
 def process_ingestion() -> None:
     """Add new or changed files, and index anything that arrived during the pass."""
     while True:
@@ -234,7 +251,7 @@ def _ingest_once() -> None:
                 except ValueError:
                     relative = file_path.name
             if relative:
-                source.describe_chunk(relative, document.metadata)
+                document.metadata["relative_path"] = relative
             if file_path.is_file():
                 document.metadata["source_mtime"] = int(file_path.stat().st_mtime)
 
@@ -247,10 +264,7 @@ def _ingest_once() -> None:
             logger.info("Ingestion found no readable text in %s", embed_names)
             return
 
-        nodes = SentenceSplitter(
-            chunk_size=config.chunk_size(),
-            chunk_overlap=config.chunk_overlap(),
-        ).get_nodes_from_documents(documents)
+        nodes = nodes_for_index(documents, source)
         total = len(nodes)
         get().ingestion_status["total"] = total
         get().ingestion_status["current"] = 0

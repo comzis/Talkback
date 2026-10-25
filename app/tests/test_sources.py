@@ -45,6 +45,48 @@ def test_writable_source_accepts_a_change(tmp_path: Path):
     FilesystemSource(tmp_path, read_only=False).ensure_writable("upload")
 
 
+def test_source_fields_keep_the_same_chunk_boundaries():
+    pytest.importorskip("llama_index")
+    from llama_index.core.node_parser import SentenceSplitter
+    from llama_index.core.schema import Document
+
+    import config
+    from ingestion.pipeline import nodes_for_index
+
+    text = "The live tolerance is plus or minus 1.0 LU. " * 80
+    splitter = SentenceSplitter(
+        chunk_size=config.chunk_size(), chunk_overlap=config.chunk_overlap()
+    )
+    metadata = {
+        "file_name": "TechnicalDeliveryStandardsBBCLive.pdf",
+        "file_path": "/app/data/TechnicalDeliveryStandardsBBCLive.pdf",
+        "file_size": 12000,
+        "file_type": "application/pdf",
+        "page_label": "16",
+        "creation_date": "2024-01-01",
+        "last_modified_date": "2024-01-02",
+        "relative_path": "TechnicalDeliveryStandardsBBCLive.pdf",
+        "source_mtime": 1700000000,
+    }
+    baseline = splitter.get_nodes_from_documents(
+        [Document(text=text, metadata=dict(metadata))]
+    )
+    early = dict(metadata)
+    early["source_type"] = "filesystem"
+    early["source_id"] = metadata["relative_path"]
+    shifted = splitter.get_nodes_from_documents([Document(text=text, metadata=early)])
+    stamped = nodes_for_index(
+        [Document(text=text, metadata=dict(metadata))],
+        FilesystemSource(Path(".")),
+    )
+
+    assert [node.text for node in shifted] != [node.text for node in baseline]
+    assert [node.text for node in stamped] == [node.text for node in baseline]
+    assert stamped[0].metadata["source_type"] == "filesystem"
+    assert stamped[0].metadata["source_id"] == metadata["relative_path"]
+    assert stamped[0].metadata["relative_path"] == metadata["relative_path"]
+
+
 def test_new_chunks_record_the_source_without_forcing_a_reindex():
     metadata = {}
     FilesystemSource(Path(".")).describe_chunk("notes/gate.txt", metadata)
