@@ -165,8 +165,28 @@ class PromptTests(unittest.TestCase):
         )
         self.assertIn("Wireshark", steps)
         self.assertIn("operator", steps)
+        example = prompts.retrieval_text("Give an example", wireshark)
+        self.assertIn("Wireshark", example)
+        self.assertNotIn("practical example", example)
+        self.assertTrue(prompts.is_follow_up("telll me more"))
+        self.assertTrue(prompts.is_follow_up("Donne-moi plus de détails"))
+        self.assertTrue(prompts.is_follow_up("¿Puedes dar más detalle?"))
+        self.assertEqual(
+            prompts.retrieval_text(
+                "telll me more", [("user", "What loudness is required?")]
+            ),
+            "What loudness is required?",
+        )
+        self.assertEqual(
+            prompts.retrieval_text(
+                "¿Puedes dar más detalle?",
+                [("user", "¿Qué módulos de Ansible se usan?")],
+            ),
+            "¿Qué módulos de Ansible se usan?",
+        )
         self.assertIn(
-            "practical example", prompts.retrieval_text("Give an example", wireshark)
+            "deadline",
+            prompts.retrieval_text("What about the deadline?", earlier),
         )
         self.assertIn(
             "concrete example",

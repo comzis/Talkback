@@ -1,6 +1,7 @@
 """Prompt text for grounded answers."""
 
 import re
+import unicodedata
 
 _CITATION = re.compile(r"\[\d+\]")
 _WORD = re.compile(r"[a-z0-9]{2,}")
@@ -180,31 +181,98 @@ def format_history(history) -> str:
     )
 
 
-_FOLLOW_UP = re.compile(
-    r"\b(give an example|an example|for example|tell me more|more detail|"
-    r"what about|how about|elaborate|continue|the same|another|"
+def _loose(text: str) -> str:
+    """Lower-case, drop accents, and collapse a letter repeated three times or more.
+
+    'telll me more' and 'más detalle' then match the same phrases as the
+    spelled forms. The match does not depend on any one document.
+    """
+    folded = unicodedata.normalize("NFKD", text or "")
+    folded = "".join(char for char in folded if not unicodedata.combining(char))
+    folded = folded.lower()
+    folded = re.sub(r"(.)\1{2,}", r"\1\1", folded)
+    return re.sub(r"[^a-z0-9]+", " ", folded).strip()
+
+
+_CONTINUATION = re.compile(
+    r"\b("
+    r"tell me more|more detail|more details|in more detail|more detailed|"
+    r"what about|how about|elaborate|go on|continue|the same|another|"
+    r"give an example|an example|for example|"
     r"each step|step by step|the steps|explain the steps|explain each|"
-    r"for the operator|for an operator|in more detail|more detailed|"
-    r"walk me through|walk through|break it down|break down|explain that|explain this)\b",
-    re.IGNORECASE,
+    r"walk me through|walk through|break it down|break down|explain that|explain this|"
+    r"plus de details|plus de detail|donne moi plus|davantage|"
+    r"mas detalle|mas detalles|puedes dar mas|cuentame mas|continua|"
+    r"un exemple|par exemple|etape par etape|les etapes|"
+    r"un ejemplo|por ejemplo|paso a paso|los pasos"
+    r")\b"
 )
+_CONTINUATION_WORDS = {
+    "tell",
+    "more",
+    "detail",
+    "details",
+    "detailed",
+    "elaborate",
+    "continue",
+    "same",
+    "another",
+    "give",
+    "example",
+    "step",
+    "steps",
+    "explain",
+    "walk",
+    "through",
+    "break",
+    "down",
+    "plus",
+    "donne",
+    "moi",
+    "davantage",
+    "mas",
+    "detalle",
+    "detalles",
+    "puedes",
+    "dar",
+    "cuentame",
+    "continua",
+    "exemple",
+    "etape",
+    "etapes",
+    "ejemplo",
+    "paso",
+    "pasos",
+}
+
+
+def _continuation_only(query: str) -> bool:
+    """True when the line only asks to go on, with no new subject of its own."""
+    words = [
+        word
+        for word in _loose(query).split()
+        if word not in _STOP and word not in _CONTINUATION_WORDS
+    ]
+    return not words
+
+
 _EXAMPLE_ASK = re.compile(
-    r"\b(give an example|an example|for example)\b", re.IGNORECASE
+    r"\b(give an example|an example|for example|un exemple|par exemple|un ejemplo|por ejemplo)\b"
 )
 _STEPS_ASK = re.compile(
-    r"\b(each step|step by step|the steps|explain the steps|explain each)\b",
-    re.IGNORECASE,
+    r"\b(each step|step by step|the steps|explain the steps|explain each|"
+    r"etape par etape|les etapes|paso a paso|los pasos)\b"
 )
 
 
 def asks_for_steps(query: str) -> bool:
     """True when the user wants the procedure, not a one-line summary."""
-    return _STEPS_ASK.search(query or "") is not None
+    return _STEPS_ASK.search(_loose(query)) is not None
 
 
 def asks_for_example(query: str) -> bool:
     """True when the user wants one concrete case from the document."""
-    return _EXAMPLE_ASK.search(query or "") is not None
+    return _EXAMPLE_ASK.search(_loose(query)) is not None
 
 
 def is_follow_up(query: str) -> bool:
@@ -212,7 +280,7 @@ def is_follow_up(query: str) -> bool:
     text = (query or "").strip()
     if not text or _SMALL_TALK.match(text):
         return False
-    if _FOLLOW_UP.search(text):
+    if _CONTINUATION.search(_loose(text)):
         return True
     words = [word for word in _WORD.findall(text.lower()) if word not in _STOP]
     return len(text) <= 20 and len(words) <= 1
@@ -230,32 +298,14 @@ def retrieval_text(query: str, history=None) -> str:
         if role == "user" and not is_follow_up(text) and not _SMALL_TALK.match(text)
     ]
     topic = users[-1] if users else ""
-    if _EXAMPLE_ASK.search(current) or _STEPS_ASK.search(current):
-        anchor = _topic_anchor(topic)
-        focus = (
-            "practical example filter"
-            if _EXAMPLE_ASK.search(current)
-            else "filter operator example"
-        )
-        return "\n".join(part for part in (current, focus, anchor) if part)
+    if topic and _continuation_only(current):
+        return topic
     words = [word for word in _WORD.findall(current.lower()) if word not in _STOP]
     spoken = ""
     if len(words) <= 1:
         assistants = [text for role, text in turns if role == "assistant"]
         spoken = " ".join(assistants[-2:])[:180]
     return "\n".join(part for part in (current, topic, spoken) if part)
-
-
-def _topic_anchor(text: str) -> str:
-    """The most specific word of the earlier question, kept so a follow-up finds that document."""
-    words = [
-        word
-        for word in re.findall(r"[A-Za-z0-9]{5,}", text or "")
-        if word.lower() not in _STOP
-    ]
-    if not words:
-        return ""
-    return max(words, key=len)
 
 
 def assistant_prompt(query: str, history=None) -> str:
@@ -298,7 +348,8 @@ _GENERIC_FILE_WORDS = {
     "sheet",
 }
 _SMALL_TALK = re.compile(
-    r"^(hi|hello|hey|thanks|thank you|ok|okay|yo|good morning|good afternoon|good evening)\b",
+    r"^(hi|hello|hey|thanks|thank you|ok|okay|yo|good morning|good afternoon|good evening|"
+    r"bonjour|salut|merci|hola|gracias|buenos dias|buenas tardes)\b",
     re.IGNORECASE,
 )
 
@@ -379,12 +430,12 @@ def explanation_prompt(
     shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(excerpts, 1))
     if not shown:
         shown = "(no matching excerpts)"
-    if _STEPS_ASK.search(query or ""):
+    if asks_for_steps(query):
         shape = (
             "The user asked for the steps. Walk through each step the excerpts describe, in order. "
             "Number the steps as 1. 2. 3. Use only what the excerpts say.\n"
         )
-    elif _EXAMPLE_ASK.search(query or ""):
+    elif asks_for_example(query):
         shape = (
             "The user asked for an example. Give one concrete example from the excerpts, "
             "copying the filter, command, or action exactly. "
@@ -668,21 +719,14 @@ def _example_blocks(text: str) -> list[str]:
 
 
 def _best_example(sources: list[dict], query: str = "") -> tuple[str, int] | None:
-    """The example section that best matches the question."""
-    query_l = (query or "").lower()
-    best = None
-    best_score = -1
+    """The first worked example in the excerpts. The query is not used to prefer one document."""
+    del query
     for source in sources:
         text = repair_pdf_spacing(source.get("text") or "")
-        for block in _example_blocks(text):
-            low = block.lower()
-            score = 1
-            if "operator" in query_l and "operator" in low:
-                score += 5
-            if score > best_score:
-                best_score = score
-                best = (block, int(source.get("number") or 0))
-    return best
+        blocks = _example_blocks(text)
+        if blocks:
+            return blocks[0], int(source.get("number") or 0)
+    return None
 
 
 def _plain_reply(text: str) -> str:
