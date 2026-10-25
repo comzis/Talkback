@@ -5,21 +5,13 @@ import time
 import pytest
 
 
-class FakeChat:
-    """Stand-in for the host chat client. Startup must not call Ollama."""
-
-    def complete(self, prompt: str) -> str:
-        return "ok"
-
-    def stream_complete(self, prompt: str):
-        yield type("Chunk", (), {"delta": "ok"})()
-
-
 def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_path):
     pytest.importorskip("torch")
     pytest.importorskip("llama_index")
     pytest.importorskip("chromadb")
     pytest.importorskip("fastapi")
+    from llama_index.core.embeddings.mock_embed_model import MockEmbedding
+    from llama_index.core.llms.mock import MockLLM
 
     monkeypatch.setenv("OLLAMA_MODEL", "fake-model")
     monkeypatch.setenv("CHROMA_HOST", "memory")
@@ -37,6 +29,7 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
 
     reset_for_tests()
     memory = chromadb.EphemeralClient()
+    chat = MockLLM()
 
     def connect_memory() -> None:
         from store.chroma import _remember_collection
@@ -46,8 +39,8 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
         _remember_collection(collection)
 
     def warm_with_fakes() -> None:
-        Settings.llm = FakeChat()
-        Settings.embed_model = object()
+        Settings.llm = chat
+        Settings.embed_model = MockEmbedding(embed_dim=8)
         get().models_ready.set()
 
     monkeypatch.setattr(engine, "connect_chroma", connect_memory)
@@ -69,7 +62,7 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
             break
         time.sleep(0.05)
 
-    assert isinstance(Settings.llm, FakeChat)
-    assert get().chroma_collection is memory.get_collection("rag_collection")
+    assert Settings.llm is chat
+    assert get().db is memory
     assert get().chroma_collection.count() == 0
     assert status == "completed"
