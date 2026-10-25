@@ -31,7 +31,7 @@ cd Talkback
 cp .env.example .env
 ```
 
-Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name.
+Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name. Set `LIBRARY_PATH` to the absolute path of the document folder. Compose mounts that folder at `/app/data` for the API and the indexer, and refuses to start when it is missing.
 
 `CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The API is published on `127.0.0.1:8001` only.
 
@@ -95,6 +95,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `OLLAMA_THINK` | Send a hidden reasoning trace before the reply | `false` |
 | `TORCH_THREADS` | Torch CPU threads | half the cores |
 | `OFFLINE_MODE` | Load embeddings from the local cache and refuse `/llm/pull` | `true` |
+| `LIBRARY_PATH` | Host folder mounted at `/app/data` for the API and the indexer. Required | set in `.env` |
 | `LIBRARY_READ_ONLY` | Treat the data directory as a read-only mount | `false` |
 | `REINDEX_INTERVAL_MINUTES` | Repeat incremental indexing. Unset or `0` keeps it off | off |
 | `CHROMA_HOST` | Chroma service name on the Docker network | `chromadb` |
