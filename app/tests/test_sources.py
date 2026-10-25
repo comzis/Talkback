@@ -97,6 +97,56 @@ def test_source_fields_keep_the_same_chunk_boundaries():
     assert stamped[0].metadata["relative_path"] == metadata["relative_path"]
 
 
+def test_source_ids_stay_out_of_the_embedded_text_and_the_prompt():
+    pytest.importorskip("llama_index")
+    from llama_index.core.schema import Document, MetadataMode
+
+    from ingestion.pipeline import nodes_for_index
+
+    text = "Target loudness is -23.0 LUFS."
+    document = Document(
+        text=text,
+        metadata={
+            "file_name": "TechnicalDeliveryStandardsBBCLive.pdf",
+            "file_path": "/app/data/TechnicalDeliveryStandardsBBCLive.pdf",
+            "file_size": 12000,
+            "file_type": "application/pdf",
+            "page_label": "16",
+            "creation_date": "2024-01-01",
+            "last_modified_date": "2024-01-02",
+            "relative_path": "TechnicalDeliveryStandardsBBCLive.pdf",
+            "source_mtime": 1700000000,
+        },
+        excluded_embed_metadata_keys=[
+            "file_name",
+            "file_type",
+            "file_size",
+            "creation_date",
+            "last_modified_date",
+            "last_accessed_date",
+        ],
+        excluded_llm_metadata_keys=[
+            "file_name",
+            "file_type",
+            "file_size",
+            "creation_date",
+            "last_modified_date",
+            "last_accessed_date",
+        ],
+    )
+    node = nodes_for_index([document], FilesystemSource(Path(".")))[0]
+    embedded = node.get_content(metadata_mode=MetadataMode.EMBED)
+    prompted = node.get_content(metadata_mode=MetadataMode.LLM)
+
+    assert node.get_text() == text
+    for hidden in ("source_type", "source_id", "file_name", "file_size"):
+        assert hidden not in embedded
+        assert hidden not in prompted
+    for kept in ("file_path", "page_label", "relative_path", "source_mtime"):
+        assert kept in embedded
+        assert kept in prompted
+
+
 def test_new_chunks_record_the_source_without_forcing_a_reindex():
     metadata = {}
     FilesystemSource(Path(".")).describe_chunk("notes/gate.txt", metadata)

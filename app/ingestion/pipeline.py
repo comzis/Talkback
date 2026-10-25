@@ -29,6 +29,27 @@ from store.status_db import StatusStore
 
 logger = logging.getLogger(__name__)
 
+# SimpleDirectoryReader keeps file_path and page_label, and drops these.
+# relative_path and source_mtime stay, because the demo tag embedded them.
+_READER_BOOKKEEPING = (
+    "file_name",
+    "file_type",
+    "file_size",
+    "creation_date",
+    "last_modified_date",
+    "last_accessed_date",
+)
+# Added after the demo tag. They must not enter the embedding or an LLM prompt.
+_SOURCE_BOOKKEEPING = ("source_type", "source_id")
+
+
+def _hide_from_models(node, keys: tuple[str, ...]) -> None:
+    for key in keys:
+        if key not in node.excluded_embed_metadata_keys:
+            node.excluded_embed_metadata_keys.append(key)
+        if key not in node.excluded_llm_metadata_keys:
+            node.excluded_llm_metadata_keys.append(key)
+
 
 def start_reindex_schedule() -> None:
     """Re-run incremental indexing on a timer. Unset or 0 leaves this off."""
@@ -184,6 +205,7 @@ def nodes_for_index(documents, source):
         item_id = str((node.metadata or {}).get("relative_path") or "").strip()
         if item_id:
             source.describe_chunk(item_id, node.metadata)
+        _hide_from_models(node, _READER_BOOKKEEPING + _SOURCE_BOOKKEEPING)
     return nodes
 
 
