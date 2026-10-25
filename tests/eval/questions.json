@@ -13,7 +13,8 @@
     "path": "library",
     "file": "Traffic_analysis_with_wireshark_1746771119.pdf",
     "page": "34",
-    "answer_contains": ["icmp.type == 3 && icmp.code == 2"]
+    "answer_contains": ["icmp.type == 3 && icmp.code == 2"],
+    "card_contains": ["icmp.type == 3 && icmp.code == 2"]
   },
   {
     "id": "ansible-modules",
@@ -57,7 +58,8 @@
     "file": "Traffic_analysis_with_wireshark_1746771119.pdf",
     "page": "34",
     "language": "fr",
-    "answer_contains": ["icmp.type == 3 && icmp.code == 2"]
+    "answer_contains": ["icmp.type == 3 && icmp.code == 2"],
+    "card_contains": ["icmp.type == 3 && icmp.code == 2"]
   },
   {
     "id": "ansible-more",

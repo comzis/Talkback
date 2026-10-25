@@ -82,9 +82,14 @@ class PromptTests(unittest.TestCase):
         self.assertGreater(chunk.find("icmp.type"), 500)
         passage = prompts.prompt_passage(chunk)
         self.assertIn(fact, passage)
-        card = prompts.display_excerpt(chunk, "Quel filtre ICMP ?")
-        self.assertNotIn("icmp.type", card)
+        card = prompts.display_excerpt(
+            chunk, "Quel filtre ICMP ?", f"The filter is {fact}."
+        )
+        self.assertIn("icmp.type == 3 && icmp.code == 2", card)
+        self.assertLess(card.find("icmp.type"), 80)
         self.assertLessEqual(len(card), 500)
+        opening = prompts.display_excerpt(chunk, "Quel filtre ICMP ?")
+        self.assertNotIn("icmp.type", opening)
         reached = prompts.explanation_prompt("Quel filtre ?", ["wire.pdf"], [passage])
         self.assertIn(fact, reached)
         grounded_fact = prompts.ground_library_reply(

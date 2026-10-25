@@ -36,6 +36,33 @@ def test_cases_cover_the_four_demo_questions():
     assert cases["srt-outage"]["path"] == "general"
 
 
+def test_the_source_card_must_include_the_matching_filter():
+    case = {item["id"]: item for item in runner.load_cases()}["icmp-filter"]
+    hidden = [
+        _token("Le filtre est (icmp.type == 3 && icmp.code == 2)."),
+        _source("Traffic_analysis_with_wireshark_1746771119.pdf", "34"),
+    ]
+    assert "source card omitted icmp.type == 3 && icmp.code == 2" in runner.judge(
+        case, hidden
+    )
+    shown = [
+        _token("Le filtre est (icmp.type == 3 && icmp.code == 2)."),
+        {
+            "event": "sources",
+            "data": {
+                "sources": [
+                    {
+                        "source": "Traffic_analysis_with_wireshark_1746771119.pdf",
+                        "page": "34",
+                        "text": "Example 2. (icmp.type == 3 && icmp.code == 2)",
+                    }
+                ]
+            },
+        },
+    ]
+    assert runner.judge(case, shown) == []
+
+
 def test_library_case_requires_the_expected_page():
     case = runner.load_cases()[0]
     events = [

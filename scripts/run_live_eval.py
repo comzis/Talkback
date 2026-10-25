@@ -116,6 +116,10 @@ def judge(case: dict, events: list[dict]) -> list[str]:
         for needle in case.get("answer_contains") or []:
             if _fold(needle) not in answer:
                 problems.append(f"answer omitted {needle}")
+        cards = _fold(" ".join(source.get("text") or "" for source in sources))
+        for needle in case.get("card_contains") or []:
+            if _fold(needle) not in cards:
+                problems.append(f"source card omitted {needle}")
         if case.get("language") == "es" and not SPANISH.search(answer):
             problems.append("answer was not in Spanish")
         if case.get("language") == "fr" and not FRENCH.search(answer):

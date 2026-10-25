@@ -335,7 +335,7 @@ function appendSources(content, sources) {
         sourceText.appendChild(name);
         if (source.text) {
             const excerpt = document.createElement('span');
-            const snippet = source.text.length > 280 ? `${source.text.slice(0, 280)}…` : source.text;
+            const snippet = source.text.length > 500 ? `${source.text.slice(0, 500)}…` : source.text;
             excerpt.textContent = ` ${snippet}`;
             sourceText.appendChild(excerpt);
         }

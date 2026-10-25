@@ -195,7 +195,7 @@ def _stream_prompt(
         yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
     logger.info("Query cited %s", [source["source"] for source in used])
     for source in used:
-        source["text"] = display_excerpt(source.get("text") or "", query)
+        source["text"] = display_excerpt(source.get("text") or "", query, reply)
     yield {"event": "sources", "data": {"sources": used}}
     yield {"event": "done", "data": {}}
 

@@ -739,18 +739,55 @@ def prompt_passage(text: str) -> str:
     return repair_pdf_spacing(text or "")
 
 
-def display_excerpt(text: str, query: str = "") -> str:
-    """Short clip for the source card. An example or a procedure starts at the worked lines."""
+def display_excerpt(text: str, query: str = "", answer: str = "") -> str:
+    """Clip the source card to the part of the chunk that matches the answer.
+
+    The window used to be the first 500 characters, which hid a filter that
+    started later in the same chunk.
+    """
     limit = 900 if asks_for_example(query) or asks_for_steps(query) else 500
     body = repair_pdf_spacing(text or "")
-    if not (asks_for_example(query) or asks_for_steps(query)):
-        return body[:limit]
-    match = re.search(r"example\s+\d+\s*:", body, re.IGNORECASE)
-    if not match:
-        match = re.search(r"contains\s+[\"“']|==", body, re.IGNORECASE)
-    if not match:
-        return body[:limit]
-    return body[match.start() : match.start() + limit].lstrip()
+    if not body:
+        return ""
+    start = _excerpt_start(body, answer, query)
+    return body[start : start + limit].lstrip()
+
+
+def _fold_match(text: str) -> str:
+    return (text or "").replace("−", "-").replace("–", "-").lower()
+
+
+def _excerpt_start(body: str, answer: str, query: str) -> int:
+    """Index where the card should open, just before the matching phrase."""
+    folded = _fold_match(body)
+    anchor = _answer_anchor(folded, _fold_match(answer))
+    if anchor is None and (asks_for_example(query) or asks_for_steps(query)):
+        match = re.search(r"example\s+\d+\s*:", folded)
+        if not match:
+            match = re.search(r"contains\s+[\"“']|==", folded)
+        if match:
+            anchor = match.start()
+    if not anchor:
+        return 0
+    return max(0, anchor - 40)
+
+
+def _answer_anchor(body: str, answer: str) -> int | None:
+    """Where the longest answer phrase sits in the chunk."""
+    spans = [span.strip() for span in re.split(r"(?<=[.!?])\s+|\n+", answer or "")]
+    spans += re.findall(r"\([^()]{0,160}\)", answer or "")
+    spans += re.findall(r"-?\d+(?:[.,]\d+)?\s*(?:dbtp|lufs|lkfs|lu)\b", answer or "")
+    best_at = None
+    best_len = 7
+    for span in spans:
+        compact = " ".join(span.split())
+        if len(compact) <= best_len:
+            continue
+        at = body.find(compact)
+        if at >= 0:
+            best_at = at
+            best_len = len(compact)
+    return best_at
 
 
 def repair_pdf_spacing(text: str) -> str:
