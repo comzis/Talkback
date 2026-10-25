@@ -47,6 +47,33 @@ def test_the_prompt_answers_from_passages_or_general_knowledge():
     assert "dBTP" in text
 
 
+def test_spanish_loudness_keeps_its_citation_without_english_words():
+    passage = "Live programmes shall measure -23.0 LUFS with a tolerance of ±1.0LU."
+    answer = (
+        "Para un programa en directo, la sonoridad exigida es de -23.0 LUFS "
+        "con un margen de ±1.0 LU. [1]"
+    )
+    sources = [
+        {
+            "number": 1,
+            "source": "TechnicalDeliveryStandardsBBCLive.pdf",
+            "text": passage,
+            "page": "16",
+        }
+    ]
+    kept = prompts.supporting_sources(answer, sources)
+    assert [item["page"] for item in kept] == ["16"]
+    wrong = [
+        {
+            "number": 1,
+            "source": "notes.pdf",
+            "text": "Stereo line-up tone.",
+            "page": "17",
+        }
+    ]
+    assert prompts.supporting_sources(answer, wrong) == []
+
+
 def test_a_citation_is_dropped_when_the_passage_lacks_the_number():
     sources = [
         {

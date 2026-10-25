@@ -528,22 +528,6 @@ def cited_source_indexes(text: str) -> list[int]:
     return indexes
 
 
-def _has_word(haystack: str, word: str) -> bool:
-    return re.search(rf"\b{re.escape(word)}\b", haystack) is not None
-
-
-def _excerpt_supports(answer: str, text: str) -> bool:
-    """True when the reply repeats distinctive wording from one excerpt."""
-    cleaned = strip_citations(answer).lower()
-    words = [
-        word
-        for word in _WORD.findall((text or "").lower())
-        if word not in _STOP and len(word) >= 5
-    ]
-    hits = sum(1 for word in dict.fromkeys(words) if _has_word(cleaned, word))
-    return hits >= 2
-
-
 _FENCE = re.compile(r"```[a-z]*\n?([\s\S]*?)```", re.IGNORECASE)
 _INLINE = re.compile(r"`([^`]{2,120})`")
 _COMPARE = re.compile(
@@ -936,26 +920,59 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
     return cleaned
 
 
-def _answer_numbers(text: str) -> list[str]:
-    """Numbers written in the reply, ignoring citation markers."""
-    return re.findall(r"\d+(?:[.,]\d+)?", strip_citations(text))
+_UNIT_TOKEN = re.compile(r"\b(?:dBTP|dBFS|LUFS|LKFS|dB|LU)\b", re.IGNORECASE)
+_FILE_TOKEN = re.compile(
+    r"\b[\w.-]+\.(?:pdf|ini|txt|ya?ml|cfg|conf|json|csv)\b",
+    re.IGNORECASE,
+)
+_MEASURE_TOKEN = re.compile(r"\b\d+(?:[.,]\d+)+\b|\b\d{2,}\b")
 
 
-def _number_missing(answer: str, passage: str) -> bool:
-    """True when the reply states a number the cited passage does not contain."""
-    have = {
-        item.replace(",", ".") for item in re.findall(r"\d+(?:[.,]\d+)?", passage or "")
-    }
-    for number in _answer_numbers(answer):
-        if number.replace(",", ".") not in have:
+def _compact(text: str) -> str:
+    folded = (text or "").replace("−", "-").replace("–", "-").replace(",", ".")
+    return re.sub(r"\s+", "", folded).casefold()
+
+
+def _loosen(text: str) -> str:
+    """Separate a number glued to a unit, as in 1.0LU or -1dBTP."""
+    folded = (text or "").replace("−", "-").replace("–", "-").replace(",", ".")
+    folded = folded.casefold()
+    folded = re.sub(r"(?<=\d)(?=[a-z])", " ", folded)
+    return re.sub(r"(?<=[a-z])(?=\d)", " ", folded)
+
+
+def _has_bounded(passage: str, token: str) -> bool:
+    needle = token.replace("−", "-").replace(",", ".").casefold()
+    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", _loosen(passage)) is not None
+
+
+def _claim_tokens(text: str) -> list[tuple[str, str]]:
+    """Numbers, units, filters, comparisons, and file names. Not ordinary words."""
+    body = strip_citations(text)
+    found: list[tuple[str, str]] = []
+    for pattern in (_MEASURE_TOKEN, _UNIT_TOKEN, _FILE_TOKEN):
+        found.extend(("plain", match.group(0)) for match in pattern.finditer(body))
+    for pattern in (_FILTER_SPAN, _COMPARE):
+        found.extend(("code", match.group(0)) for match in pattern.finditer(body))
+    return found
+
+
+def _tokens_missing(answer: str, passage: str) -> bool:
+    """True when a language-independent token in the reply is absent from the passage."""
+    for kind, token in _claim_tokens(answer):
+        if kind == "code":
+            if _compact(token) not in _compact(passage):
+                return True
+        elif not _has_bounded(passage, token):
             return True
     return False
 
 
 def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
-    """Keep the passages the reply cites when their wording supports it.
+    """Keep the passages the reply cites when their figures and names match.
 
-    A reply that never writes a source number is not given one afterwards.
+    Word overlap is not used. A reply that never writes a source number is not
+    given one afterwards.
     """
     if not answer or _REFUSAL.search(answer):
         return []
@@ -965,10 +982,7 @@ def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
     chosen = []
     for number in cited:
         source = dict(sources[number - 1])
-        passage = source.get("text", "")
-        if _number_missing(answer, passage):
-            continue
-        if not _excerpt_supports(answer, passage):
+        if _tokens_missing(answer, source.get("text", "")):
             continue
         source["number"] = number
         chosen.append(source)
