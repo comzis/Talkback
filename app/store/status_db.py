@@ -6,6 +6,7 @@ the same rule as classify_stored_chunks, so a finished library is not embedded a
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from collections import Counter
@@ -28,6 +29,29 @@ CREATE TABLE IF NOT EXISTS file_status (
 )
 """
 
+_LOCK_SCHEMA = """
+CREATE TABLE IF NOT EXISTS run_lock (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    holder TEXT NOT NULL,
+    heartbeat REAL NOT NULL
+)
+"""
+
+_REQUEST_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ingest_request (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    kind TEXT NOT NULL,
+    requested_at REAL NOT NULL
+)
+"""
+
+_JOB_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ingest_job (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    payload TEXT NOT NULL
+)
+"""
+
 
 class StatusStore:
     def __init__(self, path: Path) -> None:
@@ -38,10 +62,14 @@ class StatusStore:
         if self._db is not None:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(self.path)
+        self._db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         self._db.row_factory = sqlite3.Row
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute("PRAGMA busy_timeout=5000")
         self._db.execute(_SCHEMA)
-        self._db.commit()
+        self._db.execute(_LOCK_SCHEMA)
+        self._db.execute(_REQUEST_SCHEMA)
+        self._db.execute(_JOB_SCHEMA)
 
     def close(self) -> None:
         if self._db is not None:
@@ -206,6 +234,126 @@ class StatusStore:
             "SELECT * FROM file_status WHERE status = 'failed' ORDER BY item_id"
         )
         return [dict(row) for row in rows]
+
+    def try_lock(self, holder: str, stale_after: float = 30) -> bool:
+        """Take the single run lock. A quiet holder is replaced so a crash can recover."""
+        now = time.time()
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT holder, heartbeat FROM run_lock WHERE id = 1"
+            ).fetchone()
+            if (
+                row is not None
+                and row["holder"] != holder
+                and now - float(row["heartbeat"]) < stale_after
+            ):
+                conn.rollback()
+                return False
+            conn.execute(
+                """
+                INSERT INTO run_lock (id, holder, heartbeat) VALUES (1, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    holder = excluded.holder,
+                    heartbeat = excluded.heartbeat
+                """,
+                (holder, now),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+
+    def refresh_lock(self, holder: str) -> bool:
+        cur = self._conn().execute(
+            "UPDATE run_lock SET heartbeat = ? WHERE id = 1 AND holder = ?",
+            (time.time(), holder),
+        )
+        return cur.rowcount == 1
+
+    def unlock(self, holder: str) -> None:
+        self._conn().execute(
+            "DELETE FROM run_lock WHERE id = 1 AND holder = ?", (holder,)
+        )
+
+    def lock_held(self, stale_after: float = 30) -> bool:
+        row = (
+            self._conn()
+            .execute("SELECT heartbeat FROM run_lock WHERE id = 1")
+            .fetchone()
+        )
+        if row is None:
+            return False
+        return time.time() - float(row["heartbeat"]) < stale_after
+
+    def request_run(self, kind: str) -> None:
+        """Remember one waiting run. A rebuild replaces an incremental request."""
+        if kind not in {"incremental", "rebuild"}:
+            raise ValueError(kind)
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT kind FROM ingest_request WHERE id = 1"
+            ).fetchone()
+            if row is not None and row["kind"] == "rebuild":
+                kind = "rebuild"
+            conn.execute(
+                """
+                INSERT INTO ingest_request (id, kind, requested_at) VALUES (1, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    kind = excluded.kind,
+                    requested_at = excluded.requested_at
+                """,
+                (kind, time.time()),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    def peek_request(self) -> str | None:
+        row = (
+            self._conn()
+            .execute("SELECT kind FROM ingest_request WHERE id = 1")
+            .fetchone()
+        )
+        return None if row is None else str(row["kind"])
+
+    def take_request(self) -> str | None:
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT kind FROM ingest_request WHERE id = 1"
+            ).fetchone()
+            conn.execute("DELETE FROM ingest_request WHERE id = 1")
+            conn.commit()
+            return None if row is None else str(row["kind"])
+        except Exception:
+            conn.rollback()
+            raise
+
+    def write_job(self, payload: dict) -> None:
+        self._conn().execute(
+            """
+            INSERT INTO ingest_job (id, payload) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET payload = excluded.payload
+            """,
+            (json.dumps(payload),),
+        )
+
+    def read_job(self) -> dict | None:
+        row = (
+            self._conn()
+            .execute("SELECT payload FROM ingest_job WHERE id = 1")
+            .fetchone()
+        )
+        if row is None:
+            return None
+        return json.loads(row["payload"])
 
     def _upsert(
         self,

@@ -1,5 +1,6 @@
 """File status follows the chunk rules and does not re-embed a finished file."""
 
+import time
 from pathlib import Path
 
 from ingestion.plan import index_plan
@@ -111,3 +112,40 @@ def test_rebuild_replaces_the_table(tmp_path: Path):
     store.rebuild([_finished("new.pdf", (4, "2024-06-02", 11))])
     assert store.get("filesystem", "old.pdf") is None
     assert store.get("filesystem", "new.pdf")["status"] == "complete"
+
+
+def test_one_lock_row_lets_a_single_run_proceed(tmp_path: Path):
+    first = _store(tmp_path)
+    second = StatusStore(first.path)
+    second.open()
+    assert first.try_lock("api")
+    assert not second.try_lock("worker")
+    assert second.lock_held()
+    assert first.refresh_lock("api")
+    assert not second.refresh_lock("worker")
+    first.unlock("api")
+    assert not first.lock_held()
+    assert second.try_lock("worker")
+    second.unlock("worker")
+
+
+def test_a_quiet_lock_can_be_taken_over(tmp_path: Path):
+    store = _store(tmp_path)
+    store.try_lock("crashed")
+    store._conn().execute(
+        "UPDATE run_lock SET heartbeat = ? WHERE id = 1", (time.time() - 60,)
+    )
+    assert store.try_lock("worker", stale_after=30)
+    assert store.refresh_lock("worker")
+
+
+def test_a_rebuild_request_replaces_an_incremental_one(tmp_path: Path):
+    store = _store(tmp_path)
+    store.request_run("incremental")
+    store.request_run("rebuild")
+    store.request_run("incremental")
+    assert store.peek_request() == "rebuild"
+    assert store.take_request() == "rebuild"
+    assert store.peek_request() is None
+    store.write_job({"status": "processing", "message": "Checking the library..."})
+    assert store.read_job()["message"] == "Checking the library..."
