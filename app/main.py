@@ -18,6 +18,7 @@ import asyncio
 import config
 import store.embeddings as embeddings
 import engine
+import store.chroma as vectors
 from sources.filesystem import (
     InvalidFilename,
     get_file_type,
@@ -531,7 +532,7 @@ async def select_llm_model(request: LLMSelectRequest):
                     thinking=config.ollama_think(),
                 )
                 os.environ["OLLAMA_MODEL"] = request.model
-                engine.cached_index = None
+                vectors.cached_index = None
 
                 logger.info(f"Switched LLM model to: {request.model}")
 
