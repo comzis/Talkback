@@ -28,9 +28,8 @@ DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 DEFAULT_RERANK_CANDIDATES = 20
 # Token cap for each query-passage pair. The forward pass does not see more.
 DEFAULT_RERANK_MAX_LENGTH = 512
-# Main-set top logits after that reranker. Correct pages landed as low as
-# about -7.4, and the unrelated SRT draft scored about -5.2, above several
-# correct pages. -7.5 keeps every main-set library question on the library path.
+# Logged only. It does not choose the path. Correct pages landed as low as
+# about -7.4, and the unrelated SRT draft scored about -5.2.
 DEFAULT_RERANK_THRESHOLD = -7.5
 
 

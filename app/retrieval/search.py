@@ -8,7 +8,6 @@ import re
 from llama_index.core import VectorStoreIndex
 
 import config
-import store.embeddings as embeddings
 from ingestion.plan import balance_matches
 from llm.prompts import (
     asks_for_example,
@@ -108,13 +107,21 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
     if named:
         pinned = _retrieve_named(index, query, named, candidates)
         if pinned:
-            return balance_matches(
-                _order_nodes(pinned, query), per_file=per_file, limit=limit
-            ), True
+            ordered = _order_nodes(pinned, query)
+            _log_rerank(ordered)
+            return balance_matches(ordered, per_file=per_file, limit=limit), True
     nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
-    return balance_matches(
-        _order_nodes(nodes, query), per_file=per_file, limit=limit
-    ), False
+    ordered = _order_nodes(nodes, query)
+    _log_rerank(ordered)
+    return balance_matches(ordered, per_file=per_file, limit=limit), False
+
+
+def _log_rerank(nodes) -> None:
+    """The logit is recorded. It does not choose the answer path."""
+    score = best_rerank_score(nodes)
+    if score is None:
+        return
+    logger.info("Reranker score %.3f", score)
 
 
 def _order_nodes(nodes, query: str):
@@ -140,12 +147,3 @@ def _retrieve_named(index: VectorStoreIndex, query: str, names: list[str], top_k
         similarity_top_k=top_k,
         filters=filters,
     ).retrieve(query)
-
-
-def _library_matches(nodes) -> bool:
-    """The reranker logit decides the path. Similarity is the fallback."""
-    rerank_score = best_rerank_score(nodes)
-    if rerank_score is not None:
-        return rerank_score >= config.rerank_threshold()
-    scores = [getattr(node, "score", None) for node in nodes]
-    return embeddings.relevant_enough(scores, config.relevance_threshold())

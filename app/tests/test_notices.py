@@ -38,6 +38,28 @@ def test_notices_and_fallbacks_follow_the_question_language():
     )
 
 
+def test_the_prompt_answers_from_passages_or_general_knowledge():
+    text = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "answer from them" in text
+    assert "general knowledge" in text
+    assert "square brackets" in text
+    assert "Do not invent a measurement" in text
+    assert "dBTP" in text
+
+
+def test_a_citation_is_dropped_when_the_passage_lacks_the_number():
+    sources = [
+        {
+            "number": 1,
+            "source": "wire.pdf",
+            "text": "Wireshark captures packets on a network.",
+        }
+    ]
+    assert (
+        prompts.supporting_sources("The outage lasted 10 minutes. [1]", sources) == []
+    )
+
+
 def test_a_first_question_keeps_the_standing_notice():
     assert (
         prompts.notice_for_general(

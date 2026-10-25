@@ -30,7 +30,7 @@
     "query": "Draft a short incident update for a 10-minute SRT outage. Use placeholders for the cause, times and next steps.",
     "path": "general",
     "pages": [],
-    "notice": "No matching documents found; answering generally.",
+    "notice": "This answer is not from the documents and may not match them.",
     "placeholders": true
   },
   {

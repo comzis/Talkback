@@ -496,9 +496,10 @@ def explanation_prompt(
         "Keep file names and quoted text in their original language.\n"
         f"The library contains: {names}.\n"
         "If the user pasted a passage, explain that text in plain language and walk through the lines.\n"
-        "Answer from the library excerpts below. Do not add facts from outside those excerpts.\n"
-        "End the answer with the excerpt number in brackets, such as [1].\n"
-        "If the excerpts do not contain the answer, say that the library does not cover it and do not cite a number.\n"
+        "If the excerpts answer the question, answer from them and end with the excerpt number in brackets, such as [1].\n"
+        "If they do not answer the question, answer from general knowledge and do not cite the excerpts. "
+        "Do not invent a measurement. Never write a dBTP, LUFS, LU, or dB figure unless the excerpts answer the question and contain that figure. "
+        "When the user asked for placeholders, write each one in square brackets.\n"
         f"{shape}\n"
         f"{format_history(history)}"
         f"Library excerpts:\n{shown}\n\n"
@@ -935,22 +936,43 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
     return cleaned
 
 
+def _answer_numbers(text: str) -> list[str]:
+    """Numbers written in the reply, ignoring citation markers."""
+    return re.findall(r"\d+(?:[.,]\d+)?", strip_citations(text))
+
+
+def _number_missing(answer: str, passage: str) -> bool:
+    """True when the reply states a number the cited passage does not contain."""
+    have = {
+        item.replace(",", ".") for item in re.findall(r"\d+(?:[.,]\d+)?", passage or "")
+    }
+    for number in _answer_numbers(answer):
+        if number.replace(",", ".") not in have:
+            return True
+    return False
+
+
 def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
-    """Keep excerpts whose wording the reply uses, preferring numbers it cited."""
+    """Keep the passages the reply cites when their wording supports it.
+
+    A reply that never writes a source number is not given one afterwards.
+    """
     if not answer or _REFUSAL.search(answer):
         return []
     cited = [
         number for number in cited_source_indexes(answer) if 1 <= number <= len(sources)
     ]
-    pool = cited or list(range(1, len(sources) + 1))
     chosen = []
-    for number in pool:
+    for number in cited:
         source = dict(sources[number - 1])
-        if not _excerpt_supports(answer, source.get("text", "")):
+        passage = source.get("text", "")
+        if _number_missing(answer, passage):
+            continue
+        if not _excerpt_supports(answer, passage):
             continue
         source["number"] = number
         chosen.append(source)
-    return chosen[:2] if not cited else chosen
+    return chosen
 
 
 def source_label(source: dict) -> str:

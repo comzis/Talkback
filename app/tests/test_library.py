@@ -336,7 +336,7 @@ class PromptTests(unittest.TestCase):
             "Inlock keeps enterprise data completely private.",
             sources,
         )
-        self.assertEqual([item["number"] for item in uncited], [1])
+        self.assertEqual(uncited, [])
         self.assertEqual(
             prompts.library_miss("I think it is Paris."),
             "The library does not cover that.",

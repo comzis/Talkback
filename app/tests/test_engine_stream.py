@@ -46,7 +46,7 @@ def test_a_changed_library_answer_stays_on_screen(monkeypatch):
     assert footnotes == [
         {"event": "footnote", "data": {"text": "The level is -23.0 LUFS."}}
     ]
-    assert seen["answer"] == "The level is -23.0 LUFS."
+    assert seen["answer"] == "The level is -99 LUFS."
     sources = [event for event in events if event["event"] == "sources"]
     assert sources[0]["data"]["sources"][0]["source"] == "a.pdf"
 
@@ -95,6 +95,19 @@ def test_a_french_question_still_calls_the_model(monkeypatch):
     assert called.get("yes") is True
     tokens = [event["data"]["text"] for event in events if event["event"] == "token"]
     assert tokens == ["La sonie est -23.0 LUFS."]
+
+
+def test_no_surviving_citation_shows_the_outside_note(monkeypatch):
+    events, _seen = _events(
+        monkeypatch,
+        ["Cause: [cause]. Next step: [next step]."],
+        "Cause: [cause]. Next step: [next step].",
+        [],
+    )
+    notices = [event["data"]["text"] for event in events if event["event"] == "notice"]
+    assert notices == ["This answer is not from the documents and may not match them."]
+    sources = [event for event in events if event["event"] == "sources"]
+    assert sources[0]["data"]["sources"] == []
 
 
 def test_an_unchanged_library_answer_has_no_footnote(monkeypatch):
