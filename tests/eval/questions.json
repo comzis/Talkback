@@ -20,7 +20,8 @@
     "query": "¿Qué módulos de Ansible se usan para configurar equipos de red?",
     "path": "library",
     "file": "Ansible_Network_Automation_1744044240.pdf",
-    "page": "6",
+    "pages": ["4", "6"],
+    "language": "es",
     "answer_contains": ["ios_config"]
   },
   {

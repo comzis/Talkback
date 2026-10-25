@@ -30,19 +30,42 @@ def test_cases_cover_the_four_demo_questions():
     }
     assert cases["bbc-loudness"]["page"] == "16"
     assert cases["icmp-filter"]["page"] == "34"
-    assert cases["ansible-modules"]["page"] == "6"
+    assert cases["ansible-modules"]["pages"] == ["4", "6"]
+    assert cases["ansible-modules"]["language"] == "es"
     assert "ios_config" in cases["ansible-modules"]["answer_contains"]
     assert cases["srt-outage"]["path"] == "general"
 
 
 def test_library_case_requires_the_expected_page():
-    case = runner.load_cases()[2]
+    case = runner.load_cases()[0]
     events = [
+        _token("The level is -23.0 LUFS, tolerance 1.0 LU."),
+        _source("TechnicalDeliveryStandardsBBCLive.pdf", "4"),
+        {"event": "done", "data": {}},
+    ]
+    assert runner.judge(case, events) == ["page was ['4'], expected 16"]
+
+
+def test_ansible_accepts_page_4_or_6_in_spanish():
+    case = runner.load_cases()[2]
+    spanish = [
         _token("El módulo es ios_config."),
         _source("Ansible_Network_Automation_1744044240.pdf", "4"),
         {"event": "done", "data": {}},
     ]
-    assert runner.judge(case, events) == ["page was ['4'], expected 6"]
+    assert runner.judge(case, spanish) == []
+    english = [
+        _token("The module is ios_config."),
+        _source("Ansible_Network_Automation_1744044240.pdf", "6"),
+        {"event": "done", "data": {}},
+    ]
+    assert runner.judge(case, english) == ["answer was not in Spanish"]
+    other_page = [
+        _token("El módulo es ios_config."),
+        _source("Ansible_Network_Automation_1744044240.pdf", "5"),
+        {"event": "done", "data": {}},
+    ]
+    assert runner.judge(case, other_page) == ["page was ['5'], expected 4 or 6"]
 
 
 def test_general_case_requires_the_notice_and_a_placeholder():
@@ -69,7 +92,7 @@ def test_repeated_runs_keep_every_cited_page():
         _source("Ansible_Network_Automation_1744044240.pdf", "4"),
     ]
     passed, lines = runner.summarise(case, [page_four, page_six, page_six])
-    assert passed == 2
-    assert lines[0] == "2/3  ansible-modules  pages seen: 4, 6"
+    assert passed == 3
+    assert lines[0] == "3/3  ansible-modules  pages seen: 4, 6"
     assert "p. 4" in lines[1]
     assert "p. 6" in lines[2]

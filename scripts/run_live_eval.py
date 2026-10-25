@@ -21,6 +21,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "tests" / "eval" / "questions.json"
 PLACEHOLDER = re.compile(r"\[[^\[\]]{2,}\]")
+SPANISH = re.compile(
+    r"[áéíóúüñ¿¡]|\b(?:los|las|del|para|que|módulos?|modulos?|configurar|equipos)\b",
+    re.IGNORECASE,
+)
 
 
 def load_cases(path: Path = CASES) -> list[dict]:
@@ -79,13 +83,17 @@ def judge(case: dict, events: list[dict]) -> list[str]:
         else:
             files = {source.get("source") or source.get("path") for source in sources}
             pages = {str(source.get("page")) for source in sources}
+            expected = _expected_pages(case)
             if case["file"] not in files:
                 problems.append(f"file was {sorted(files)}, expected {case['file']}")
-            if case["page"] not in pages:
-                problems.append(f"page was {sorted(pages)}, expected {case['page']}")
+            if not set(expected) & pages:
+                label = " or ".join(expected)
+                problems.append(f"page was {sorted(pages)}, expected {label}")
         for needle in case.get("answer_contains") or []:
             if needle.replace("−", "-") not in answer:
                 problems.append(f"answer omitted {needle}")
+        if case.get("language") == "es" and not SPANISH.search(answer):
+            problems.append("answer was not in Spanish")
     elif case["path"] == "general":
         if case["notice"] not in notices:
             problems.append("missing the general-path notice")
@@ -96,6 +104,13 @@ def judge(case: dict, events: list[dict]) -> list[str]:
     else:
         problems.append(f"unknown path {case['path']}")
     return problems
+
+
+def _expected_pages(case: dict) -> list[str]:
+    raw = case.get("pages", case.get("page"))
+    if isinstance(raw, str):
+        return [raw]
+    return [str(page) for page in raw]
 
 
 def cited_pages(events: list[dict]) -> list[str]:
