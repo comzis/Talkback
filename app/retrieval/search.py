@@ -6,7 +6,6 @@ import logging
 import re
 
 from llama_index.core import VectorStoreIndex
-from llama_index.core.retrievers import BaseRetriever
 
 import config
 import store.embeddings as embeddings
@@ -20,29 +19,6 @@ from llm.prompts import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class BalancedRetriever(BaseRetriever):
-    """Retrieve across the library instead of letting one large file fill every slot."""
-
-    def __init__(
-        self,
-        index: VectorStoreIndex,
-        candidate_k: int = 12,
-        per_file: int = 2,
-        limit: int = 4,
-    ):
-        self._inner = index.as_retriever(similarity_top_k=candidate_k)
-        self._per_file = per_file
-        self._limit = limit
-        super().__init__()
-
-    def _retrieve(self, query_bundle):
-        return balance_matches(
-            self._inner.retrieve(query_bundle),
-            per_file=self._per_file,
-            limit=self._limit,
-        )
 
 
 def _source_record(node, number: int, query: str = "") -> dict:
