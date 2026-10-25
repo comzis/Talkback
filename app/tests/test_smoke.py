@@ -16,8 +16,10 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     monkeypatch.setenv("OLLAMA_MODEL", "fake-model")
     monkeypatch.setenv("CHROMA_HOST", "memory")
     monkeypatch.setenv("CHROMA_PORT", "8000")
-    monkeypatch.setenv("RAG_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("STATUS_DIR", str(tmp_path / "status"))
+    library = tmp_path / "library"
+    library.mkdir()
+    monkeypatch.setenv("RAG_DATA_DIR", str(library))
+    monkeypatch.setenv("STATUS_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("OFFLINE_MODE", "true")
     monkeypatch.setenv("LIBRARY_READ_ONLY", "true")
     monkeypatch.delenv("REINDEX_INTERVAL_MINUTES", raising=False)
@@ -68,10 +70,10 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     assert get().chroma_collection.count() == 0
     assert status == "completed"
 
-    (tmp_path / "bad.txt").write_text("unreadable", encoding="utf-8")
+    (library / "bad.txt").write_text("unreadable", encoding="utf-8")
     from store.status_db import StatusStore
 
-    StatusStore(tmp_path / "status" / "library.sqlite").mark_failed(
+    StatusStore(tmp_path / "state" / "library.sqlite").mark_failed(
         "filesystem", "bad.txt", "No readable text"
     )
     listed = TestClient(api_app.app).get("/files")
