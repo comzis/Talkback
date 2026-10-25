@@ -9,7 +9,7 @@ import os
 
 import config
 import embeddings
-import files
+import sources.filesystem as files
 import library
 import progress
 import llm.prompts as prompts

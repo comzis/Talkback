@@ -18,7 +18,7 @@ import asyncio
 import config
 import embeddings
 import engine
-from files import (
+from sources.filesystem import (
     InvalidFilename,
     get_file_type,
     safe_relative_path,

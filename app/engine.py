@@ -26,7 +26,7 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 
 import config
 import embeddings
-from files import visible_files
+from sources.filesystem import visible_files
 from library import (
     balance_matches,
     chunk_belongs_to,
