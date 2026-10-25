@@ -98,6 +98,13 @@ def test_failed_extraction_is_shown_and_retried(tmp_path: Path):
     assert "bad.pdf" in embed and "bad.pdf" in drop
 
 
+def test_clear_lets_the_next_pass_embed_again(tmp_path: Path):
+    store = _store(tmp_path)
+    store.mark_complete("filesystem", "done.pdf", (4, "2024-06-02", 11), 1)
+    store.clear()
+    assert store.empty()
+
+
 def test_rebuild_replaces_the_table(tmp_path: Path):
     store = _store(tmp_path)
     store.mark_failed("filesystem", "old.pdf", "gone")

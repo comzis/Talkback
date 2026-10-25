@@ -63,6 +63,12 @@ class StatusStore:
             return
         self._write_chunks(metadatas)
 
+    def clear(self) -> None:
+        """Drop every row. A full re-index then embeds the library again."""
+        conn = self._conn()
+        conn.execute("DELETE FROM file_status")
+        conn.commit()
+
     def rebuild(self, metadatas: list[dict | None]) -> None:
         """Replace the table with what the index holds now."""
         conn = self._conn()

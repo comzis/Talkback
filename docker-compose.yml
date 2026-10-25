@@ -24,6 +24,7 @@ services:
       #   REINDEX_INTERVAL_MINUTES=30
       - /Users/comzis/TalkbackDemo:/app/data:ro
       - ./hf_cache:/home/appuser/.cache
+      - ./status:/app/status
     container_name: rag_api_service
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -21,11 +21,11 @@ from state import get
 from store.chroma import (
     collection_count,
     delete_chunks_for_file,
-    indexed_documents,
     mark_file_complete,
     reindex_required,
     replace_vector_collection,
 )
+from store.status_db import StatusStore
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,7 @@ def rebuild_library() -> None:
     """Replace every vector with the current embedding model, then clear the block."""
     get().needs_reindex = True
     replace_vector_collection()
+    open_status().clear()
     get().needs_reindex = True
     process_ingestion()
     if get().ingestion_status.get("status") == "error":
@@ -194,9 +195,24 @@ def process_ingestion() -> None:
             return
 
 
+def open_status() -> StatusStore:
+    """The local status file. It is not stored on the library share."""
+    store = StatusStore(get().status_dir / "library.sqlite")
+    store.open()
+    return store
+
+
+def _chunk_metadatas() -> list:
+    if get().chroma_collection is None or collection_count() == 0:
+        return []
+    stored = get().chroma_collection.get(include=["metadatas"])
+    return stored.get("metadatas") or []
+
+
 def _ingest_once() -> None:
     """Add new or changed files without dropping documents already indexed."""
     logger.info("Ingestion started for %s", get().upload_dir)
+    status: StatusStore | None = None
     try:
         wait_for_models()
         started = time.time()
@@ -206,10 +222,13 @@ def _ingest_once() -> None:
         get().ingestion_status["progress"] = 10
 
         source = filesystem_source()
+        status = open_status()
+        if status.empty():
+            status.migrate(_chunk_metadatas())
         items = source.list_items()
         by_key = {item.id: item for item in items}
         on_disk = {item.id: disk_signature(Path(item.location)) for item in items}
-        indexed, legacy_keys, incomplete_keys = indexed_documents()
+        indexed, legacy_keys, incomplete_keys = status.planning_sets()
         embed_names, drop_names = index_plan(
             on_disk, indexed, legacy_keys, incomplete_keys
         )
@@ -228,6 +247,7 @@ def _ingest_once() -> None:
 
         for name in drop_names:
             delete_chunks_for_file(name)
+            status.forget(source.source_type, name)
 
         if not embed_names:
             message = (
@@ -256,6 +276,8 @@ def _ingest_once() -> None:
                 document.metadata["source_mtime"] = int(file_path.stat().st_mtime)
 
         if not documents:
+            for name in embed_names:
+                status.mark_failed(source.source_type, name, "No readable text")
             _finish_kept(
                 started,
                 "No readable text in the new files. Existing documents were kept.",
@@ -289,7 +311,9 @@ def _ingest_once() -> None:
         for name in embed_names:
             file_nodes = nodes_by_file.get(name, [])
             if not file_nodes:
+                status.mark_failed(source.source_type, name, "No readable text")
                 continue
+            status.mark_pending(source.source_type, name)
             get().ingestion_status["current_file"] = name
             for offset in range(0, len(file_nodes), batch_size):
                 batch = file_nodes[offset : offset + batch_size]
@@ -305,6 +329,9 @@ def _ingest_once() -> None:
                 )
                 _touch_resources()
             mark_file_complete(name)
+            status.mark_complete(
+                source.source_type, name, on_disk[name], len(file_nodes)
+            )
             completed_files += 1
             get().ingestion_status["processed_files"] = completed_files
 
@@ -335,6 +362,8 @@ def _ingest_once() -> None:
             library_total,
         )
     except Exception as exc:
+        if status is not None:
+            status.fail_pending("Ingestion failed")
         logger.exception("Ingestion failed")
         get().ingestion_status["status"] = "error"
         get().ingestion_status["message"] = "Ingestion failed"

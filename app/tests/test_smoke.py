@@ -17,6 +17,7 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     monkeypatch.setenv("CHROMA_HOST", "memory")
     monkeypatch.setenv("CHROMA_PORT", "8000")
     monkeypatch.setenv("RAG_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("STATUS_DIR", str(tmp_path / "status"))
     monkeypatch.setenv("OFFLINE_MODE", "true")
     monkeypatch.setenv("LIBRARY_READ_ONLY", "true")
     monkeypatch.delenv("REINDEX_INTERVAL_MINUTES", raising=False)
