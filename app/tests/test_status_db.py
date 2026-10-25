@@ -114,6 +114,16 @@ def test_rebuild_replaces_the_table(tmp_path: Path):
     assert store.get("filesystem", "new.pdf")["status"] == "complete"
 
 
+def test_the_store_closes_when_the_loop_releases_it(tmp_path: Path):
+    store = _store(tmp_path)
+    store.request_run("incremental")
+    store.close()
+    assert store._db is None
+    with store:
+        assert store.peek_request() == "incremental"
+    assert store._db is None
+
+
 def test_one_lock_row_lets_a_single_run_proceed(tmp_path: Path):
     first = _store(tmp_path)
     second = StatusStore(first.path)

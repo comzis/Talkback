@@ -76,6 +76,13 @@ class StatusStore:
             self._db.close()
             self._db = None
 
+    def __enter__(self) -> StatusStore:
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
     def _conn(self) -> sqlite3.Connection:
         self.open()
         assert self._db is not None

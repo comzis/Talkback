@@ -65,14 +65,17 @@ def main() -> None:
 
     while True:
         time.sleep(2)
-        store = open_status()
-        kind = next_kind(store)
-        if kind is None:
-            continue
-        if not begin_ingestion():
-            continue
+        started = False
         try:
-            kind = store.take_request()
+            with open_status() as store:
+                kind = next_kind(store)
+                if kind is not None and begin_ingestion():
+                    started = True
+                    kind = store.take_request()
+                else:
+                    kind = None
+            if not started:
+                continue
             if kind == "rebuild":
                 logger.info("Full re-index requested.")
                 rebuild_library()
@@ -80,7 +83,8 @@ def main() -> None:
                 logger.info("Incremental index requested.")
                 process_ingestion()
         finally:
-            finish_ingestion()
+            if started:
+                finish_ingestion()
 
 
 if __name__ == "__main__":
