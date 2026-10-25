@@ -14,29 +14,21 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 import config
 import store.embeddings as embeddings
 from ingestion.plan import chunk_belongs_to, classify_stored_chunks
+from state import get
 
 logger = logging.getLogger(__name__)
-
-db = None
-chroma_collection = None
-vector_store = None
-storage_context = None
-cached_index: VectorStoreIndex | None = None
-_reindex_required = False
 
 
 def reindex_required() -> bool:
     """True when stored vectors were embedded with a different model."""
-    return _reindex_required
+    return get().needs_reindex
 
 
 def _remember_collection(collection) -> None:
     """Keep the open collection and record whether its vectors match EMBED_MODEL."""
-    global db, chroma_collection, vector_store, storage_context, _reindex_required
-
     count = collection.count()
     current = config.embed_model_name()
-    _reindex_required = embeddings.full_reindex_required(
+    get().needs_reindex = embeddings.full_reindex_required(
         collection.metadata, count, current
     )
     if count == 0:
@@ -44,19 +36,19 @@ def _remember_collection(collection) -> None:
         if meta.get(embeddings.EMBED_META_KEY) != current:
             meta[embeddings.EMBED_META_KEY] = current
             collection.modify(metadata=meta)
-        _reindex_required = False
-    chroma_collection = collection
-    vector_store = ChromaVectorStore(chroma_collection=collection)
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+        get().needs_reindex = False
+    get().chroma_collection = collection
+    get().vector_store = ChromaVectorStore(chroma_collection=collection)
+    get().storage_context = StorageContext.from_defaults(
+        vector_store=get().vector_store
+    )
     logger.info(
-        "Embedding model %s. Full re-index required: %s", current, _reindex_required
+        "Embedding model %s. Full re-index required: %s", current, get().needs_reindex
     )
 
 
 def connect_chroma() -> None:
     """Retry until Chroma accepts a heartbeat, then open the library collection."""
-    global db
-
     host = os.getenv("CHROMA_HOST")
     port = int(os.getenv("CHROMA_PORT", "8000"))
     last_error: Exception | None = None
@@ -65,7 +57,7 @@ def connect_chroma() -> None:
             client = chromadb.HttpClient(host=host, port=port)
             client.heartbeat()
             collection = client.get_or_create_collection("rag_collection")
-            db = client
+            get().db = client
             _remember_collection(collection)
             logger.info("Connected to ChromaDB on attempt %s", attempt)
             return
@@ -80,74 +72,71 @@ def connect_chroma() -> None:
 
 
 def collection_count() -> int:
-    if chroma_collection is None:
+    if get().chroma_collection is None:
         return 0
-    return chroma_collection.count()
+    return get().chroma_collection.count()
 
 
 def get_or_create_cached_index() -> VectorStoreIndex:
-    global cached_index
-    if cached_index is not None:
-        return cached_index
+    if get().cached_index is not None:
+        return get().cached_index
     logger.info("Creating VectorStoreIndex from existing vector store for query")
-    cached_index = VectorStoreIndex.from_vector_store(
-        vector_store,
-        storage_context=storage_context,
+    get().cached_index = VectorStoreIndex.from_vector_store(
+        get().vector_store,
+        storage_context=get().storage_context,
     )
-    return cached_index
+    return get().cached_index
 
 
 def replace_vector_collection() -> None:
     """Drop stored vectors so the next ingest replaces the library."""
-    global cached_index
 
     try:
-        db.delete_collection("rag_collection")
+        get().db.delete_collection("rag_collection")
         logger.info("Removed existing rag_collection before re-ingest")
     except Exception as exc:
         logger.info("No existing rag_collection to remove: %s", exc)
 
-    collection = db.get_or_create_collection(
+    collection = get().db.get_or_create_collection(
         "rag_collection",
         metadata={embeddings.EMBED_META_KEY: config.embed_model_name()},
     )
-    cached_index = None
+    get().cached_index = None
     _remember_collection(collection)
 
 
 def indexed_documents() -> tuple[dict[str, tuple], set[str], set[str]]:
     """Return complete signatures, legacy paths, and files still missing a finished marker."""
-    if chroma_collection is None or collection_count() == 0:
+    if get().chroma_collection is None or collection_count() == 0:
         return {}, set(), set()
-    stored = chroma_collection.get(include=["metadatas"])
+    stored = get().chroma_collection.get(include=["metadatas"])
     return classify_stored_chunks(stored.get("metadatas") or [])
 
 
 def delete_chunks_for_file(relative_path: str) -> int:
     """Remove indexed chunks for one library path and drop the in-memory index."""
-    global cached_index
-    if chroma_collection is None:
+    if get().chroma_collection is None:
         return 0
     ids: set[str] = set()
-    direct = chroma_collection.get(where={"relative_path": relative_path})
+    direct = get().chroma_collection.get(where={"relative_path": relative_path})
     ids.update(direct.get("ids") or [])
-    named = chroma_collection.get(
+    named = get().chroma_collection.get(
         where={"file_name": Path(relative_path).name}, include=["metadatas"]
     )
     for chunk_id, metadata in zip(named.get("ids") or [], named.get("metadatas") or []):
         if chunk_belongs_to(metadata, relative_path):
             ids.add(chunk_id)
     if ids:
-        chroma_collection.delete(ids=list(ids))
-    cached_index = None
+        get().chroma_collection.delete(ids=list(ids))
+    get().cached_index = None
     return len(ids)
 
 
 def mark_file_complete(relative_path: str) -> None:
     """Stamp every stored chunk only after that file's batches have all been inserted."""
-    if chroma_collection is None:
+    if get().chroma_collection is None:
         raise RuntimeError("Chroma is not connected")
-    stored = chroma_collection.get(
+    stored = get().chroma_collection.get(
         where={"relative_path": relative_path}, include=["metadatas"]
     )
     ids = list(stored.get("ids") or [])
@@ -157,7 +146,7 @@ def mark_file_complete(relative_path: str) -> None:
     for meta in metas:
         meta["index_complete"] = True
     for offset in range(0, len(ids), 100):
-        chroma_collection.update(
+        get().chroma_collection.update(
             ids=ids[offset : offset + 100],
             metadatas=metas[offset : offset + 100],
         )

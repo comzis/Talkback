@@ -18,7 +18,7 @@ import asyncio
 import config
 import store.embeddings as embeddings
 import engine
-import store.chroma as vectors
+from state import get
 from sources.filesystem import (
     InvalidFilename,
     get_file_type,
@@ -49,6 +49,7 @@ async def disable_asset_cache(request, call_next):
 
 
 engine.init()
+app.state.talkback = get()
 engine.start_reindex_schedule()
 engine.start_initial_index()
 
@@ -119,7 +120,7 @@ async def get_ingestion_status():
     """
     Get the current status of document ingestion.
     """
-    return engine.ingestion_status
+    return get().ingestion_status
 
 
 @app.get("/system/resources")
@@ -265,7 +266,7 @@ async def get_system_status():
         )
 
     # Check ingestion status for warnings
-    if engine.ingestion_status.get("status") == "error":
+    if get().ingestion_status.get("status") == "error":
         status["alarms"].append(
             {"type": "warning", "component": "ingestion", "message": "Ingestion failed"}
         )
@@ -348,7 +349,7 @@ async def upload_files(
 
         uploaded_files = []
         for file, safe_name in named_files:
-            file_path = engine.UPLOAD_DIR / safe_name
+            file_path = get().upload_dir / safe_name
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             uploaded_files.append(safe_name)
@@ -388,8 +389,8 @@ async def delete_uploaded_file(filename: str):
     except InvalidFilename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    file_path = (engine.UPLOAD_DIR / relative).resolve()
-    root = engine.UPLOAD_DIR.resolve()
+    file_path = (get().upload_dir / relative).resolve()
+    root = get().upload_dir.resolve()
     if not file_path.is_relative_to(root):
         raise HTTPException(status_code=400, detail="Invalid filename")
     if not file_path.is_file():
@@ -412,8 +413,8 @@ async def list_uploaded_files():
     """
     try:
         files = []
-        for file_path in visible_files(engine.UPLOAD_DIR):
-            rel_path = file_path.relative_to(engine.UPLOAD_DIR).as_posix()
+        for file_path in visible_files(get().upload_dir):
+            rel_path = file_path.relative_to(get().upload_dir).as_posix()
             filename = Path(rel_path).name
             file_type = get_file_type(filename)
             files.append(
@@ -532,7 +533,7 @@ async def select_llm_model(request: LLMSelectRequest):
                     thinking=config.ollama_think(),
                 )
                 os.environ["OLLAMA_MODEL"] = request.model
-                vectors.cached_index = None
+                get().cached_index = None
 
                 logger.info(f"Switched LLM model to: {request.model}")
 

@@ -20,24 +20,21 @@ from store.chroma import (
     reindex_required,
 )
 from ingestion.pipeline import (
-    UPLOAD_DIR,
     begin_ingestion,
     files_waiting,
-    ingestion_status,
     process_ingestion,
     rebuild_library,
     start_initial_index,
     start_reindex_schedule,
 )
+from state import activate, get
 
 __all__ = [
-    "UPLOAD_DIR",
     "answer_query",
     "begin_ingestion",
     "collection_count",
     "delete_chunks_for_file",
     "files_waiting",
-    "ingestion_status",
     "init",
     "iter_answer",
     "library_read_only",
@@ -127,9 +124,10 @@ def init() -> None:
         raise ValueError(message)
 
     apply_offline_mode()
+    activate()
     torch.set_num_threads(config.torch_threads())
     logger.info("Torch CPU threads set to %s", config.torch_threads())
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    get().upload_dir.mkdir(parents=True, exist_ok=True)
     connect_chroma()
     threading.Thread(target=_warm_up, name="talkback-warmup", daemon=True).start()
 

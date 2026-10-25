@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 
 from llama_index.core import Settings
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
@@ -11,19 +10,18 @@ from llama_index.llms.ollama import Ollama
 
 import config
 import store.embeddings as embeddings
+from state import get
 
 logger = logging.getLogger(__name__)
 
-_models_ready = threading.Event()
-
 
 def models_ready() -> bool:
-    return _models_ready.is_set()
+    return get().models_ready.is_set()
 
 
 def wait_for_models(timeout: float = 180) -> None:
     """Block a query or ingest until the background warm-up has finished."""
-    if _models_ready.wait(timeout):
+    if get().models_ready.wait(timeout):
         if Settings.embed_model is None or Settings.llm is None:
             raise RuntimeError("Local models did not finish loading.")
         return
@@ -53,7 +51,7 @@ def _warm_up() -> None:
     except Exception:
         logger.exception("Warm-up failed")
     finally:
-        _models_ready.set()
+        get().models_ready.set()
 
 
 def _complete(prompt: str, temperature: float | None = None) -> str:
