@@ -9,9 +9,23 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import threading
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+HEARTBEAT_PATH = Path("/tmp/talkback-indexer-heartbeat")
+
+
+def write_heartbeat(path: Path = HEARTBEAT_PATH) -> None:
+    """Touch the liveness file the container healthcheck reads."""
+    path.write_text(str(time.time()), encoding="utf-8")
+
+
+def _heartbeat_loop(path: Path = HEARTBEAT_PATH, interval: float = 10) -> None:
+    while True:
+        write_heartbeat(path)
+        time.sleep(interval)
 
 
 def next_kind(store) -> str | None:
@@ -23,6 +37,10 @@ def next_kind(store) -> str | None:
 
 def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+    write_heartbeat()
+    threading.Thread(
+        target=_heartbeat_loop, name="talkback-indexer-heartbeat", daemon=True
+    ).start()
     import engine
     from ingestion.pipeline import (
         begin_ingestion,
