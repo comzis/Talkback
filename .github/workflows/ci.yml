@@ -17,6 +17,7 @@ jobs:
           python -m pip install --no-cache-dir torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --no-cache-dir -r app/requirements.txt
           python -c "import importlib.util, torch; print(torch.__version__); banned=[name for name in ('nvidia', 'nvidia_cublas', 'nvidia_cuda_runtime') if importlib.util.find_spec(name)]; assert not banned, banned"
+          python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt_tab')"
       - name: Install lint and test tools
         run: python -m pip install -r requirements-dev.txt
       - name: Lint
