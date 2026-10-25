@@ -5,7 +5,7 @@ from pathlib import Path
 
 import config
 from retrieval.recall import fact_pages, first_hit, recall_at, search_text
-from retrieval.rerank import best_rerank_score, clears_threshold
+from retrieval.rerank import best_rerank_score, clears_threshold, model_cache_dir
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -51,6 +51,7 @@ def test_the_rerank_threshold_keeps_main_set_library_questions():
     plain = type("Node", (), {"metadata": {}})()
     assert best_rerank_score([kept, plain]) == -7.4
     assert best_rerank_score([plain]) is None
+    assert model_cache_dir().parts[-3:] == (".cache", "huggingface", "hub")
 
 
 def test_a_follow_up_searches_the_previous_question():

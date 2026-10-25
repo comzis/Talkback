@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import threading
+from pathlib import Path
 
 import config
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _model = None
@@ -31,6 +35,16 @@ def best_rerank_score(nodes) -> float | None:
     return max(scores)
 
 
+def model_cache_dir() -> Path:
+    """The mounted user cache, not the container-local HF_HOME.
+
+    Compose points HF_HOME at /cache/huggingface, which disappears when the
+    container is recreated. ./hf_cache is mounted on the user cache, and that
+    is where this model is stored so a restart stays offline.
+    """
+    return Path.home() / ".cache" / "huggingface" / "hub"
+
+
 def _load():
     global _model, _tokenizer
     with _lock:
@@ -38,8 +52,14 @@ def _load():
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             name = config.rerank_model_name()
-            _tokenizer = AutoTokenizer.from_pretrained(name)
-            _model = AutoModelForSequenceClassification.from_pretrained(name)
+            cache = str(model_cache_dir())
+            logger.info("Loading reranker %s from %s", name, cache)
+            _tokenizer = AutoTokenizer.from_pretrained(
+                name, cache_dir=cache, local_files_only=True
+            )
+            _model = AutoModelForSequenceClassification.from_pretrained(
+                name, cache_dir=cache, local_files_only=True
+            )
             _model.eval()
     return _model, _tokenizer
 
