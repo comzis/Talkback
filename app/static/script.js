@@ -519,9 +519,12 @@ function renderLibrary() {
     }
     list.innerHTML = state.files.map(file => {
         const path = file.name || file.filename;
+        const failed = file.index_status === "failed"
+            ? `<span class="index-failed">${escapeHtml(file.index_error || "Failed")}</span>`
+            : "";
         return `
             <div class="queue-item library-item">
-                <span>${escapeHtml(path)}</span>
+                <span>${escapeHtml(path)}${failed}</span>
                 <button type="button" class="delete-file" data-path="${escapeHtml(path)}">Delete</button>
             </div>
         `;

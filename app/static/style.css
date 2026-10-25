@@ -998,6 +998,12 @@ body {
     gap: var(--spacing-sm);
 }
 
+.index-failed {
+    display: block;
+    color: #e15b64;
+    font-size: var(--font-xs, 12px);
+}
+
 .delete-file {
     background: transparent;
     color: inherit;

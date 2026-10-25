@@ -67,3 +67,16 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     assert get().db is memory
     assert get().chroma_collection.count() == 0
     assert status == "completed"
+
+    (tmp_path / "bad.txt").write_text("unreadable", encoding="utf-8")
+    from store.status_db import StatusStore
+
+    StatusStore(tmp_path / "status" / "library.sqlite").mark_failed(
+        "filesystem", "bad.txt", "No readable text"
+    )
+    listed = TestClient(api_app.app).get("/files")
+    assert listed.status_code == 200
+    failed = listed.json()["files"]
+    assert failed[0]["name"] == "bad.txt"
+    assert failed[0]["index_status"] == "failed"
+    assert failed[0]["index_error"] == "No readable text"

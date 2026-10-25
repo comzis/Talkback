@@ -19,6 +19,7 @@ import config
 import store.embeddings as embeddings
 import engine
 from state import get
+from store.status_db import StatusStore
 from sources.base import ReadOnlyLibrary
 from sources.filesystem import (
     InvalidFilename,
@@ -418,11 +419,14 @@ async def list_uploaded_files():
     List visible files currently in the data directory, sorted by file type.
     """
     try:
+        status = StatusStore(get().status_dir / "library.sqlite")
+        status.open()
         files = []
         for file_path in visible_files(get().upload_dir):
             rel_path = file_path.relative_to(get().upload_dir).as_posix()
             filename = Path(rel_path).name
             file_type = get_file_type(filename)
+            row = status.get("filesystem", rel_path)
             files.append(
                 {
                     "name": rel_path,
@@ -431,6 +435,8 @@ async def list_uploaded_files():
                     "modified": file_path.stat().st_mtime,
                     "type": file_type,
                     "extension": Path(filename).suffix.lower(),
+                    "index_status": None if row is None else row["status"],
+                    "index_error": None if row is None else row["last_error"],
                 }
             )
 
