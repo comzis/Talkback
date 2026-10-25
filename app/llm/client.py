@@ -45,13 +45,26 @@ def completions_url(base: str) -> str:
 
 
 def models_url(base: str, backend: str) -> str:
-    """Ollama lists /api/tags. A vLLM server lists /v1/models."""
+    """Ollama lists /api/tags. A vLLM server lists /v1/models.
+
+    The vLLM path is not tested against a real vLLM server.
+    """
     root = base.rstrip("/")
     if backend == "vllm":
         if root.endswith("/v1"):
             return root + "/models"
         return root + "/v1/models"
     return root + "/api/tags"
+
+
+def installed_model_names(payload: dict, backend: str) -> list[str]:
+    """Names from an Ollama tag list or a vLLM /v1/models payload.
+
+    The vLLM shape is not tested against a real vLLM server.
+    """
+    if backend == "vllm":
+        return [str(item.get("id") or "") for item in payload.get("data") or []]
+    return [str(item.get("name") or "") for item in payload.get("models") or []]
 
 
 def chat_request_body(

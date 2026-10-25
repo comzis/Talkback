@@ -118,3 +118,11 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     assert streamed.status_code == 200
     assert "event: error" not in streamed.text
     assert "event: token" in streamed.text
+
+    monkeypatch.setenv("CHAT_BACKEND", "vllm")
+    blocked = TestClient(api_app.app)
+    assert blocked.get("/llm/models").status_code == 403
+    assert blocked.post("/llm/select", json={"model": "x"}).status_code == 403
+    pull = blocked.post("/llm/pull", json={"model": "x"})
+    assert pull.status_code == 403
+    assert "disabled when CHAT_BACKEND=vllm" in pull.json()["detail"]

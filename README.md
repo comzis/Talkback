@@ -82,6 +82,8 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | --- | --- | --- |
 | `OLLAMA_MODEL` | Model name in host Ollama. Required. No built-in fallback | set in `.env` |
 | `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
+| `CHAT_BACKEND` | `ollama` or `vllm`. `vllm` disables `/llm/models`, `/llm/select`, and `/llm/pull` | `ollama` |
+| `CHAT_BASE_URL` | OpenAI-compatible origin when it is not `OLLAMA_BASE_URL` | `OLLAMA_BASE_URL` |
 | `EMBED_MODEL` | Local embedding model. `BAAI/bge-m3` is the larger server option | `intfloat/multilingual-e5-small` |
 | `EMBED_BATCH` | Chunks per embedding batch. Progress updates after each batch | `16` |
 | `CHUNK_SIZE` | Chunk size in tokens | `512` |
@@ -102,6 +104,8 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `CHROMA_PORT` | Chroma port on the Docker network | `8000` |
 
 Pilot models must be Apache 2.0 or MIT licensed. Check the model card before you set `OLLAMA_MODEL`.
+
+Chat uses `POST /v1/chat/completions`. With `CHAT_BACKEND=ollama` the request includes `keep_alive` and, when `OLLAMA_THINK=false`, `reasoning_effort` set to `none`. With `CHAT_BACKEND=vllm` those Ollama fields are left out, and the model list, model switch, and model pull endpoints are disabled. The vLLM path is not tested against a real vLLM server.
 
 Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first with `ollama pull`, using the name from the model card.
 

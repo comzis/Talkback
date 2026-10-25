@@ -79,6 +79,14 @@ def test_stream_reads_content_deltas():
     assert seen["body"]["keep_alive"] == "3h"
 
 
+def test_vllm_status_reads_the_models_list():
+    client = _client()
+    assert client.models_url("http://vllm:8000", "vllm") == "http://vllm:8000/v1/models"
+    assert client.models_url("http://ollama:11434", "ollama").endswith("/api/tags")
+    names = client.installed_model_names({"data": [{"id": "qwen"}]}, "vllm")
+    assert names == ["qwen"]
+
+
 def test_vllm_backend_disables_ollama_endpoints(monkeypatch):
     client = _client()
     monkeypatch.setenv("CHAT_BACKEND", "vllm")

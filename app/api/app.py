@@ -21,6 +21,12 @@ import engine
 from state import get
 from store.status_db import StatusStore
 from sources.base import ReadOnlyLibrary
+from llm.client import (
+    OllamaOnly,
+    installed_model_names,
+    models_url,
+    reject_unless_ollama,
+)
 from sources.filesystem import (
     InvalidFilename,
     filesystem_source,
@@ -76,6 +82,14 @@ class LLMSelectRequest(BaseModel):
 
 class LLMPullRequest(BaseModel):
     model: str
+
+
+def _ollama_only() -> None:
+    """Block model list, select, and pull when chat is a vLLM server."""
+    try:
+        reject_unless_ollama()
+    except OllamaOnly as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 def _reject_if_reindex_required() -> None:
@@ -453,6 +467,7 @@ async def list_llm_models():
     """
     List all available Ollama models and return the currently configured model.
     """
+    _ollama_only()
     try:
         import httpx
 
@@ -498,6 +513,7 @@ async def select_llm_model(request: LLMSelectRequest):
     """
     Switch to a different LLM model.
     """
+    _ollama_only()
     try:
         import httpx
 
@@ -557,6 +573,7 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
     """
     Pull a model through the host Ollama. Refused while OFFLINE_MODE is on.
     """
+    _ollama_only()
     if engine.offline_mode():
         raise HTTPException(
             status_code=403,
@@ -611,27 +628,26 @@ async def get_llm_status():
         import httpx
         import time
 
-        ollama_base = config.ollama_base_url()
-        ollama_url = f"{ollama_base}/api/tags"
+        backend = config.chat_backend()
+        base = config.chat_base_url() if backend == "vllm" else config.ollama_base_url()
+        status_url = models_url(base, backend)
 
         start_time = time.time()
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(ollama_url)
+            response = await client.get(status_url)
             response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
             if response.status_code == 200:
-                models = response.json().get("models", [])
+                names = installed_model_names(response.json(), backend)
                 model_name = config.configured_model()
-                model_available = any(
-                    m.get("name", "").startswith(model_name) for m in models
-                )
+                model_available = any(name.startswith(model_name) for name in names)
 
                 return {
                     "status": "online",
                     "available": True,
                     "model_configured": model_name,
                     "model_available": model_available,
-                    "models_installed": [m.get("name", "") for m in models],
+                    "models_installed": names,
                     "response_time_ms": round(response_time, 2),
                 }
             else:
