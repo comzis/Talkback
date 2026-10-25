@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 
 DEFAULT_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
-DEFAULT_EMBED_MODEL = "intfloat/multilingual-e5-small"
-SERVER_EMBED_MODEL = "BAAI/bge-m3"
+# BAAI/bge-m3 is MIT. intfloat/multilingual-e5-small stays available via EMBED_MODEL.
+DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
+COMPACT_EMBED_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_EMBED_BATCH = 16
 DEFAULT_OLLAMA_TIMEOUT = 300.0
 DEFAULT_CHUNK_SIZE = 512

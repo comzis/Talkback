@@ -526,10 +526,10 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("EMBED_MODEL", None)
             os.environ.pop("EMBED_BATCH", None)
             os.environ.pop("OLLAMA_MODEL", None)
+            self.assertEqual(config.embed_model_name(), "BAAI/bge-m3")
             self.assertEqual(
-                config.embed_model_name(), "intfloat/multilingual-e5-small"
+                config.COMPACT_EMBED_MODEL, "intfloat/multilingual-e5-small"
             )
-            self.assertEqual(config.SERVER_EMBED_MODEL, "BAAI/bge-m3")
             self.assertEqual(config.embed_batch(), 16)
             self.assertEqual(config.configured_model(), "")
             with self.assertRaises(ValueError):

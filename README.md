@@ -12,7 +12,7 @@ The chat window is the main view. The library, system status, and upload area si
 - Adds a file in one step. Drop a file on the library panel, or click the drop area and choose one. Talkback saves it and starts indexing. Uploading the same name replaces that file only.
 - Leaves files that have not changed in the index. New and changed files are embedded. Removed files drop their chunks.
 - Answers greetings and general questions with no sources. A question that names a library file is answered from that file. Each cited claim keeps its source number, with the page and excerpt beside it.
-- Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in chat-model name. Embeddings default to `intfloat/multilingual-e5-small` (French, English, and Spanish). `BAAI/bge-m3` is the larger server option, set with `EMBED_MODEL`. The embedding model downloads once, and only when `OFFLINE_MODE=false`.
+- Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in chat-model name. Embeddings default to `BAAI/bge-m3` (MIT, French, English, and Spanish). `intfloat/multilingual-e5-small` remains available by setting `EMBED_MODEL`. The embedding model downloads once, and only when `OFFLINE_MODE=false`.
 - Streams the reply into the chat, then shows the folder, file, and page for each source the answer used. The **Stop** button cancels the stream. `POST /query` still returns the full answer in one response.
 
 ## Quick start
@@ -96,7 +96,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
 | `CHAT_BACKEND` | `ollama` or `vllm`. `vllm` disables `/llm/models`, `/llm/select`, and `/llm/pull` | `ollama` |
 | `CHAT_BASE_URL` | OpenAI-compatible origin when it is not `OLLAMA_BASE_URL` | `OLLAMA_BASE_URL` |
-| `EMBED_MODEL` | Local embedding model. `BAAI/bge-m3` is the larger server option | `intfloat/multilingual-e5-small` |
+| `EMBED_MODEL` | Local embedding model. `intfloat/multilingual-e5-small` is the smaller option | `BAAI/bge-m3` |
 | `EMBED_BATCH` | Chunks per embedding batch. Progress updates after each batch | `16` |
 | `CHUNK_SIZE` | Chunk size in tokens | `512` |
 | `CHUNK_OVERLAP` | Overlap between chunks | `64` |
