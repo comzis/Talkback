@@ -22,10 +22,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "tests" / "eval" / "questions.json"
 PLACEHOLDER = re.compile(r"\[[^\[\]]{2,}\]")
+FIGURE = re.compile(
+    r"[-−–]?\d+(?:[.,]\d+)?\s*(?:dBTP|LUFS|LKFS|dBFS|LU)\b",
+    re.IGNORECASE,
+)
 SPANISH = re.compile(
     r"[áéíóúüñ¿¡]|\b(?:los|las|del|para|que|módulos?|modulos?|configurar|equipos)\b",
     re.IGNORECASE,
 )
+FRENCH = re.compile(
+    r"[àâçéèêëïîôùûüœ]|\b(?:les|des|une|dans|avec|filtre|détails|details|plus de)\b",
+    re.IGNORECASE,
+)
+_UNIT = re.compile(r"(\d)\s*(dBTP|LUFS|LKFS|dBFS|LU)\b", re.IGNORECASE)
 
 
 def load_cases(path: Path = CASES) -> list[dict]:
@@ -49,11 +58,25 @@ def parse_sse(body: str) -> list[dict]:
     return events
 
 
+def _fold(text: str) -> str:
+    """Make minus signs and unit spacing comparable across replies."""
+    folded = text.replace("−", "-").replace("–", "-")
+    return _UNIT.sub(r"\1 \2", folded)
+
+
 def _answer(events: list[dict]) -> str:
     text = "".join(
         event["data"].get("text", "") for event in events if event["event"] == "token"
     )
-    return text.replace("−", "-").replace("–", "-")
+    return _fold(text)
+
+
+def prior_turns(parent: dict, events: list[dict]) -> list[dict]:
+    """The parent question and its reply, as the next request's history."""
+    return [
+        {"role": "user", "content": parent["query"]},
+        {"role": "assistant", "content": _answer(events)[:400]},
+    ]
 
 
 def _sources(events: list[dict]) -> list[dict]:
@@ -91,10 +114,17 @@ def judge(case: dict, events: list[dict]) -> list[str]:
                 label = " or ".join(expected)
                 problems.append(f"page was {sorted(pages)}, expected {label}")
         for needle in case.get("answer_contains") or []:
-            if needle.replace("−", "-") not in answer:
+            if _fold(needle) not in answer:
                 problems.append(f"answer omitted {needle}")
         if case.get("language") == "es" and not SPANISH.search(answer):
             problems.append("answer was not in Spanish")
+        if case.get("language") == "fr" and not FRENCH.search(answer):
+            problems.append("answer was not in French")
+    elif case["path"] == "uncovered":
+        if sources:
+            problems.append("cited a document")
+        if FIGURE.search(answer):
+            problems.append("invented a figure")
     elif case["path"] == "general":
         if case["notice"] not in notices:
             problems.append("missing the general-path notice")
@@ -155,10 +185,13 @@ def summarise(case: dict, runs: list[list[dict]]) -> tuple[int, list[str]]:
 
 
 def ask(
-    base_url: str, query: str, timeout: float = 180
+    base_url: str,
+    query: str,
+    history: list[dict] | None = None,
+    timeout: float = 180,
 ) -> tuple[list[dict], float | None]:
     """Return the events and the seconds until the first token event."""
-    payload = json.dumps({"query": query, "history": []}).encode()
+    payload = json.dumps({"query": query, "history": history or []}).encode()
     request = urllib.request.Request(
         base_url.rstrip("/") + "/query/stream",
         data=payload,
@@ -187,8 +220,18 @@ def main() -> int:
     if args.runs < 1:
         parser.error("--runs must be at least 1")
     missed = 0
-    for case in load_cases(args.cases):
-        results = [ask(args.base_url, case["query"]) for _ in range(args.runs)]
+    cases = load_cases(args.cases)
+    by_id = {case["id"]: case for case in cases}
+    for case in cases:
+        results = []
+        for _ in range(args.runs):
+            history = []
+            parent_id = case.get("continues")
+            if parent_id:
+                parent = by_id[parent_id]
+                parent_events, _parent_first = ask(args.base_url, parent["query"])
+                history = prior_turns(parent, parent_events)
+            results.append(ask(args.base_url, case["query"], history))
         runs = [events for events, _first in results]
         firsts = [first for _events, first in results]
         passed, lines = summarise(case, runs)

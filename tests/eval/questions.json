@@ -30,5 +30,48 @@
     "path": "general",
     "notice": "No matching documents found; answering generally.",
     "placeholders": true
+  },
+  {
+    "id": "bbc-more",
+    "continues": "bbc-loudness",
+    "query": "Tell me more.",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "answer_contains": ["-3 dBTP", "-1 dBTP"]
+  },
+  {
+    "id": "bbc-more-typo",
+    "continues": "bbc-loudness",
+    "query": "telll me more",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "answer_contains": ["-3 dBTP", "-1 dBTP"]
+  },
+  {
+    "id": "icmp-more",
+    "continues": "icmp-filter",
+    "query": "Donne-moi plus de détails",
+    "path": "library",
+    "file": "Traffic_analysis_with_wireshark_1746771119.pdf",
+    "page": "34",
+    "language": "fr",
+    "answer_contains": ["icmp.type == 3 && icmp.code == 2"]
+  },
+  {
+    "id": "ansible-more",
+    "continues": "ansible-modules",
+    "query": "¿Puedes dar más detalle?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "pages": ["4", "6"],
+    "language": "es",
+    "answer_contains": ["ios_config"]
+  },
+  {
+    "id": "bbc-radio-peak",
+    "query": "What true-peak level does the BBC standard require for radio?",
+    "path": "uncovered"
   }
 ]
