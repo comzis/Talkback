@@ -1,9 +1,10 @@
 """Time indexing and one answer on a throwaway in-memory index.
 
-Does not open the live Chroma collection. Run inside the API container:
+Does not open the live Chroma collection. It stays out of the API image.
+From the repository root, with the app dependencies installed:
 
-    python bench_scratch.py --profile before
-    python bench_scratch.py --profile after
+    PYTHONPATH=app python scripts/bench_scratch.py --profile before
+    PYTHONPATH=app python scripts/bench_scratch.py --profile after
 """
 
 from __future__ import annotations

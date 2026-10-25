@@ -38,6 +38,7 @@ env/
 
 # Docker
 .dockerignore
+!app/.dockerignore
 
 # Data and Persistent Storage (Keep these local)
 chroma_data/
