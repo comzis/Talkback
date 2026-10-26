@@ -6,14 +6,13 @@ from pathlib import Path
 
 import importlib.util
 import os
-from pathlib import Path
 
 import config
-import embeddings
-import files
-import library
-import progress
-import prompts
+import store.embeddings as embeddings
+import sources.filesystem as files
+import ingestion.plan as library
+import ingestion.progress as progress
+import llm.prompts as prompts
 
 
 class FilenameTests(unittest.TestCase):
@@ -28,7 +27,12 @@ class FilenameTests(unittest.TestCase):
 
     def test_relative_path_rejects_parent_segments(self):
         self.assertEqual(files.safe_relative_path("a/notes.pdf"), "a/notes.pdf")
-        for name in ("../notes.pdf", "/tmp/notes.pdf", "a/../notes.pdf", ".hidden/notes.pdf"):
+        for name in (
+            "../notes.pdf",
+            "/tmp/notes.pdf",
+            "a/../notes.pdf",
+            ".hidden/notes.pdf",
+        ):
             with self.assertRaises(files.InvalidFilename):
                 files.safe_relative_path(name)
 
@@ -71,14 +75,21 @@ class PromptTests(unittest.TestCase):
         self.assertIn("original language", prompts.assistant_prompt("bonjour"))
         self.assertIn("Inlock\nSecure AI for Private Enterprise", explanation)
         padding = "The guide discusses packet filters and ICMP messages. " * 12
-        fact = "(icmp.type == 3 && icmp.code == 2) || (icmp.type == 4 && icmp.code == 0)"
+        fact = (
+            "(icmp.type == 3 && icmp.code == 2) || (icmp.type == 4 && icmp.code == 0)"
+        )
         chunk = f"{padding} {fact}"
         self.assertGreater(chunk.find("icmp.type"), 500)
         passage = prompts.prompt_passage(chunk)
         self.assertIn(fact, passage)
-        card = prompts.display_excerpt(chunk, "Quel filtre ICMP ?")
-        self.assertNotIn("icmp.type", card)
+        card = prompts.display_excerpt(
+            chunk, "Quel filtre ICMP ?", f"The filter is {fact}."
+        )
+        self.assertIn("icmp.type == 3 && icmp.code == 2", card)
+        self.assertLess(card.find("icmp.type"), 80)
         self.assertLessEqual(len(card), 500)
+        opening = prompts.display_excerpt(chunk, "Quel filtre ICMP ?")
+        self.assertNotIn("icmp.type", opening)
         reached = prompts.explanation_prompt("Quel filtre ?", ["wire.pdf"], [passage])
         self.assertIn(fact, reached)
         grounded_fact = prompts.ground_library_reply(
@@ -87,20 +98,42 @@ class PromptTests(unittest.TestCase):
             "Quel filtre ?",
         )
         self.assertIn(fact, grounded_fact)
-        self.assertEqual(prompts.cited_source_indexes("See [1] and later [1] then [3]."), [1, 3])
+        self.assertEqual(
+            prompts.cited_source_indexes("See [1] and later [1] then [3]."), [1, 3]
+        )
         self.assertNotIn("Sentinel", text)
         self.assertNotIn("superhero", text.lower())
 
     def test_general_questions_skip_the_library(self):
         files = ["Python Basics.pdf", "inlock campaign v4.pdf"]
-        self.assertFalse(prompts.asks_about_library("How do I run hello-world.py?", files))
-        self.assertTrue(prompts.asks_about_library("What does Python Basics say about loops?", files))
+        self.assertFalse(
+            prompts.asks_about_library("How do I run hello-world.py?", files)
+        )
+        self.assertTrue(
+            prompts.asks_about_library(
+                "What does Python Basics say about loops?", files
+            )
+        )
         self.assertTrue(prompts.asks_about_library("What is Inlock?", files))
-        self.assertTrue(prompts.asks_about_library("What does the campaign say about privacy?", files))
-        self.assertTrue(prompts.asks_about_library("Inlock\nSecure AI for Private Enterprise systems", files))
+        self.assertTrue(
+            prompts.asks_about_library(
+                "What does the campaign say about privacy?", files
+            )
+        )
+        self.assertTrue(
+            prompts.asks_about_library(
+                "Inlock\nSecure AI for Private Enterprise systems", files
+            )
+        )
         earlier = [("user", "What does Arbitration Agreement.pdf say about fees?")]
-        self.assertIn("Arbitration Agreement.pdf", prompts.retrieval_text("What about the deadline?", earlier))
-        self.assertEqual(prompts.retrieval_text("What about the deadline?", None), "What about the deadline?")
+        self.assertIn(
+            "Arbitration Agreement.pdf",
+            prompts.retrieval_text("What about the deadline?", earlier),
+        )
+        self.assertEqual(
+            prompts.retrieval_text("What about the deadline?", None),
+            "What about the deadline?",
+        )
         follow_up = prompts.explanation_prompt(
             "What about the deadline?",
             ["Arbitration Agreement.pdf"],
@@ -110,7 +143,9 @@ class PromptTests(unittest.TestCase):
         self.assertIn("Earlier in this conversation", follow_up)
         self.assertIn("What about the deadline?", follow_up)
         self.assertIn("Arbitration Agreement.pdf", follow_up)
-        self.assertTrue(prompts.should_search_library(prompts.retrieval_text("and fees?", earlier)))
+        self.assertTrue(
+            prompts.should_search_library(prompts.retrieval_text("and fees?", earlier))
+        )
         snort = [
             ("user", "how to use snort"),
             ("assistant", "Snort detects attacks on the network."),
@@ -119,26 +154,73 @@ class PromptTests(unittest.TestCase):
         ]
         self.assertTrue(prompts.is_follow_up("Give an example"))
         self.assertTrue(prompts.is_follow_up("snort"))
-        self.assertTrue(prompts.is_follow_up("Give a detailed explanation of each step for the operator"))
-        self.assertFalse(prompts.is_follow_up("How do you analyze network traffic with Wireshark?"))
+        self.assertTrue(
+            prompts.is_follow_up(
+                "Give a detailed explanation of each step for the operator"
+            )
+        )
+        self.assertFalse(
+            prompts.is_follow_up("How do you analyze network traffic with Wireshark?")
+        )
         self.assertFalse(prompts.is_follow_up("hello"))
         self.assertFalse(prompts.is_follow_up("how to use snort"))
         wireshark = [("user", "How do you analyze network traffic with Wireshark?")]
-        steps = prompts.retrieval_text("Give a detailed explanation of each step for the operator", wireshark)
+        steps = prompts.retrieval_text(
+            "Give a detailed explanation of each step for the operator", wireshark
+        )
         self.assertIn("Wireshark", steps)
         self.assertIn("operator", steps)
-        self.assertIn("practical example", prompts.retrieval_text("Give an example", wireshark))
-        self.assertIn("concrete example", prompts.explanation_prompt("Give an example", [], ["Example 4 uses contains."]))
-        self.assertEqual(prompts.repair_pdf_spacing("just a fter the header"), "just after the header")
-        self.assertEqual(prompts.repair_pdf_spacing("packets that cont ain a byte"), "packets that contain a byte")
-        self.assertEqual(prompts.repair_pdf_spacing("to view UDP packets"), "to view UDP packets")
+        example = prompts.retrieval_text("Give an example", wireshark)
+        self.assertIn("Wireshark", example)
+        self.assertNotIn("practical example", example)
+        self.assertTrue(prompts.is_follow_up("telll me more"))
+        self.assertTrue(prompts.is_follow_up("Donne-moi plus de détails"))
+        self.assertTrue(prompts.is_follow_up("¿Puedes dar más detalle?"))
+        self.assertEqual(
+            prompts.retrieval_text(
+                "telll me more", [("user", "What loudness is required?")]
+            ),
+            "What loudness is required?",
+        )
+        self.assertEqual(
+            prompts.retrieval_text(
+                "¿Puedes dar más detalle?",
+                [("user", "¿Qué módulos de Ansible se usan?")],
+            ),
+            "¿Qué módulos de Ansible se usan?",
+        )
+        self.assertIn(
+            "deadline",
+            prompts.retrieval_text("What about the deadline?", earlier),
+        )
+        self.assertIn(
+            "concrete example",
+            prompts.explanation_prompt(
+                "Give an example", [], ["Example 4 uses contains."]
+            ),
+        )
+        self.assertEqual(
+            prompts.repair_pdf_spacing("just a fter the header"),
+            "just after the header",
+        )
+        self.assertEqual(
+            prompts.repair_pdf_spacing("packets that cont ain a byte"),
+            "packets that contain a byte",
+        )
+        self.assertEqual(
+            prompts.repair_pdf_spacing("to view UDP packets"), "to view UDP packets"
+        )
         invented = "Here is an example of a capture filter:\n```\ntcp.port == 80\n```\nThis filter shows TCP port 80. [1]"
         chunk = (
             "lving network problems. Example 1: UDP Packets Suppose that you want to view UDP packets "
             "that cont ain a byte sequence of 0x90, perhaps because certain malware uses this sequence: "
             "udp[8:4]==90:90:90:03"
         )
-        grounded = prompts.ground_library_reply(invented, [{"number": 1, "source": "wire.pdf", "text": chunk}], "Give an example")
+        grounded = prompts.ground_library_reply(
+            invented,
+            [{"number": 1, "source": "wire.pdf", "text": chunk}],
+            "Give an example",
+        )
         self.assertNotIn("tcp.port", grounded)
         self.assertTrue(grounded.startswith("Example 1: UDP Packets"))
         self.assertIn("udp[8:4]==90:90:90:03", grounded)
@@ -147,7 +229,9 @@ class PromptTests(unittest.TestCase):
             "Example 1: UDP Packets Suppose that you want to view UDP packets. "
             "http://packetlife.net/filters.pdf udp[8:4]==90:90:90:03"
         )
-        without_links = prompts.ground_library_reply("invented", [{"number": 1, "text": linked}], "Give an example")
+        without_links = prompts.ground_library_reply(
+            "invented", [{"number": 1, "text": linked}], "Give an example"
+        )
         self.assertNotIn("http", without_links)
         self.assertIn("udp[8:4]==90:90:90:03", without_links)
         icmp = (
@@ -165,7 +249,7 @@ class PromptTests(unittest.TestCase):
         self.assertIn("icmp.type == 3", steps)
         self.assertNotIn("**", steps)
         self.assertNotIn("Let me know", steps)
-        kept_filter = 'Use the filter `udp[8:4]==90:90:90:03`. [1]'
+        kept_filter = "Use the filter `udp[8:4]==90:90:90:03`. [1]"
         udp = [{"number": 1, "text": "Filters only. udp[8:4]==90:90:90:03"}]
         quoted = prompts.ground_library_reply(kept_filter, udp, "Give an example")
         self.assertIn("udp[8:4]", quoted)
@@ -173,16 +257,28 @@ class PromptTests(unittest.TestCase):
         invented_code = "Examine ICMP packets. Use filters for ICMP Type 3, Code 2."
         icmp = [{"number": 1, "text": "Example 2 discusses ICMP Protocol Unreachable."}]
         steps = prompts.ground_library_reply(
-            invented_code, icmp, "Give a detailed explanation of each step for the operator"
+            invented_code,
+            icmp,
+            "Give a detailed explanation of each step for the operator",
         )
         self.assertNotIn("Type 3", steps)
         self.assertIn("ICMP", steps)
         overview = "Wireshark is an open-source protocol analyzer and supports over 1100 protocols. [1]"
-        about = [{"number": 1, "text": "Wireshark is an open-source protocol analyser. It supports over 1100 protocols."}]
+        about = [
+            {
+                "number": 1,
+                "text": "Wireshark is an open-source protocol analyser. It supports over 1100 protocols.",
+            }
+        ]
         self.assertEqual(prompts.ground_library_reply(overview, about), overview)
-        self.assertIn("Number the steps", prompts.explanation_prompt(
-            "Give a detailed explanation of each step for the operator", [], ["The first step is to capture traffic."]
-        ))
+        self.assertIn(
+            "Number the steps",
+            prompts.explanation_prompt(
+                "Give a detailed explanation of each step for the operator",
+                [],
+                ["The first step is to capture traffic."],
+            ),
+        )
         found = prompts.retrieval_text("snort", snort)
         self.assertIn("how to use snort", found)
         self.assertIn("Snort detects attacks", found)
@@ -191,41 +287,60 @@ class PromptTests(unittest.TestCase):
             def __init__(self, role, content):
                 self.role = role
                 self.content = content
-        carried = prompts.clean_history([Turn("user", "how to use snort"), Turn("assistant", "Snort detects attacks.")])
-        self.assertEqual(carried, [("user", "how to use snort"), ("assistant", "Snort detects attacks.")])
+
+        carried = prompts.clean_history(
+            [
+                Turn("user", "how to use snort"),
+                Turn("assistant", "Snort detects attacks."),
+            ]
+        )
+        self.assertEqual(
+            carried,
+            [("user", "how to use snort"), ("assistant", "Snort detects attacks.")],
+        )
         self.assertFalse(prompts.should_search_library("hello"))
         self.assertFalse(prompts.should_search_library("What is 2 + 2?"))
         self.assertTrue(prompts.should_search_library("What is in the CV?"))
         self.assertEqual(
-            prompts.named_library_files("What is in the CV?", ["Milorad Stevanovic CV.pdf"]),
-            ["Milorad Stevanovic CV.pdf"],
+            prompts.named_library_files("What is in the CV?", ["Example CV.pdf"]),
+            ["Example CV.pdf"],
         )
         self.assertEqual(
-            prompts.named_library_files("What is 2 + 2?", ["Milorad Stevanovic CV.pdf"]),
+            prompts.named_library_files("What is 2 + 2?", ["Example CV.pdf"]),
             [],
         )
-        self.assertTrue(prompts.excerpts_mention(
-            "What privacy rules does the campaign describe?",
-            ["Inlock is privacy-first for private enterprise."],
-        ))
+        self.assertTrue(
+            prompts.excerpts_mention(
+                "What privacy rules does the campaign describe?",
+                ["Inlock is privacy-first for private enterprise."],
+            )
+        )
         self.assertFalse(prompts.excerpts_mention("What is 2 + 2?", ["Inlock privacy"]))
 
     def test_explanation_keeps_the_passage_it_describes(self):
         sources = [
-            {"source": "inlock campaign v4.pdf", "text": "Inlock Secure AI for Private Enterprise"},
+            {
+                "source": "inlock campaign v4.pdf",
+                "text": "Inlock Secure AI for Private Enterprise",
+            },
             {"source": "notes.pdf", "text": "license optional compatibility metadata"},
         ]
         answer = "Inlock offers secure private enterprise AI. [1]"
         kept = prompts.supporting_sources(answer, sources)
         self.assertEqual([item["source"] for item in kept], ["inlock campaign v4.pdf"])
         self.assertEqual(kept[0]["number"], 1)
-        self.assertEqual(prompts.supporting_sources("See the later section. [9]", sources), [])
+        self.assertEqual(
+            prompts.supporting_sources("See the later section. [9]", sources), []
+        )
         uncited = prompts.supporting_sources(
             "Inlock keeps enterprise data completely private.",
             sources,
         )
         self.assertEqual([item["number"] for item in uncited], [1])
-        self.assertEqual(prompts.library_miss("I think it is Paris."), "The library does not cover that.")
+        self.assertEqual(
+            prompts.library_miss("I think it is Paris."),
+            "The library does not cover that.",
+        )
         self.assertEqual(
             prompts.source_label({"path": "a/notes.pdf", "page": "3"}),
             "a/notes.pdf · p. 3",
@@ -233,10 +348,14 @@ class PromptTests(unittest.TestCase):
         self.assertEqual(prompts.source_label({"source": "notes.pdf"}), "notes.pdf")
 
     def test_general_reply_is_not_treated_as_a_citation(self):
-        self.assertFalse(prompts.answered_from_sources("Paris is the capital of France."))
-        self.assertFalse(prompts.answered_from_sources(
-            "I cannot find it in the retrieved excerpts [1]."
-        ))
+        self.assertFalse(
+            prompts.answered_from_sources("Paris is the capital of France.")
+        )
+        self.assertFalse(
+            prompts.answered_from_sources(
+                "I cannot find it in the retrieved excerpts [1]."
+            )
+        )
         self.assertTrue(prompts.answered_from_sources("Inlock offers private AI. [1]"))
 
     def test_unrelated_citation_does_not_count_as_grounded(self):
@@ -244,7 +363,9 @@ class PromptTests(unittest.TestCase):
         sources = ["The capital of California is Sacramento."]
         self.assertFalse(prompts.grounded_in_sources(answer, sources))
         grounded = "Inlock offers private AI consulting. [1]"
-        library = ["Inlock Secure AI for Private Enterprise. Privacy-First AI Consulting."]
+        library = [
+            "Inlock Secure AI for Private Enterprise. Privacy-First AI Consulting."
+        ]
         self.assertTrue(prompts.grounded_in_sources(grounded, library))
 
 
@@ -405,7 +526,9 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("EMBED_MODEL", None)
             os.environ.pop("EMBED_BATCH", None)
             os.environ.pop("OLLAMA_MODEL", None)
-            self.assertEqual(config.embed_model_name(), "intfloat/multilingual-e5-small")
+            self.assertEqual(
+                config.embed_model_name(), "intfloat/multilingual-e5-small"
+            )
             self.assertEqual(config.SERVER_EMBED_MODEL, "BAAI/bge-m3")
             self.assertEqual(config.embed_batch(), 16)
             self.assertEqual(config.configured_model(), "")
@@ -460,10 +583,18 @@ class EmbeddingIdentityTests(unittest.TestCase):
             embeddings.embedded_passage("intfloat/multilingual-e5-small", "le coffre"),
             "passage: le coffre",
         )
-        self.assertEqual(embeddings.join_instruction("query:", "le coffre"), "query: le coffre")
-        self.assertEqual(embeddings.join_instruction("passage:", "le coffre"), "passage: le coffre")
-        self.assertEqual(embeddings.join_instruction("query: ", "le coffre"), "query:  le coffre")
-        self.assertEqual(embeddings.embedded_query("BAAI/bge-m3", "le coffre"), "le coffre")
+        self.assertEqual(
+            embeddings.join_instruction("query:", "le coffre"), "query: le coffre"
+        )
+        self.assertEqual(
+            embeddings.join_instruction("passage:", "le coffre"), "passage: le coffre"
+        )
+        self.assertEqual(
+            embeddings.join_instruction("query: ", "le coffre"), "query:  le coffre"
+        )
+        self.assertEqual(
+            embeddings.embedded_query("BAAI/bge-m3", "le coffre"), "le coffre"
+        )
 
     def test_installed_embedder_joins_with_one_space(self):
         if importlib.util.find_spec("llama_index") is None:
@@ -483,7 +614,9 @@ class EmbeddingIdentityTests(unittest.TestCase):
         current = "intfloat/multilingual-e5-small"
         self.assertFalse(embeddings.full_reindex_required(None, 0, current))
         self.assertTrue(embeddings.full_reindex_required(None, 674, current))
-        self.assertEqual(embeddings.collection_embed_model(None, 674), embeddings.LEGACY_EMBED_MODEL)
+        self.assertEqual(
+            embeddings.collection_embed_model(None, 674), embeddings.LEGACY_EMBED_MODEL
+        )
         self.assertFalse(
             embeddings.full_reindex_required({"embed_model": current}, 10, current)
         )
@@ -492,19 +625,25 @@ class EmbeddingIdentityTests(unittest.TestCase):
         self.assertTrue(embeddings.relevant_enough([0.875, 0.79], 0.82))
         self.assertFalse(embeddings.relevant_enough([0.777, 0.76], 0.82))
         self.assertTrue(embeddings.relevant_enough([None], 0.82))
-        self.assertEqual(prompts.GENERAL_NOTICE, "No matching documents found; answering generally.")
+        self.assertEqual(
+            prompts.GENERAL_NOTICE, "No matching documents found; answering generally."
+        )
         self.assertEqual(
             prompts.NOT_INDEXED_NOTICE,
             "These files are in the library folder but are not indexed yet.",
         )
-        compare_path = Path(__file__).resolve().parents[2] / "scripts" / "compare_models.py"
+        compare_path = (
+            Path(__file__).resolve().parents[2] / "scripts" / "compare_models.py"
+        )
         spec = importlib.util.spec_from_file_location("compare_models", compare_path)
         compare_models = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(compare_models)
         self.assertEqual(compare_models.tokens_per_second(8, 80_000_000), 100)
         self.assertIsNone(compare_models.tokens_per_second(0, 80_000_000))
         self.assertEqual(len(compare_models.PROMPTS), 3)
-        self.assertEqual(prompts.UNMATCHED_SOURCE_NOTE, "No source could be matched to this answer.")
+        self.assertEqual(
+            prompts.UNMATCHED_SOURCE_NOTE, "No source could be matched to this answer."
+        )
 
 
 class MultilingualRetrievalTests(unittest.TestCase):
@@ -533,7 +672,9 @@ class MultilingualRetrievalTests(unittest.TestCase):
         )
         fixture_dir = Path(__file__).resolve().parent / "fixtures"
         documents = [
-            Document(text=path.read_text(encoding="utf-8"), metadata={"file_name": path.name})
+            Document(
+                text=path.read_text(encoding="utf-8"), metadata={"file_name": path.name}
+            )
             for path in sorted(fixture_dir.glob("*.txt"))
         ]
         index = VectorStoreIndex.from_documents(documents, embed_model=embed)

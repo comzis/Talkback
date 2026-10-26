@@ -1,9 +1,10 @@
 """Time indexing and one answer on a throwaway in-memory index.
 
-Does not open the live Chroma collection. Run inside the API container:
+Does not open the live Chroma collection. It stays out of the API image.
+From the repository root, with the app dependencies installed:
 
-    python bench_scratch.py --profile before
-    python bench_scratch.py --profile after
+    PYTHONPATH=app python scripts/bench_scratch.py --profile before
+    PYTHONPATH=app python scripts/bench_scratch.py --profile after
 """
 
 from __future__ import annotations
@@ -62,7 +63,10 @@ def write_corpus(root: Path, count: int = 30) -> None:
 
 
 def memory_bytes() -> int | None:
-    for path in ("/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"):
+    for path in (
+        "/sys/fs/cgroup/memory.current",
+        "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+    ):
         if os.path.exists(path):
             return int(Path(path).read_text().strip())
     return None
@@ -107,7 +111,7 @@ def main() -> None:
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     from llama_index.llms.ollama import Ollama
 
-    from library import balance_matches
+    from ingestion.plan import balance_matches
 
     threads = profile["torch_threads"]
     if threads == "half":
@@ -117,7 +121,11 @@ def main() -> None:
     write_corpus(root)
     documents = []
     for path in sorted(root.glob("*.txt")):
-        documents.append(Document(text=path.read_text(encoding="utf-8"), metadata={"file_name": path.name}))
+        documents.append(
+            Document(
+                text=path.read_text(encoding="utf-8"), metadata={"file_name": path.name}
+            )
+        )
 
     embed_kwargs = {"model_name": profile["embed_model"], "embed_batch_size": 16}
     if profile["query_instruction"]:
@@ -131,7 +139,9 @@ def main() -> None:
 
     llm_kwargs = {
         "model": os.environ["OLLAMA_MODEL"],
-        "base_url": os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),
+        "base_url": os.environ.get(
+            "OLLAMA_BASE_URL", "http://host.docker.internal:11434"
+        ),
         "request_timeout": 300.0,
     }
     if profile["context_window"]:
@@ -152,8 +162,12 @@ def main() -> None:
         index_seconds = time.perf_counter() - started
 
         answer_started = time.perf_counter()
-        found = index.as_retriever(similarity_top_k=profile["candidates"]).retrieve(QUERY)
-        chosen = balance_matches(found, per_file=profile["per_file"], limit=profile["limit"])
+        found = index.as_retriever(similarity_top_k=profile["candidates"]).retrieve(
+            QUERY
+        )
+        chosen = balance_matches(
+            found, per_file=profile["per_file"], limit=profile["limit"]
+        )
         excerpts = "\n\n".join((node.get_text() or "")[:500] for node in chosen)
         prompt = (
             "Answer from the excerpts. If they do not contain the answer, say so.\n\n"
@@ -174,7 +188,9 @@ def main() -> None:
         "documents": len(documents),
         "chunks": len(nodes),
         "index_seconds": round(index_seconds, 2),
-        "time_to_first_token_seconds": round((first_token - answer_started) if first_token else -1, 2),
+        "time_to_first_token_seconds": round(
+            (first_token - answer_started) if first_token else -1, 2
+        ),
         "answer_seconds": round(finished - answer_started, 2),
         "peak_container_memory_mb": round(watch.peak / (1024 * 1024), 1),
         "retrieved": len(chosen),

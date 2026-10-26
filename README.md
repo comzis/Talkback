@@ -17,13 +17,29 @@ The chat window is the main view. The library, system status, and upload area si
 
 ## Quick start
 
-### Prerequisites
+Talkback needs Docker, Ollama on the host, about 8 GB of RAM, and several GB of free disk for the image and model. The same compose file runs on a Mac and on a Linux server. `host.docker.internal` is mapped to the host gateway, so the container reaches Ollama on either machine.
 
-- Docker Desktop
-- [Ollama](https://ollama.com/) running on the host
-- About 8 GB of RAM and several GB of free disk for the image and model
+### Mac
 
-### 1. Clone and configure
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Ollama](https://ollama.com/). The image builds as UID `502` and GID `20` unless you override them. If the library files are not readable in the container, rebuild with your ids:
+
+```bash
+docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
+docker compose up -d
+```
+
+### Linux server
+
+Install Docker Engine and the Docker Compose plugin, and install Ollama on the host so it can use the machine's GPU. Build as the user that owns the library folder. The Mac default of UID `502` will not match a typical server account.
+
+```bash
+docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
+docker compose up -d
+```
+
+Keep port 8001 bound to `127.0.0.1`. Put a reverse proxy in front of it if other machines need the page. Do not publish Chroma.
+
+### Configure and start
 
 ```bash
 git clone https://github.com/comzis/Talkback.git
@@ -31,11 +47,9 @@ cd Talkback
 cp .env.example .env
 ```
 
-Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name.
+Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name. Set `LIBRARY_PATH` to the absolute path of the document folder. Compose mounts that folder at `/app/data` for the API and the indexer, and refuses to start when it is missing.
 
-`CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The API is published on `127.0.0.1:8001` only.
-
-### 2. Pull the model and start the stack
+`CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The file-status database is in `./status`. The API is published on `127.0.0.1:8001` only.
 
 ```bash
 ollama pull "$OLLAMA_MODEL"
@@ -47,11 +61,9 @@ docker compose ps
 
 The API image is large because it includes a CPU build of PyTorch. With `OFFLINE_MODE=true` (the default) the container exports the Hugging Face offline flags before Python starts, and the embedding model loads only from `./hf_cache`. Download it once with `OFFLINE_MODE=false`, then turn offline mode back on. See the demo checklist.
 
-### 3. Open Talkback
+Open http://localhost:8001
 
-http://localhost:8001
-
-Drop a file into the library panel. Indexing starts on its own. Then ask in the chat.
+Drop a file into the library panel, or put files in `LIBRARY_PATH` and let the indexer pick them up. Then ask in the chat.
 
 There is no login. The API listens on all interfaces inside the container and is published only on `127.0.0.1:8001`, so other devices on the network cannot open it.
 
@@ -82,6 +94,8 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | --- | --- | --- |
 | `OLLAMA_MODEL` | Model name in host Ollama. Required. No built-in fallback | set in `.env` |
 | `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
+| `CHAT_BACKEND` | `ollama` or `vllm`. `vllm` disables `/llm/models`, `/llm/select`, and `/llm/pull` | `ollama` |
+| `CHAT_BASE_URL` | OpenAI-compatible origin when it is not `OLLAMA_BASE_URL` | `OLLAMA_BASE_URL` |
 | `EMBED_MODEL` | Local embedding model. `BAAI/bge-m3` is the larger server option | `intfloat/multilingual-e5-small` |
 | `EMBED_BATCH` | Chunks per embedding batch. Progress updates after each batch | `16` |
 | `CHUNK_SIZE` | Chunk size in tokens | `512` |
@@ -95,12 +109,15 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `OLLAMA_THINK` | Send a hidden reasoning trace before the reply | `false` |
 | `TORCH_THREADS` | Torch CPU threads | half the cores |
 | `OFFLINE_MODE` | Load embeddings from the local cache and refuse `/llm/pull` | `true` |
+| `LIBRARY_PATH` | Host folder mounted at `/app/data` for the API and the indexer. Required | set in `.env` |
 | `LIBRARY_READ_ONLY` | Treat the data directory as a read-only mount | `false` |
 | `REINDEX_INTERVAL_MINUTES` | Repeat incremental indexing. Unset or `0` keeps it off | off |
 | `CHROMA_HOST` | Chroma service name on the Docker network | `chromadb` |
 | `CHROMA_PORT` | Chroma port on the Docker network | `8000` |
 
 Pilot models must be Apache 2.0 or MIT licensed. Check the model card before you set `OLLAMA_MODEL`.
+
+Chat uses `POST /v1/chat/completions`. With `CHAT_BACKEND=ollama` the request includes `keep_alive` and, when `OLLAMA_THINK=false`, `reasoning_effort` set to `none`. With `CHAT_BACKEND=vllm` those Ollama fields are left out, and the model list, model switch, and model pull endpoints are disabled. The vLLM path is not tested against a real vLLM server. Library answers stream as the model writes them. If a check against the excerpts changes the wording, the correction is a footnote and the words already shown stay.
 
 Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first with `ollama pull`, using the name from the model card.
 
@@ -111,7 +128,7 @@ docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" rag-a
 docker compose up -d
 ```
 
-The compose file currently builds as UID `502` and GID `20`.
+On a Mac the compose file builds as UID `502` and GID `20` unless you pass other ids. On a Linux server, pass `UID` and `GID` from `id -u` and `id -g`, as in the Linux quick start.
 
 ## Layout
 
@@ -133,7 +150,7 @@ Talkback/
 ├── hf_cache/             # Embedding model cache (gitignored)
 ├── docker-compose.yml
 ├── .env.example          # Copy to .env and set OLLAMA_MODEL
-├── SECURITY.md           # What runs where, and what may leave the machine
+├── docs/SECURITY.md      # What runs where, and what may leave the machine
 └── .env                  # Local config (gitignored)
 ```
 
@@ -143,11 +160,14 @@ Static files and Python are copied into the API image. After a UI or Python chan
 docker compose up -d --build rag-api
 ```
 
-Run the unit tests from `app/`. They do not load the model or Chroma.
+Run the unit tests from the repository root. They do not load the model or Chroma. Two tests stay skipped unless LlamaIndex and the local embedding cache are already installed.
 
 ```bash
-cd app && python3 -m unittest tests.test_library
+python -m pip install -r requirements-dev.txt
+python -m pytest
 ```
+
+The API image has LlamaIndex, so the skipped tests can run there. `scripts/test_in_container.sh` starts a one-off container from that image and mounts the tests in. The running API can stay up.
 
 ## API
 
@@ -201,9 +221,9 @@ Use this for the on-prem proof of concept. The promise is that no library text o
 5. Disconnect the network.
 6. Open http://127.0.0.1:8001 and ask a question about one of the files. Tokens should appear as they are generated, then the folder, file, and page. `curl -X POST http://127.0.0.1:8001/llm/pull -H 'Content-Type: application/json' -d '{"model":"test"}'` returns 403.
 
-Setup for this branch is `README.md` and `SECURITY.md`. Older notes live in `docs/archive/` and are not the current path.
+Setup for this branch is `README.md` and `docs/SECURITY.md`. Older notes were removed from `docs/archive/`; git history still has them.
 
-`SECURITY.md` lists the processes and ports.
+`docs/SECURITY.md` lists the processes and ports.
 
 ## Privacy
 

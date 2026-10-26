@@ -43,6 +43,19 @@ def ollama_base_url() -> str:
     return _raw("OLLAMA_BASE_URL") or DEFAULT_OLLAMA_BASE_URL
 
 
+def chat_backend() -> str:
+    """ollama or vllm. Anything else stays ollama so a typo does not disable chat."""
+    raw = _raw("CHAT_BACKEND").lower()
+    if raw == "vllm":
+        return "vllm"
+    return "ollama"
+
+
+def chat_base_url() -> str:
+    """OpenAI-compatible origin. Defaults to the Ollama address."""
+    return _raw("CHAT_BASE_URL") or ollama_base_url()
+
+
 def ollama_timeout() -> float:
     raw = _raw("OLLAMA_TIMEOUT")
     if not raw:

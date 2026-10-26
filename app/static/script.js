@@ -335,7 +335,7 @@ function appendSources(content, sources) {
         sourceText.appendChild(name);
         if (source.text) {
             const excerpt = document.createElement('span');
-            const snippet = source.text.length > 280 ? `${source.text.slice(0, 280)}…` : source.text;
+            const snippet = source.text.length > 500 ? `${source.text.slice(0, 500)}…` : source.text;
             excerpt.textContent = ` ${snippet}`;
             sourceText.appendChild(excerpt);
         }
@@ -519,9 +519,12 @@ function renderLibrary() {
     }
     list.innerHTML = state.files.map(file => {
         const path = file.name || file.filename;
+        const failed = file.index_status === "failed"
+            ? `<span class="index-failed">${escapeHtml(file.index_error || "Failed")}</span>`
+            : "";
         return `
             <div class="queue-item library-item">
-                <span>${escapeHtml(path)}</span>
+                <span>${escapeHtml(path)}${failed}</span>
                 <button type="button" class="delete-file" data-path="${escapeHtml(path)}">Delete</button>
             </div>
         `;

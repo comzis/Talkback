@@ -24,14 +24,18 @@ PROMPTS = (
 )
 
 
-def tokens_per_second(eval_count: int | None, eval_duration_ns: int | None) -> float | None:
+def tokens_per_second(
+    eval_count: int | None, eval_duration_ns: int | None
+) -> float | None:
     """Ollama reports eval_duration in nanoseconds for the generated tokens."""
     if not eval_count or not eval_duration_ns:
         return None
     return eval_count / (eval_duration_ns / 1_000_000_000)
 
 
-def stream_generate(base_url: str, model: str, prompt: str, timeout: float = 600) -> dict:
+def stream_generate(
+    base_url: str, model: str, prompt: str, timeout: float = 600
+) -> dict:
     """Send one prompt and return wall-clock times plus the final Ollama stats."""
     payload = json.dumps({"model": model, "prompt": prompt, "stream": True}).encode()
     request = urllib.request.Request(
@@ -57,10 +61,17 @@ def stream_generate(base_url: str, model: str, prompt: str, timeout: float = 600
         raise RuntimeError(f"{model} ended without a done=true event")
     return {
         "model": model,
-        "ttft_seconds": None if first_token_at is None else round(first_token_at - started, 3),
+        "ttft_seconds": None
+        if first_token_at is None
+        else round(first_token_at - started, 3),
         "total_seconds": round(finished - started, 3),
         "tokens_per_second": None
-        if (rate := tokens_per_second(final.get("eval_count"), final.get("eval_duration"))) is None
+        if (
+            rate := tokens_per_second(
+                final.get("eval_count"), final.get("eval_duration")
+            )
+        )
+        is None
         else round(rate, 2),
         "eval_count": final.get("eval_count"),
     }
@@ -69,7 +80,9 @@ def stream_generate(base_url: str, model: str, prompt: str, timeout: float = 600
 def main(argv: list[str]) -> int:
     models = argv[1:]
     if not models:
-        print("Usage: python scripts/compare_models.py MODEL [MODEL ...]", file=sys.stderr)
+        print(
+            "Usage: python scripts/compare_models.py MODEL [MODEL ...]", file=sys.stderr
+        )
         return 2
     base_url = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
     print(f"{'model':<24} {'lang':<6} {'ttft_s':>8} {'tok/s':>8} {'total_s':>8}")
@@ -84,9 +97,15 @@ def main(argv: list[str]) -> int:
             except Exception as exc:
                 print(f"{model:<24} {lang:<6} error: {exc}")
                 continue
-            rate = "" if row["tokens_per_second"] is None else f"{row['tokens_per_second']:.2f}"
+            rate = (
+                ""
+                if row["tokens_per_second"] is None
+                else f"{row['tokens_per_second']:.2f}"
+            )
             ttft = "" if row["ttft_seconds"] is None else f"{row['ttft_seconds']:.3f}"
-            print(f"{model:<24} {lang:<6} {ttft:>8} {rate:>8} {row['total_seconds']:>8.3f}")
+            print(
+                f"{model:<24} {lang:<6} {ttft:>8} {rate:>8} {row['total_seconds']:>8.3f}"
+            )
     return 0
 
 

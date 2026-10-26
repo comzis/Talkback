@@ -1,0 +1,16 @@
+[tool.ruff]
+target-version = "py311"
+src = ["app", "scripts"]
+extend-exclude = [".venv", "docs", "hf_cache", "chroma_data", "status"]
+
+[tool.ruff.lint]
+# Historical Ruff default. E501 stays out so the format commit can wrap lines on its own.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# load_dotenv() has to run before the app modules read the environment.
+"app/api/app.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+pythonpath = ["app"]

@@ -75,7 +75,9 @@ def chunk_is_complete(metadata: dict | None) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
-def classify_stored_chunks(metadatas: list[dict | None]) -> tuple[dict[str, tuple], set[str], set[str]]:
+def classify_stored_chunks(
+    metadatas: list[dict | None],
+) -> tuple[dict[str, tuple], set[str], set[str]]:
     """Split stored chunks into complete signatures, legacy keys, and unfinished files.
 
     A file counts as indexed only when every one of its chunks has index_complete.
@@ -91,7 +93,9 @@ def classify_stored_chunks(metadatas: list[dict | None]) -> tuple[dict[str, tupl
         if chunk_is_legacy(metadata):
             legacy.add(key)
         finished = chunk_is_complete(metadata)
-        all_complete[key] = finished if key not in all_complete else all_complete[key] and finished
+        all_complete[key] = (
+            finished if key not in all_complete else all_complete[key] and finished
+        )
         if finished and key not in complete:
             complete[key] = indexed_signature(metadata)
     incomplete = {key for key, finished in all_complete.items() if not finished}
@@ -134,7 +138,9 @@ def index_plan(
     return embed, drop
 
 
-def plan_updates(on_disk: dict[str, tuple], indexed: dict[str, tuple]) -> tuple[list[str], list[str]]:
+def plan_updates(
+    on_disk: dict[str, tuple], indexed: dict[str, tuple]
+) -> tuple[list[str], list[str]]:
     """Return files to embed and files whose old chunks should be removed.
 
     New files are embedded. Changed files are removed and embedded again.

@@ -25,6 +25,7 @@ wheels/
 
 # Virtual Environments
 venv/
+.venv/
 ENV/
 env/
 
@@ -38,10 +39,12 @@ env/
 
 # Docker
 .dockerignore
+!app/.dockerignore
 
 # Data and Persistent Storage (Keep these local)
 chroma_data/
 hf_cache/
+status/
 data/*
 !data/.gitkeep
 

@@ -10,6 +10,7 @@ services:
     depends_on:
       chromadb:
         condition: service_healthy
+    image: talkback-refactor-rag-api
     env_file:
       - .env
     environment:
@@ -20,10 +21,9 @@ services:
       # Writable library. Drop a file saves into ./data.
       # - ./data:/app/data
       # Read-only demo folder. Set LIBRARY_READ_ONLY=true with this mount.
-      # Optional scheduled incremental index (minutes). Leave unset to keep it off:
-      #   REINDEX_INTERVAL_MINUTES=30
-      - /Users/comzis/TalkbackDemo:/app/data:ro
+      - ${LIBRARY_PATH:?set LIBRARY_PATH in .env}:/app/data:ro
       - ./hf_cache:/home/appuser/.cache
+      - ./status:/app/status
     container_name: rag_api_service
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -34,6 +34,46 @@ services:
       timeout: 5s
       retries: 5
       start_period: 180s
+
+  indexer:
+    build:
+      context: ./app
+      args:
+        UID: ${UID:-502}
+        GID: ${GID:-20}
+    image: talkback-refactor-rag-api
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      HF_HOME: /cache/huggingface
+      HUGGINGFACE_HUB_CACHE: /cache/huggingface/hub
+      SENTENCE_TRANSFORMERS_HOME: /cache/huggingface/sentence-transformers
+      # Optional scheduled incremental index (minutes). Leave unset to keep it off.
+      # REINDEX_INTERVAL_MINUTES: "30"
+    volumes:
+      - ${LIBRARY_PATH:?set LIBRARY_PATH in .env}:/app/data:ro
+      - ./hf_cache:/home/appuser/.cache
+      - ./status:/app/status
+    command: ["python", "-m", "ingestion.worker"]
+    container_name: rag_indexer_service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import pathlib, time; age = time.time() - float(pathlib.Path('/tmp/talkback-indexer-heartbeat').read_text()); assert age < 30, age",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   chromadb:
     image: chromadb/chroma
