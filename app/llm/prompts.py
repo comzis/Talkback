@@ -535,46 +535,6 @@ def excerpts_mention(query: str, texts: list[str]) -> bool:
     return any(word in blob for word in words)
 
 
-def order_continuation_sources(sources: list[dict], history, query: str) -> list[dict]:
-    """On a bare continuation, put unused facts from the earlier answer's page first.
-
-    The page is the one whose text shares the most words with that answer.
-    Other pages keep their retrieved order. Excerpt numbers follow this list,
-    so the caller must prompt from the same order.
-    """
-    if not sources or not _continuation_only(query):
-        return list(sources)
-    previous = ""
-    for role, text in clean_history(history):
-        if role == "assistant":
-            previous = text
-    words = [
-        word
-        for word in re.findall(r"[a-z0-9]+", previous.casefold())
-        if len(word) > 2 and word not in _STOP
-    ]
-    if not words:
-        return list(sources)
-
-    def overlap(source: dict) -> int:
-        folded = (source.get("text") or "").casefold()
-        return sum(1 for word in words if word in folded)
-
-    if max(overlap(source) for source in sources) == 0:
-        return list(sources)
-    best = max(sources, key=overlap)
-    page = str(best.get("page") or "")
-    file_name = best.get("source")
-    same = [
-        source
-        for source in sources
-        if source.get("source") == file_name and str(source.get("page") or "") == page
-    ]
-    rest = [source for source in sources if source not in same]
-    same.sort(key=overlap)
-    return same + rest
-
-
 def explanation_prompt(
     query: str, library_files: list[str], excerpts: list[str], history=None
 ) -> str:
