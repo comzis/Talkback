@@ -281,8 +281,9 @@ def format_history(history, *, continue_from_passages: bool = False) -> str:
     if continue_from_passages:
         closing = (
             "The latest line asks you to continue. "
-            "Answer with information from the excerpts that is not already in the earlier answer, "
-            "including measurements and limits that answer left out. "
+            "Prefer facts from the same page or passage as the earlier answer "
+            "that were not already stated, including measurements and limits that answer left out. "
+            "Use a different page only after that page has nothing further to add. "
             "Do not repeat that answer.\n\n"
         )
     else:
@@ -534,12 +535,38 @@ def excerpts_mention(query: str, texts: list[str]) -> bool:
     return any(word in blob for word in words)
 
 
+def _same_passage_first(excerpts: list[str], history, query: str) -> list[str]:
+    """On a bare continuation, put the passage that matches the previous answer first."""
+    if not excerpts or not _continuation_only(query):
+        return list(excerpts)
+    previous = ""
+    for role, text in clean_history(history):
+        if role == "assistant":
+            previous = text
+    words = [
+        word
+        for word in re.findall(r"[a-z0-9]+", previous.casefold())
+        if len(word) > 2 and word not in _STOP
+    ]
+    if not words:
+        return list(excerpts)
+
+    def overlap(text: str) -> int:
+        folded = text.casefold()
+        return sum(1 for word in words if word in folded)
+
+    if max(overlap(text) for text in excerpts) == 0:
+        return list(excerpts)
+    return sorted(excerpts, key=overlap, reverse=True)
+
+
 def explanation_prompt(
     query: str, library_files: list[str], excerpts: list[str], history=None
 ) -> str:
     """Prompt that explains pasted text and reasons only with library excerpts."""
     names = ", ".join(library_files) if library_files else "(none yet)"
-    shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(excerpts, 1))
+    ordered = _same_passage_first(excerpts, history, query)
+    shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(ordered, 1))
     if not shown:
         shown = "(no matching excerpts)"
     if asks_for_steps(query):

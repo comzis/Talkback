@@ -221,12 +221,18 @@ def test_tell_me_more_asks_for_facts_not_already_given():
         ("assistant", "Live programmes target -23.0 LUFS."),
     ]
     text = prompts.explanation_prompt(
-        "Tell me more.", ["a.pdf"], ["Do not exceed -3 dBTP."], history
+        "Tell me more.",
+        ["a.pdf"],
+        ["line-up tone on page 17", "Live programmes target -23.0 LUFS on page 16"],
+        history,
     )
-    assert "not already in the earlier answer" in text
+    assert "same page or passage" in text
     assert "Do not repeat that answer." in text
+    assert text.index("[1] Live programmes target -23.0 LUFS") < text.index(
+        "[2] line-up tone"
+    )
     fresh = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
-    assert "not already in the earlier answer" not in fresh
+    assert "same page or passage" not in fresh
     other = prompts.explanation_prompt(
         "What about the deadline?",
         ["a.pdf"],
