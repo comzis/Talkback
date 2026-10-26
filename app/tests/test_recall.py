@@ -46,7 +46,7 @@ def test_rerank_candidate_and_length_defaults():
 
     os.environ.pop("RERANK_CANDIDATES", None)
     os.environ.pop("RERANK_MAX_LENGTH", None)
-    assert config.rerank_candidates() == 20
+    assert config.rerank_candidates() == 50
     assert config.rerank_max_length() == 512
 
 

@@ -71,7 +71,7 @@ def main() -> None:
 
             t0 = time.perf_counter()
             raw = index.as_retriever(similarity_top_k=100).retrieve(q)
-            first_word_samples.append(time.perf_counter() - t0)
+            first_word_samples.append(('vec', time.perf_counter() - t0))
             ranked = [fp(n) for n in raw]
             v20 = first_hit(ranked[:20], want, list(pages))
             v50 = first_hit(ranked[:50], want, list(pages))
@@ -91,7 +91,9 @@ def main() -> None:
                 rr = first_hit([fp(n) for n in ordered], want, list(pages))
                 rr_disp = fmt(rr)
 
+            t_pipe = time.perf_counter()
             nodes, boosted = _retrieve_nodes(index, q, lib)
+            first_word_samples.append(('pipe', time.perf_counter() - t_pipe))
             pipe = first_hit([fp(n) for n in nodes], want, list(pages))
 
             if boosted and named:
@@ -175,11 +177,15 @@ def main() -> None:
                 f"{fmt(pipe):>4} {cap_rm:6} {cite:12} {note[:40]}"
             )
 
-    if first_word_samples:
-        avg = sum(first_word_samples) / len(first_word_samples)
+    from collections import defaultdict
+
+    buckets = defaultdict(list)
+    for kind, sec in first_word_samples:
+        buckets[kind].append(sec)
+    for kind, vals in buckets.items():
         print(
-            f"vector_search_latency_s n={len(first_word_samples)} "
-            f"avg={avg:.3f} max={max(first_word_samples):.3f}"
+            f"latency_{kind}_s n={len(vals)} avg={sum(vals)/len(vals):.3f} "
+            f"max={max(vals):.3f}"
         )
 
 
