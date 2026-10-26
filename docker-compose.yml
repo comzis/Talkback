@@ -17,6 +17,8 @@ services:
       HF_HOME: /cache/huggingface
       HUGGINGFACE_HUB_CACHE: /cache/huggingface/hub
       SENTENCE_TRANSFORMERS_HOME: /cache/huggingface/sentence-transformers
+      # Empty keeps the in-process reranker. A Mac sets this to the host MPS service.
+      RERANK_URL: ${RERANK_URL:-}
     volumes:
       # Writable library. Drop a file saves into ./data.
       # - ./data:/app/data

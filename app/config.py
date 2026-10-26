@@ -165,6 +165,11 @@ def rerank_model_name() -> str:
     return _raw("RERANK_MODEL") or DEFAULT_RERANK_MODEL
 
 
+def rerank_url() -> str:
+    """Host reranker. Empty means score pairs inside this process."""
+    return _raw("RERANK_URL")
+
+
 def rerank_candidates() -> int:
     return _positive_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES)
 
