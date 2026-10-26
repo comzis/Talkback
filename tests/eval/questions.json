@@ -116,7 +116,7 @@
     "file": "TechnicalDeliveryStandardsBBCLive.pdf",
     "page": "33",
     "language": "es",
-    "answer_any_of": [["single link", "no backup", "enlace único", "sin reserva", "Option C", "opción C"]]
+    "answer_any_of": [["single link", "un solo enlace", "enlace único", "único enlace", "no backup", "sin reserva", "Option C", "opción C"]]
   },
   {
     "id": "es-inventory",
