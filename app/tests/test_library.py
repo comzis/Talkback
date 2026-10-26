@@ -302,12 +302,38 @@ class PromptTests(unittest.TestCase):
         self.assertFalse(prompts.should_search_library("What is 2 + 2?"))
         self.assertTrue(prompts.should_search_library("What is in the CV?"))
         self.assertEqual(
-            prompts.named_library_files("What is in the CV?", ["Example CV.pdf"]),
-            ["Example CV.pdf"],
+            prompts.named_library_files(
+                "What does the Ansible playbook configure?",
+                ["Ansible_Network_Automation.pdf", "other notes.pdf"],
+            ),
+            ["Ansible_Network_Automation.pdf"],
         )
         self.assertEqual(
             prompts.named_library_files("What is 2 + 2?", ["Example CV.pdf"]),
             [],
+        )
+        # Stopwords in titles must not pin unrelated books.
+        books = [
+            "engineering/The Design of Design-Essays.pdf",
+            "engineering/The Pragmatic Programmer Edition.pdf",
+            "TechnicalDeliveryStandardsBBCLive.pdf",
+        ]
+        self.assertEqual(
+            prompts.named_library_files(
+                "What audio loudness level do the BBC live standards require?",
+                books,
+            ),
+            [],
+        )
+        self.assertEqual(
+            prompts.named_library_files(
+                "Quel filtre ICMP dans Wireshark montre Protocol Unreachable ?",
+                [
+                    "Traffic_analysis_with_wireshark_1746771119.pdf",
+                    "engineering/Refactoring_book.pdf",
+                ],
+            ),
+            ["Traffic_analysis_with_wireshark_1746771119.pdf"],
         )
         self.assertTrue(
             prompts.excerpts_mention(

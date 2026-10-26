@@ -36,19 +36,21 @@ def node_place(node) -> tuple[str, str, float | None]:
 
 
 def ranked_places(index, query: str, library_files: list[str], top_k: int):
-    """Highest-scoring chunks. A named file is searched on its own, as the app does.
+    """Highest-scoring chunks. Named files boost the global pool, as the app does.
 
     Rank is the similarity score. The prose-versus-link reorder and the trim to
     four excerpts happen later, when an answer is built.
     """
     from llm.prompts import named_library_files
-    from retrieval.search import _retrieve_named
+    from retrieval.search import _merge_candidates, _retrieve_named
 
+    global_nodes = index.as_retriever(similarity_top_k=top_k).retrieve(query)
     named = named_library_files(query, library_files)
+    nodes = global_nodes
     if named:
-        nodes = _retrieve_named(index, query, named, top_k)
-    else:
-        nodes = index.as_retriever(similarity_top_k=top_k).retrieve(query)
+        pinned = _retrieve_named(index, query, named, top_k)
+        if pinned:
+            nodes = _merge_candidates(global_nodes, pinned, top_k)
     nodes = sorted(
         nodes, key=lambda node: getattr(node, "score", None) or 0, reverse=True
     )

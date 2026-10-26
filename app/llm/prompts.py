@@ -75,6 +75,71 @@ _STOP = {
     "but",
     "its",
 }
+# Closed-class words (en/fr/es) used when matching filename tokens. Length ≥ 4
+# still matters: shorter stopwords are already dropped by the token pattern.
+_FILE_TOKEN_STOP = _STOP | {
+    "dans",
+    "avec",
+    "pour",
+    "cette",
+    "sont",
+    "leurs",
+    "comme",
+    "nous",
+    "vous",
+    "plus",
+    "dont",
+    "elle",
+    "mais",
+    "aussi",
+    "tout",
+    "tous",
+    "toute",
+    "toutes",
+    "entre",
+    "sous",
+    "chez",
+    "sans",
+    "vers",
+    "donc",
+    "alors",
+    "para",
+    "como",
+    "esta",
+    "este",
+    "esto",
+    "estas",
+    "estos",
+    "estan",
+    "está",
+    "están",
+    "sobre",
+    "también",
+    "tambien",
+    "porque",
+    "cuando",
+    "donde",
+    "desde",
+    "hasta",
+    "hacia",
+    "entre",
+    "unos",
+    "unas",
+    "muy",
+    "each",
+    "other",
+    "into",
+    "over",
+    "under",
+    "after",
+    "before",
+    "through",
+    "during",
+    "without",
+    "within",
+    "among",
+    "across",
+}
 
 
 def citation_prompt(library_files: list[str]) -> str:
@@ -459,7 +524,14 @@ _GENERIC_FILE_WORDS = {
     "report",
     "slides",
     "sheet",
+    "edition",
+    "volume",
+    "chapter",
+    "book",
+    "pdf",
 }
+# A filename token may match at most this share of library files (IDF-style).
+_FILE_TOKEN_MAX_SHARE = 0.1
 _SMALL_TALK = re.compile(
     r"^(hi|hello|hey|thanks|thank you|ok|okay|yo|good morning|good afternoon|good evening|"
     r"bonjour|salut|merci|hola|gracias|buenos dias|buenas tardes)\b",
@@ -467,26 +539,66 @@ _SMALL_TALK = re.compile(
 )
 
 
+def _filename_tokens(name: str) -> list[str]:
+    """Length ≥ 4 tokens from the file stem (basename, no extension)."""
+    stem = name.lower().rsplit("/", 1)[-1].rsplit(".", 1)[0].strip()
+    return re.findall(r"[a-z0-9]{4,}", stem)
+
+
+def _filename_token_df(library_files: list[str]) -> dict[str, int]:
+    """How many library paths contain each filename token."""
+    counts: dict[str, int] = {}
+    for name in library_files:
+        for token in set(_filename_tokens(name)):
+            counts[token] = counts.get(token, 0) + 1
+    return counts
+
+
+def _distinctive_filename_token(
+    token: str, library_size: int, doc_freq: dict[str, int]
+) -> bool:
+    """True when a token is rare enough across filenames to identify a file."""
+    if len(token) < 4:
+        return False
+    if token in _FILE_TOKEN_STOP or token in _GENERIC_FILE_WORDS:
+        return False
+    if library_size <= 0:
+        return True
+    limit = max(1, int(library_size * _FILE_TOKEN_MAX_SHARE))
+    return doc_freq.get(token, 0) <= limit
+
+
 def _names_file(token: str, lowered: str) -> bool:
     """True when a filename token appears in the question as its own word."""
-    if token in _GENERIC_FILE_WORDS:
+    if token in _GENERIC_FILE_WORDS or token in _FILE_TOKEN_STOP:
         return False
-    if len(token) < 5:
-        return re.search(rf"\b{re.escape(token)}\b", lowered) is not None
-    return token in lowered
+    if len(token) < 4:
+        return False
+    return re.search(rf"\b{re.escape(token)}\b", lowered) is not None
 
 
 def named_library_files(query: str, library_files: list[str]) -> list[str]:
-    """Return library filenames the question actually names."""
+    """Return library filenames the question actually names.
+
+    A token counts only when it is distinctive: not an en/fr/es stopword, at
+    least four characters, and present in at most a small share of filenames.
+    """
     lowered = (query or "").lower()
+    size = len(library_files)
+    doc_freq = _filename_token_df(library_files)
     matched = []
     for name in library_files:
         full = name.lower()
         stem = full.rsplit(".", 1)[0].strip()
-        tokens = re.findall(r"[a-z0-9]{2,}", stem)
-        named = (full and full in lowered) or (len(stem) >= 4 and stem in lowered)
-        named = named or any(_names_file(token, lowered) for token in tokens)
-        if named:
+        if (full and full in lowered) or (len(stem) >= 4 and stem in lowered):
+            matched.append(name)
+            continue
+        tokens = _filename_tokens(name)
+        if any(
+            _distinctive_filename_token(token, size, doc_freq)
+            and _names_file(token, lowered)
+            for token in tokens
+        ):
             matched.append(name)
     return matched
 

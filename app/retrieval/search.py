@@ -88,9 +88,9 @@ def _prefer_focused(nodes, query: str):
 
 
 def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str]):
-    """Search the library. A named file is searched on its own.
+    """Search the library. Named files boost the global pool; they never replace it.
 
-    Returns the nodes and whether they were limited to files the question names.
+    Returns the kept nodes and whether a named-file boost was applied.
     """
     per_file = config.retrieve_per_file()
     limit = config.retrieve_limit()
@@ -103,17 +103,44 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
         candidates = max(candidates, 16)
     if config.rerank_enabled():
         candidates = max(candidates, config.rerank_candidates())
+    global_nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
     named = named_library_files(query, library_files)
+    boosted = False
+    nodes = global_nodes
     if named:
         pinned = _retrieve_named(index, query, named, candidates)
         if pinned:
-            ordered = _order_nodes(pinned, query)
-            _log_rerank(ordered)
-            return _keep(ordered, per_file, limit), True
-    nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
+            nodes = _merge_candidates(global_nodes, pinned, candidates)
+            boosted = True
     ordered = _order_nodes(nodes, query)
     _log_rerank(ordered)
-    return _keep(ordered, per_file, limit), False
+    return _keep(ordered, per_file, limit), boosted
+
+
+def _node_key(node) -> str:
+    node_id = getattr(node, "node_id", None) or getattr(node, "id_", None)
+    if node_id:
+        return str(node_id)
+    metadata = getattr(node, "metadata", None) or {}
+    text = ""
+    if hasattr(node, "get_text"):
+        text = node.get_text() or ""
+    return f"{metadata.get('relative_path')}:{metadata.get('page_label')}:{text[:80]}"
+
+
+def _merge_candidates(global_nodes, named_nodes, limit: int):
+    """Put named-file hits first, then fill from the global search. Dedupe by id."""
+    merged = []
+    seen: set[str] = set()
+    for node in list(named_nodes) + list(global_nodes):
+        key = _node_key(node)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(node)
+        if len(merged) >= limit:
+            break
+    return merged
 
 
 def _keep(nodes, per_file: int, limit: int):
