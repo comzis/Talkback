@@ -103,6 +103,11 @@ _OUTSIDE_DOCUMENT = {
     "fr": "Cette réponse ne vient pas des documents et peut ne pas leur correspondre.",
     "es": "Esta respuesta no procede de los documentos y puede no coincidir con ellos.",
 }
+_GENERAL_MARK = {
+    "en": "From general knowledge:",
+    "fr": "D'après les connaissances générales :",
+    "es": "Según el conocimiento general:",
+}
 _SPANISH_QUESTION = re.compile(
     r"[¿¡ñ]|\b(?:qué|puedes|detalle|módulos|modulos|más)\b",
     re.IGNORECASE,
@@ -496,14 +501,18 @@ def explanation_prompt(
         "Keep file names and quoted text in their original language.\n"
         f"The library contains: {names}.\n"
         "If the user pasted a passage, explain that text in plain language and walk through the lines.\n"
-        "If the excerpts answer the question, answer from them and end with the excerpt number in brackets, such as [1].\n"
-        "If they do not answer the question, answer from general knowledge and do not cite the excerpts. "
-        "Do not invent a measurement. Never write a dBTP, LUFS, LU, or dB figure unless the excerpts answer the question and contain that figure. "
+        "If the excerpts answer the question, answer from them and end with the excerpt number in brackets, such as [1]. "
+        "Do not add general knowledge to a cited answer.\n"
+        "If they do not answer the question, say so and do not cite the excerpts. "
+        f'A further remark that the excerpts do not support must start with "{_GENERAL_MARK[question_language(query)]}" '
+        "and must not contain a measurement.\n"
+        "Do not invent a measurement. Never write a dBTP, LUFS, LU, or dB figure unless the excerpts answer the question and contain that figure.\n"
         "When the user asked for placeholders, write each one in square brackets.\n"
         f"{shape}\n"
         f"{format_history(history)}"
         f"Library excerpts:\n{shown}\n\n"
         f"User:\n{query}\n"
+        "If the excerpts do not answer the question, do not write a dBTP, LUFS, LU, or dB number.\n"
         "Assistant:"
     )
 

@@ -41,10 +41,16 @@ def test_notices_and_fallbacks_follow_the_question_language():
 def test_the_prompt_answers_from_passages_or_general_knowledge():
     text = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
     assert "answer from them" in text
-    assert "general knowledge" in text
+    assert "Do not add general knowledge to a cited answer." in text
+    assert 'must start with "From general knowledge:"' in text
+    assert "must not contain a measurement" in text
     assert "square brackets" in text
     assert "Do not invent a measurement" in text
     assert "dBTP" in text
+    french = prompts.explanation_prompt("Quel filtre ?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "D'après les connaissances générales" in french
+    spanish = prompts.explanation_prompt("¿Qué nivel?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "Según el conocimiento general" in spanish
 
 
 def test_spanish_loudness_keeps_its_citation_without_english_words():
