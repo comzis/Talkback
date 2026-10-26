@@ -1,0 +1,6 @@
+id,set,query,path,file,pages,language,answer_contains,answer_any_of,card_contains,continues,notice,gap_about,figure_labels,placeholders,known,notes
+ex-loudness,main,What loudness do the BBC live standards require for a live programme?,library,TechnicalDeliveryStandardsBBCLive.pdf,16,,,-23.0 LUFS|-23 LUFS;1.0 LU|±1|1 LU,,,,,,,,Example row. Replace with your own documents.
+ex-playbook,main,What is the YAML file of automation instructions called?,library,Ansible_Network_Automation_1744044240.pdf,4,,,playbook|Playbook,,,,,,,,Short-answer example.
+ex-radio,main,What true-peak level does the standard require for radio?,uncovered,,,,,,,,,radio,television|tv,,,Not covered by the television PDF.
+ex-srt,main,Draft a short incident update for a 10-minute SRT outage. Use placeholders for the cause.,general,,,,,,,,This answer is not from the documents and may not match them.,,,true,,General-path example.
+ex-held-filter,heldout,Quel filtre d'affichage montre Protocol Unreachable ?,library,Traffic_analysis_with_wireshark_1746771119.pdf,34,fr,icmp.type == 3 && icmp.code == 2,,icmp.type == 3 && icmp.code == 2,,,,,,,Held-out example. Freeze before scoring.
