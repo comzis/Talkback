@@ -17,7 +17,6 @@ from collections.abc import Iterator
 import httpx
 
 import config
-import store.embeddings as embeddings
 from state import get
 
 logger = logging.getLogger(__name__)
@@ -223,16 +222,11 @@ def wait_for_models(timeout: float = 180) -> None:
 def _warm_up() -> None:
     """Load the embedder and send one short request to the chat server."""
     from llama_index.core import Settings
-    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    from store.host_embed import build_embed_model
 
     try:
-        model_name = config.embed_model_name()
         get().chat = build_chat_client()
-        Settings.embed_model = HuggingFaceEmbedding(
-            model_name=model_name,
-            query_instruction=embeddings.query_instruction(model_name),
-            text_instruction=embeddings.text_instruction(model_name),
-        )
+        Settings.embed_model = build_embed_model()
         Settings.embed_model.get_query_embedding("ping")
         get().chat.complete("ok")
         logger.info("Warm-up finished.")

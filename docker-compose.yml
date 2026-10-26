@@ -19,6 +19,8 @@ services:
       SENTENCE_TRANSFORMERS_HOME: /cache/huggingface/sentence-transformers
       # Empty keeps the in-process reranker. A Mac sets this to the host MPS service.
       RERANK_URL: ${RERANK_URL:-}
+      # Empty keeps the in-process embedder. A Mac can point this at the same host service.
+      EMBED_URL: ${EMBED_URL:-}
     volumes:
       # Writable library. Drop a file saves into ./data.
       # - ./data:/app/data
@@ -54,6 +56,8 @@ services:
       HF_HOME: /cache/huggingface
       HUGGINGFACE_HUB_CACHE: /cache/huggingface/hub
       SENTENCE_TRANSFORMERS_HOME: /cache/huggingface/sentence-transformers
+      RERANK_URL: ${RERANK_URL:-}
+      EMBED_URL: ${EMBED_URL:-}
       # Optional scheduled incremental index (minutes). Leave unset to keep it off.
       # REINDEX_INTERVAL_MINUTES: "30"
     volumes:

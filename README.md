@@ -18,7 +18,7 @@ The chat window is the main view. The library, system status, and upload area si
 
 ## Quick start
 
-Talkback needs Docker, Ollama on the host, and several GB of free disk for the image and model. Give Docker Desktop 16 GiB of memory. The API loads the embedding model in the container, and the reranker as well unless `RERANK_URL` points at the host service below. The same compose file runs on a Mac and on a Linux server. `host.docker.internal` is mapped to the host gateway, so the container reaches Ollama on either machine.
+Talkback needs Docker, Ollama on the host, and several GB of free disk for the image and model. Give Docker Desktop 16 GiB of memory. The API loads the embedding model in the container unless `EMBED_URL` points at the host service below, and the reranker as well unless `RERANK_URL` does. The same compose file runs on a Mac and on a Linux server. `host.docker.internal` is mapped to the host gateway, so the container reaches Ollama on either machine.
 
 ### Mac
 
@@ -36,13 +36,13 @@ scripts/install-rerank-host.sh
 scripts/uninstall-rerank-host.sh
 ```
 
-`scripts/start-rerank-host.sh` is the same process without login startup. The plist template is `scripts/com.talkback.rerank-host.plist`; the installer writes this checkout's path into `~/Library/LaunchAgents`. The script keeps a virtualenv in `.rerank-host`, loads `BAAI/bge-reranker-v2-m3` once from `./hf_cache` (offline), and listens on `127.0.0.1` only. Device order is CUDA, then MPS, then CPU. Set `RERANK_URL=http://host.docker.internal:11435` and recreate the API. Leave `RERANK_URL` unset and the container scores pairs itself, which is what CI and a machine without this process do. If the URL is set and the host process is down, the container scores pairs on CPU and `/system/status` reports that fallback. The warning is logged once per outage. The embedding model stays in the container.
+`scripts/start-rerank-host.sh` is the same process without login startup. The plist template is `scripts/com.talkback.rerank-host.plist`; the installer writes this checkout's path into `~/Library/LaunchAgents`. The script keeps a virtualenv in `.rerank-host`, loads `BAAI/bge-reranker-v2-m3` at start and `BAAI/bge-m3` on the first `/embed` call from `./hf_cache` (offline), and listens on `127.0.0.1` only. Device order is CUDA, then MPS, then CPU. Set `RERANK_URL=http://host.docker.internal:11435` and optionally `EMBED_URL` to the same origin, then recreate the API and indexer. Leave either URL unset and that model runs inside the container, which is what CI and a machine without this process do. If a URL is set and the host process is down, the container falls back to CPU and `/system/status` reports that. The warning is logged once per outage.
 
 ### Linux server
 
 Install Docker Engine and the Docker Compose plugin, and install Ollama on the host so it can use the machine's GPU. Build as the user that owns the library folder. The Mac default of UID `502` will not match a typical server account.
 
-On a Linux GPU server, do not start the Mac host reranker. Rebuild the API image with a CUDA torch wheel instead of the CPU wheel in the Dockerfile, and leave `RERANK_URL` unset. The container then runs the reranker, and the embedding model, on the NVIDIA GPU. The host service exists because Docker Desktop on a Mac cannot see the Apple GPU.
+On a Linux GPU server, do not start the Mac host service. Rebuild the API image with a CUDA torch wheel instead of the CPU wheel in the Dockerfile, and leave `RERANK_URL` and `EMBED_URL` unset. The container then runs the reranker and the embedding model on the NVIDIA GPU. The host service exists because Docker Desktop on a Mac cannot see the Apple GPU.
 
 ```bash
 docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
@@ -119,6 +119,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `RERANK_THRESHOLD` | Logged only. It does not choose the path | `-7.5` |
 | `RERANK` | Set to `false` to use the similarity threshold instead | `true` |
 | `RERANK_URL` | Host reranker, for a Mac Apple GPU. Empty scores pairs in the container | unset |
+| `EMBED_URL` | Host embedder (same process as the reranker). Empty embeds in the container | unset |
 | `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
 | `RETRIEVE_PER_FILE` | Maximum chunks from one file, once the hits span more files than `RETRIEVE_BALANCE_FILES` | `2` |
 | `RETRIEVE_BALANCE_FILES` | Per-file cap applies only above this many files. Three PDFs do not trigger it | `3` |
