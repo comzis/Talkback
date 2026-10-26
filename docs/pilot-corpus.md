@@ -39,7 +39,14 @@ Review every hit (credentials, API keys, private keys, emails, phones, IP/MAC
 lists). The script does not change files. Drop or redact anything that must
 not enter the local index.
 
-## 4. Incremental re-index
+## 4. Exclusions (optional)
+
+Put a `.talkbackignore` file at the library root to skip files without
+deleting them. One pattern per line (`#` comments allowed). Basename
+patterns match anywhere under the library; paths with `/` match the relative
+path. Finder metadata (`.DS_Store`, `._*`) is always skipped.
+
+## 5. Incremental re-index
 
 Keep the stack running with the usual `LIBRARY_PATH`. Do **not** wipe Chroma
 or force a full rebuild for this drop.
@@ -49,9 +56,9 @@ changed files under `engineering/` are added. Wait until `/system/status`
 shows the collection count risen and no reindex alarm.
 
 Confirm Docker has enough memory (16 GiB in the README) and that the host
-reranker is up if you use `RERANK_URL`.
+reranker (and embedder, if `EMBED_URL` is set) is up.
 
-## 5. Smoke five questions
+## 6. Smoke five questions
 
 Ask five hand-written questions about the new files (UI or `/query/stream`):
 
@@ -64,7 +71,11 @@ Ask five hand-written questions about the new files (UI or `/query/stream`):
 Confirm citations name the engineering file, language is right, and uncovered
 questions do not keep a card.
 
-## 6. Eval
+## 7. Eval
+
+Demo-quality evals stay in the tracked JSON under `tests/eval/`. Questions
+about copyrighted engineering books must live only under
+`tests/eval/local/` (gitignored). Do not commit book text.
 
 1. Engineers fill `tests/eval/questions.template.csv` (see
    [eval-authoring.md](eval-authoring.md)), with `file` paths that match the
