@@ -161,13 +161,24 @@ def plan_updates(
     return embed, drop
 
 
-def balance_matches(nodes, per_file: int = 2, limit: int = 4):
-    """Keep the best matches without letting one file take every slot."""
+def _match_name(node) -> str:
+    metadata = getattr(node, "metadata", None) or {}
+    return metadata.get("relative_path") or metadata.get("file_name") or "Document"
+
+
+def balance_matches(nodes, per_file: int = 2, limit: int = 4, balance_after: int = 0):
+    """Keep the best matches without letting one file take every slot.
+
+    The per-file cap runs only when the hits come from more than balance_after
+    files. With the current three PDFs the cap stays off, so a third chunk
+    from the top file is not removed.
+    """
+    names = [_match_name(node) for node in nodes]
+    if len(set(names)) <= balance_after:
+        return list(nodes)[:limit]
     selected = []
     counts: dict[str, int] = {}
-    for node in nodes:
-        metadata = getattr(node, "metadata", None) or {}
-        name = metadata.get("relative_path") or metadata.get("file_name") or "Document"
+    for node, name in zip(nodes, names):
         if counts.get(name, 0) >= per_file:
             continue
         selected.append(node)

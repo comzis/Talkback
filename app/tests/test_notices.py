@@ -38,6 +38,204 @@ def test_notices_and_fallbacks_follow_the_question_language():
     )
 
 
+def test_the_prompt_answers_from_passages_or_general_knowledge():
+    text = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "answer from them" in text
+    assert "Do not add general knowledge to a cited answer." in text
+    assert 'must start with "From general knowledge:"' in text
+    assert "must not contain a measurement" in text
+    assert "square brackets" in text
+    assert "Do not invent a measurement" in text
+    assert "dBTP" in text
+    french = prompts.explanation_prompt("Quel filtre ?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "D'après les connaissances générales" in french
+    spanish = prompts.explanation_prompt("¿Qué nivel?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "Según el conocimiento general" in spanish
+
+
+def test_spanish_loudness_keeps_its_citation_without_english_words():
+    passage = "Live programmes shall measure -23.0 LUFS with a tolerance of ±1.0LU."
+    answer = (
+        "Para un programa en directo, la sonoridad exigida es de -23.0 LUFS "
+        "con un margen de ±1.0 LU. [1]"
+    )
+    sources = [
+        {
+            "number": 1,
+            "source": "TechnicalDeliveryStandardsBBCLive.pdf",
+            "text": passage,
+            "page": "16",
+        }
+    ]
+    kept = prompts.supporting_sources(answer, sources)
+    assert [item["page"] for item in kept] == ["16"]
+    wrong = [
+        {
+            "number": 1,
+            "source": "notes.pdf",
+            "text": "Stereo line-up tone.",
+            "page": "17",
+        }
+    ]
+    assert prompts.supporting_sources(answer, wrong) == []
+
+
+def test_a_bare_number_is_not_a_technical_token():
+    sources = [
+        {
+            "number": 1,
+            "source": "wire.pdf",
+            "text": "Wireshark captures packets on a network.",
+            "page": "4",
+        }
+    ]
+    kept = prompts.supporting_sources("The outage lasted 10 minutes. [1]", sources)
+    assert [item["page"] for item in kept] == ["4"]
+
+
+def test_a_measurement_missing_from_every_passage_drops_the_citation():
+    sources = [
+        {
+            "number": 1,
+            "source": "wire.pdf",
+            "text": "Wireshark captures packets on a network.",
+        }
+    ]
+    assert prompts.supporting_sources("The level is -23.0 LUFS. [1]", sources) == []
+
+
+def test_plain_parentheses_do_not_drop_a_citation():
+    option = [
+        {
+            "text": "OPTION A: Main and Backup links are geographically separate.",
+            "page": "33",
+        }
+    ]
+    kept = prompts.supporting_sources(
+        "Les liens sont géographiquement séparés (Option A). [1]", option
+    )
+    assert [item["page"] for item in kept] == ["33"]
+    agent = [{"text": "Agentless Architecture: Ansible uses SSH.", "page": "4"}]
+    assert (
+        prompts.supporting_sources(
+            "No hace falta un programa residente (agentless). [2]",
+            [{}, agent[0]],
+        )[0]["page"]
+        == "4"
+    )
+    rollback = [
+        {"text": "Store configurations in Git and roll back if needed.", "page": "4"}
+    ]
+    assert (
+        prompts.supporting_sources(
+            "Las configuraciones se guardan para una reversión (rollback). [1]",
+            rollback,
+        )[0]["page"]
+        == "4"
+    )
+
+
+def test_a_unit_in_parentheses_wording_still_has_to_match():
+    speech = [
+        {
+            "text": "Speech content in factual programmes should aim for an LRA of no more than 6LU.",
+            "page": "16",
+        }
+    ]
+    answer = (
+        "Speech content in factual programmes should aim for a Loudness Range "
+        "(LRA) of no more than 6 LU. [1]"
+    )
+    assert [item["page"] for item in prompts.supporting_sources(answer, speech)] == [
+        "16"
+    ]
+    voice = [
+        {
+            "text": "Where Mode 2 is used, voice over in the centre channel should be approximately 3LU higher.",
+            "page": "33",
+        }
+    ]
+    mode = (
+        "En mode 2, le commentaire (ou voix off) doit être environ 3 LU plus élevé. [1]"
+    )
+    assert [item["page"] for item in prompts.supporting_sources(mode, voice)] == ["33"]
+
+
+def test_a_figure_found_in_another_passage_is_re_attributed():
+    sources = [
+        {"text": "Dialogue must be clear for a first-time viewer.", "page": "16"},
+        {"text": "Live (including as-live) -23.0 LUFS ±1.0LU", "page": "16b"},
+    ]
+    answer = "La sonoridad exigida es de -23.0 LUFS con un margen de ±1.0 LU. [1]"
+    kept = prompts.supporting_sources(answer, sources)
+    assert [item["number"] for item in kept] == [2]
+    assert kept[0]["page"] == "16b"
+
+
+def test_numbers_match_across_decimal_commas_and_minus_signs():
+    sources = [
+        {
+            "text": "Non-live programmes are -23.0 LUFS ±0.5LU and fail above −1dBTP.",
+            "page": "16",
+        }
+    ]
+    answer = "La tolerancia es 0,5 LU y el pico es −1 dBTP. [1]"
+    assert [item["page"] for item in prompts.supporting_sources(answer, sources)] == [
+        "16"
+    ]
+
+
+def test_a_standard_code_is_re_attributed_or_dropped():
+    sources = [
+        {"text": "Meters must comply with EBU Tech 3343.", "page": "16"},
+        {"text": "See EBU Tech 3341 for the meter.", "page": "17"},
+    ]
+    answer = "Meters must comply with EBU Tech 3341. [1]"
+    kept = prompts.supporting_sources(answer, sources)
+    assert [item["page"] for item in kept] == ["17"]
+    assert prompts.supporting_sources(answer, sources[:1]) == []
+
+
+def test_a_filter_and_a_file_name_are_re_attributed():
+    pages = [
+        {"text": "Wireshark shows ICMP errors on the network.", "page": "4"},
+        {"text": "Display filter: icmp.type == 3 && icmp.code == 2", "page": "34"},
+    ]
+    answer = "Le filtre est icmp.type == 3 && icmp.code == 2. [1]"
+    assert [item["page"] for item in prompts.supporting_sources(answer, pages)] == [
+        "34"
+    ]
+    files = [
+        {"text": "Modules are predefined functions.", "page": "4"},
+        {"text": "The inventory file hosts.ini lists each device.", "page": "6"},
+    ]
+    inventory = "El archivo que enumera los dispositivos es hosts.ini. [1]"
+    assert [item["page"] for item in prompts.supporting_sources(inventory, files)] == [
+        "6"
+    ]
+
+
+def test_tell_me_more_asks_for_facts_not_already_given():
+    history = [
+        ("user", "What audio loudness level do the BBC standards require?"),
+        ("assistant", "Live programmes target -23.0 LUFS."),
+    ]
+    text = prompts.explanation_prompt(
+        "Tell me more.", ["a.pdf"], ["Do not exceed -3 dBTP."], history
+    )
+    assert "not already in the earlier answer" in text
+    assert "Do not repeat that answer." in text
+    fresh = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "not already in the earlier answer" not in fresh
+    other = prompts.explanation_prompt(
+        "What about the deadline?",
+        ["a.pdf"],
+        ["Monday."],
+        [("user", "What does the agreement say?")],
+    )
+    assert "not already in the earlier answer" not in other
+
+
 def test_a_first_question_keeps_the_standing_notice():
     assert (
         prompts.notice_for_general(

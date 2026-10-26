@@ -223,6 +223,31 @@ def test_cross_language_questions_do_not_name_the_products():
     assert runner.judge(cases["fr-loudness"], french) == []
 
 
+def test_stopwords_decide_the_language_without_a_per_case_list():
+    assert runner.answer_language("El módulo es ios_config.") == "es"
+    assert runner.answer_language("The module is ios_config.") == "en"
+    assert runner.answer_language("Se llama Playbook.") == "es"
+    assert (
+        runner.answer_language(
+            "Le message d'erreur correspondant au type 4 et au code 0 "
+            "est le Source Quench."
+        )
+        == "fr"
+    )
+    assert runner.answer_language("La sonie est -23,0 LUFS.") == "fr"
+    assert runner.answer_language("hosts.ini") is None
+
+
+def test_single_link_accepts_the_document_phrasing():
+    case = {item["id"]: item for item in runner.load_cases()}["es-single-link"]
+    # Page 33: "A single link, with no backup is acceptable."
+    events = [
+        _token("Basta un único enlace, sin camino de reserva, en la opción C."),
+        _source("TechnicalDeliveryStandardsBBCLive.pdf", "33"),
+    ]
+    assert runner.judge(case, events) == []
+
+
 def test_held_out_questions_are_separate():
     held = runner.load_cases(runner.ROOT / "tests" / "eval" / "heldout.json")
     main = {case["id"] for case in runner.load_cases()}

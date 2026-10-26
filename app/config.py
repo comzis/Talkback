@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 
 DEFAULT_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
-DEFAULT_EMBED_MODEL = "intfloat/multilingual-e5-small"
-SERVER_EMBED_MODEL = "BAAI/bge-m3"
+# BAAI/bge-m3 is MIT. intfloat/multilingual-e5-small stays available via EMBED_MODEL.
+DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
+COMPACT_EMBED_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_EMBED_BATCH = 16
 DEFAULT_OLLAMA_TIMEOUT = 300.0
 DEFAULT_CHUNK_SIZE = 512
@@ -14,13 +15,24 @@ DEFAULT_CHUNK_OVERLAP = 64
 DEFAULT_RETRIEVE_CANDIDATES = 8
 DEFAULT_RETRIEVE_LIMIT = 4
 DEFAULT_RETRIEVE_PER_FILE = 2
+# The per-file cap starts once the hits come from more files than this.
+DEFAULT_RETRIEVE_BALANCE_FILES = 3
 DEFAULT_OLLAMA_CONTEXT = 4096
 DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
 # Qwen 3.5 writes a hidden reasoning trace unless this is turned off.
 DEFAULT_OLLAMA_THINK = False
 # e5-small cosine scores on the real PDFs: a CV question scored about 0.79,
 # and an unrelated question topped out at 0.65. 0.75 sits between them.
+# Used only when the reranker is off.
 DEFAULT_RELEVANCE_THRESHOLD = 0.75
+# BAAI/bge-reranker-v2-m3 is Apache-2.0. It runs from the local cache.
+DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+DEFAULT_RERANK_CANDIDATES = 20
+# Token cap for each query-passage pair. The forward pass does not see more.
+DEFAULT_RERANK_MAX_LENGTH = 512
+# Logged only. It does not choose the path. Correct pages landed as low as
+# about -7.4, and the unrelated SRT draft scored about -5.2.
+DEFAULT_RERANK_THRESHOLD = -7.5
 
 
 def _raw(name: str) -> str:
@@ -113,6 +125,18 @@ def retrieve_per_file() -> int:
     return _positive_int("RETRIEVE_PER_FILE", DEFAULT_RETRIEVE_PER_FILE)
 
 
+def retrieve_balance_files() -> int:
+    """Apply the per-file cap only when the hits span more files than this."""
+    raw = _raw("RETRIEVE_BALANCE_FILES")
+    if not raw:
+        return DEFAULT_RETRIEVE_BALANCE_FILES
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_RETRIEVE_BALANCE_FILES
+    return value if value >= 0 else DEFAULT_RETRIEVE_BALANCE_FILES
+
+
 def ollama_context() -> int:
     return _positive_int("OLLAMA_CONTEXT", DEFAULT_OLLAMA_CONTEXT)
 
@@ -127,6 +151,36 @@ def ollama_think() -> bool:
     if not raw:
         return DEFAULT_OLLAMA_THINK
     return raw in {"1", "true", "yes"}
+
+
+def rerank_enabled() -> bool:
+    """False only when RERANK is explicitly turned off. Default is on."""
+    raw = _raw("RERANK").lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no"}
+
+
+def rerank_model_name() -> str:
+    return _raw("RERANK_MODEL") or DEFAULT_RERANK_MODEL
+
+
+def rerank_candidates() -> int:
+    return _positive_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES)
+
+
+def rerank_max_length() -> int:
+    return _positive_int("RERANK_MAX_LENGTH", DEFAULT_RERANK_MAX_LENGTH)
+
+
+def rerank_threshold() -> float:
+    raw = _raw("RERANK_THRESHOLD")
+    if not raw:
+        return DEFAULT_RERANK_THRESHOLD
+    try:
+        return float(raw)
+    except ValueError:
+        return DEFAULT_RERANK_THRESHOLD
 
 
 def relevance_threshold() -> float:

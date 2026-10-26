@@ -29,7 +29,8 @@
     "id": "srt-outage",
     "query": "Draft a short incident update for a 10-minute SRT outage. Use placeholders for the cause, times and next steps.",
     "path": "general",
-    "notice": "No matching documents found; answering generally.",
+    "pages": [],
+    "notice": "This answer is not from the documents and may not match them.",
     "placeholders": true
   },
   {
@@ -75,6 +76,7 @@
     "id": "bbc-radio-peak",
     "query": "What true-peak level does the BBC standard require for radio?",
     "path": "uncovered",
+    "pages": [],
     "gap_about": "radio",
     "figure_labels": ["television", "tv"]
   },
@@ -114,7 +116,7 @@
     "file": "TechnicalDeliveryStandardsBBCLive.pdf",
     "page": "33",
     "language": "es",
-    "answer_any_of": [["single link", "no backup", "enlace único", "sin reserva", "Option C", "opción C"]]
+    "answer_any_of": [["single link", "un solo enlace", "enlace único", "único enlace", "no backup", "sin reserva", "Option C", "opción C"]]
   },
   {
     "id": "es-inventory",

@@ -49,7 +49,6 @@ __all__ = [
 ]
 from llm.client import _complete, _stream_deltas, _warm_up, wait_for_models
 from retrieval.search import (
-    _library_matches,
     _retrieve_nodes,
     _source_record,
 )
@@ -61,8 +60,7 @@ from llm.prompts import (
     ground_library_reply,
     cited_source_indexes,
     explanation_prompt,
-    clean_history,
-    is_follow_up,
+    outside_document_note,
     retrieval_text,
     should_search_library,
     supporting_sources,
@@ -165,7 +163,7 @@ def _stream_prompt(
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
         return
-    used = supporting_sources(reply, sources)
+    used = supporting_sources(shown, sources)
     if used and not cited_source_indexes(reply):
         marks = " ".join(f"[{source['number']}]" for source in used)
         extra = f" {marks}"
@@ -174,11 +172,10 @@ def _stream_prompt(
     if correction:
         notes.append(correction)
     if not used:
-        logger.info("Query kept the library draft without a matching source")
-        unmatched = user_line("unmatched", query)
-        if unmatched not in notes:
-            notes.append(unmatched)
-        yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
+        logger.info("No citation survived the check")
+        yield {"event": "notice", "data": {"text": outside_document_note(query)}}
+        if notes:
+            yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
         return
@@ -231,15 +228,9 @@ def iter_answer(query: str, history=None):
         index = get_or_create_cached_index()
         indexed, _legacy, _incomplete = indexed_documents()
         library_files = sorted(indexed)
-        nodes, named_file = _retrieve_nodes(index, search, library_files)
-        follow_up = bool(clean_history(history)) and is_follow_up(query)
-        if not nodes or (
-            not named_file and not follow_up and not _library_matches(nodes)
-        ):
-            logger.info(
-                "Retrieval score below %s. Answering generally.",
-                config.relevance_threshold(),
-            )
+        nodes, _named_file = _retrieve_nodes(index, search, library_files)
+        if not nodes:
+            logger.info("No passages retrieved. Answering from general knowledge.")
             yield from _stream_prompt(
                 assistant_prompt(query, history),
                 None,

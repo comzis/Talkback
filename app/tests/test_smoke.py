@@ -178,14 +178,18 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     def retrieve_weak(index, query, files):
         return [_Node("Target loudness is -23.0 LUFS.", 0.1)], False
 
+    def stream_draft(prompt, temperature):
+        yield "Cause: [cause]. Next step: [next step]."
+
     engine._retrieve_nodes = retrieve_weak
-    threshold = events_for("What loudness target is required?")
+    engine._stream_deltas = stream_draft
+    threshold = events_for("Draft an update with placeholders for the cause.")
     notices = [
         event["data"].get("text", "")
         for event in threshold
         if event["event"] == "notice"
     ]
-    assert any("answering generally" in notice for notice in notices)
+    assert any("not from the documents" in notice for notice in notices)
     assert not any(
         event["data"].get("sources")
         for event in threshold

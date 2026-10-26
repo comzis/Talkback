@@ -10,6 +10,16 @@ rate and every cited page, including a page that appears on only one run.
 tests/eval/heldout.json is a separate set. Score it, and do not change a
 rule because of those results. This does not start the stack and does not
 load a model itself.
+
+Scorer:
+- Language is a stopword count for English, French, and Spanish. A word that
+  belongs to one language counts more than a word shared by two. This is not
+  a word list written for one eval question.
+- answer_any_of is a list of facts. Each inner list holds equivalent phrasings
+  of that fact, copied from the document or translated from that sentence.
+  Any one phrasing satisfies the fact. Do not add a phrasing because a model
+  answer happened to use it. Held-out phrasings stay as written unless the
+  case is moved to the main set.
 """
 
 from __future__ import annotations
@@ -28,14 +38,39 @@ FIGURE = re.compile(
     r"[-−–]?\d+(?:[.,]\d+)?\s*(?:dBTP|LUFS|LKFS|dBFS|LU)\b",
     re.IGNORECASE,
 )
-SPANISH = re.compile(
-    r"[áéíóúüñ¿¡]|\b(?:los|las|del|para|que|módulos?|modulos?|configurar|equipos)\b",
-    re.IGNORECASE,
-)
-FRENCH = re.compile(
-    r"[àâçéèêëïîôùûüœ]|\b(?:les|des|une|dans|avec|filtre|détails|details|plus de)\b",
-    re.IGNORECASE,
-)
+# Closed-class words. A token listed under one language is distinctive.
+# A token listed under two is shared and does not decide on its own.
+_STOPS = {
+    "en": frozenset(
+        """
+        the of and is are was were this that with from for not be by or at it
+        its an in which their should must would can will do does have has been
+        than into about your
+        """.split()
+    ),
+    "fr": frozenset(
+        """
+        le les des une est dans avec du au aux et ou ne pas qui sur pour ce
+        cette sont par elle il nous vous plus dont ces son sa ses leur leurs
+        mais comme je tu on où ces
+        """.split()
+    ),
+    "es": frozenset(
+        """
+        el los las del es por con para su sus al lo como hay esta este están
+        está y qué cómo cuando más sin sobre también una unos unas porque
+        entre muy ya sí nos mi tu te se
+        """.split()
+    ),
+}
+_SHARED_STOPS = {
+    "de": ("fr", "es"),
+    "la": ("fr", "es"),
+    "un": ("fr", "es"),
+    "en": ("fr", "es"),
+    "a": ("en", "es"),
+}
+_LANG_NAME = {"en": "English", "fr": "French", "es": "Spanish"}
 NOT_COVERED = re.compile(
     r"not in the (?:documents|library|excerpts)|"
     r"does not cover|do not cover|not covered|"
@@ -185,6 +220,41 @@ def _uncovered_problems(case: dict, shown: str, sources: list[dict]) -> list[str
     return _unique(problems)
 
 
+def _answer_tokens(text: str) -> list[str]:
+    raw = re.findall(r"[A-Za-zÀ-ÿŒœ]+(?:['’][A-Za-zÀ-ÿŒœ]+)?", text or "")
+    tokens = []
+    for word in raw:
+        tokens.extend(part.casefold() for part in re.split(r"['’]", word) if part)
+    return tokens
+
+
+def answer_language(text: str) -> str | None:
+    """English, French, or Spanish, from stopwords in the reply.
+
+    Returns None when the reply has no closed-class words, or when two
+    languages tie. A tie is not broken with a word from one eval question.
+    """
+    scores = {lang: 0 for lang in _STOPS}
+    for token in _answer_tokens(text):
+        owners = [lang for lang, words in _STOPS.items() if token in words]
+        owners.extend(_SHARED_STOPS.get(token, ()))
+        owners = list(dict.fromkeys(owners))
+        if len(owners) == 1:
+            scores[owners[0]] += 2
+        elif owners:
+            for lang in owners:
+                scores[lang] += 1
+    if re.search(r"[ñ¿¡]", text or ""):
+        scores["es"] += 2
+    if re.search(r"[çœŒ]", text or ""):
+        scores["fr"] += 2
+    best = max(scores, key=lambda lang: scores[lang])
+    ranked = sorted(scores.values(), reverse=True)
+    if ranked[0] == 0 or ranked[0] == ranked[1]:
+        return None
+    return best
+
+
 def judge(case: dict, events: list[dict]) -> list[str]:
     """Return the facts that failed. An empty list means the case passed."""
     problems = []
@@ -215,10 +285,9 @@ def judge(case: dict, events: list[dict]) -> list[str]:
         for needle in case.get("card_contains") or []:
             if _fold(needle) not in cards:
                 problems.append(f"source card omitted {needle}")
-        if case.get("language") == "es" and not SPANISH.search(answer):
-            problems.append("answer was not in Spanish")
-        if case.get("language") == "fr" and not FRENCH.search(answer):
-            problems.append("answer was not in French")
+        required = case.get("language")
+        if required and answer_language(answer) != required:
+            problems.append(f"answer was not in {_LANG_NAME[required]}")
     elif case["path"] == "uncovered":
         shown = _fold(answer + "\n" + _footnote(events))
         problems.extend(_uncovered_problems(case, shown, sources))

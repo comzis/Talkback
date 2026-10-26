@@ -103,6 +103,11 @@ _OUTSIDE_DOCUMENT = {
     "fr": "Cette réponse ne vient pas des documents et peut ne pas leur correspondre.",
     "es": "Esta respuesta no procede de los documentos y puede no coincidir con ellos.",
 }
+_GENERAL_MARK = {
+    "en": "From general knowledge:",
+    "fr": "D'après les connaissances générales :",
+    "es": "Según el conocimiento general:",
+}
 _SPANISH_QUESTION = re.compile(
     r"[¿¡ñ]|\b(?:qué|puedes|detalle|módulos|modulos|más)\b",
     re.IGNORECASE,
@@ -212,7 +217,7 @@ def clean_history(history, limit: int = 8) -> list[tuple[str, str]]:
     return turns[-limit:]
 
 
-def format_history(history) -> str:
+def format_history(history, *, continue_from_passages: bool = False) -> str:
     """Earlier turns, placed above the latest question."""
     turns = clean_history(history)
     if not turns:
@@ -220,11 +225,19 @@ def format_history(history) -> str:
     lines = [
         f"{'User' if role == 'user' else 'Assistant'}: {text}" for role, text in turns
     ]
-    return (
-        "Earlier in this conversation:\n"
-        + "\n".join(lines)
-        + "\nAnswer the latest question as a continuation of these turns. Do not start over.\n\n"
-    )
+    if continue_from_passages:
+        closing = (
+            "The latest line asks you to continue. "
+            "Answer with information from the excerpts that is not already in the earlier answer, "
+            "including measurements and limits that answer left out. "
+            "Do not repeat that answer.\n\n"
+        )
+    else:
+        closing = (
+            "Answer the latest question as a continuation of these turns. "
+            "Do not start over.\n\n"
+        )
+    return "Earlier in this conversation:\n" + "\n".join(lines) + "\n" + closing
 
 
 def _loose(text: str) -> str:
@@ -496,13 +509,18 @@ def explanation_prompt(
         "Keep file names and quoted text in their original language.\n"
         f"The library contains: {names}.\n"
         "If the user pasted a passage, explain that text in plain language and walk through the lines.\n"
-        "Answer from the library excerpts below. Do not add facts from outside those excerpts.\n"
-        "End the answer with the excerpt number in brackets, such as [1].\n"
-        "If the excerpts do not contain the answer, say that the library does not cover it and do not cite a number.\n"
+        "If the excerpts answer the question, answer from them and end with the excerpt number in brackets, such as [1]. "
+        "Do not add general knowledge to a cited answer.\n"
+        "If they do not answer the question, say so and do not cite the excerpts. "
+        f'A further remark that the excerpts do not support must start with "{_GENERAL_MARK[question_language(query)]}" '
+        "and must not contain a measurement.\n"
+        "Do not invent a measurement. Never write a dBTP, LUFS, LU, or dB figure unless the excerpts answer the question and contain that figure.\n"
+        "When the user asked for placeholders, write each one in square brackets.\n"
         f"{shape}\n"
-        f"{format_history(history)}"
+        f"{format_history(history, continue_from_passages=_continuation_only(query))}"
         f"Library excerpts:\n{shown}\n\n"
         f"User:\n{query}\n"
+        "If the excerpts do not answer the question, do not write a dBTP, LUFS, LU, or dB number.\n"
         "Assistant:"
     )
 
@@ -525,22 +543,6 @@ def cited_source_indexes(text: str) -> list[int]:
         seen.add(number)
         indexes.append(number)
     return indexes
-
-
-def _has_word(haystack: str, word: str) -> bool:
-    return re.search(rf"\b{re.escape(word)}\b", haystack) is not None
-
-
-def _excerpt_supports(answer: str, text: str) -> bool:
-    """True when the reply repeats distinctive wording from one excerpt."""
-    cleaned = strip_citations(answer).lower()
-    words = [
-        word
-        for word in _WORD.findall((text or "").lower())
-        if word not in _STOP and len(word) >= 5
-    ]
-    hits = sum(1 for word in dict.fromkeys(words) if _has_word(cleaned, word))
-    return hits >= 2
 
 
 _FENCE = re.compile(r"```[a-z]*\n?([\s\S]*?)```", re.IGNORECASE)
@@ -935,22 +937,151 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
     return cleaned
 
 
+_FILE_TOKEN = re.compile(
+    r"\b[\w.-]+\.(?:pdf|ini|txt|ya?ml|cfg|conf|json|csv)\b",
+    re.IGNORECASE,
+)
+_MEASURE_WITH_UNIT = re.compile(
+    r"(?<![\w.])([±+-]?)\s*(\d+(?:\.\d+)?)\s*(dbtp|dbfs|lufs|lkfs|db|lu)\b"
+)
+_STANDARD_CODE = re.compile(r"\btech\s*(\d{3,4})\b")
+_DOTTED_FIELD = re.compile(r"\b[a-z][a-z0-9_]+\.[a-z][a-z0-9_.]*\b")
+_FILTER_NAME = r"[a-z_][\w.]*"
+_FILTER_VALUE = r"[a-z0-9_\"'-]+"
+_FILTER_ATOM = rf"{_FILTER_NAME}\s*==\s*{_FILTER_VALUE}"
+_FILTER_EXPR = re.compile(
+    rf"(?:{_FILTER_ATOM})(?:\s*(?:&&|\|\|)\s*(?:{_FILTER_ATOM}))+"
+    rf"|{_FILTER_ATOM}"
+    rf"|{_FILTER_NAME}(?:\s*(?:&&|\|\|)\s*{_FILTER_NAME})+"
+)
+
+
+def _compact(text: str) -> str:
+    folded = (text or "").replace("−", "-").replace("–", "-").replace(",", ".")
+    return re.sub(r"\s+", "", folded).casefold()
+
+
+def _loosen(text: str) -> str:
+    """Separate a number glued to a unit, as in 1.0LU or -1dBTP."""
+    folded = (text or "").replace("−", "-").replace("–", "-").replace(",", ".")
+    folded = folded.casefold()
+    folded = re.sub(r"(?<=\d)(?=[a-z])", " ", folded)
+    return re.sub(r"(?<=[a-z])(?=\d)", " ", folded)
+
+
+def _canon_measure(sign: str, number: str, unit: str) -> str:
+    """One form for 0.5 / 0,5 and for − / -."""
+    prefix = "±" if sign == "±" else "-" if sign == "-" else ""
+    return f"{prefix}{number} {unit}"
+
+
+def technical_tokens(text: str) -> list[tuple[str, str]]:
+    """Filters, dotted fields, numbers with units, standard codes, and file names.
+
+    A parenthesis group of ordinary words, such as "(Option A)" or "(LRA)",
+    is not a token. A bare number is not a token either.
+    """
+    loose = _loosen(strip_citations(text))
+    found: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(kind: str, value: str) -> None:
+        item = (kind, value)
+        if item not in seen:
+            seen.add(item)
+            found.append(item)
+
+    for match in _MEASURE_WITH_UNIT.finditer(loose):
+        add("measure", _canon_measure(match.group(1), match.group(2), match.group(3)))
+    for match in _STANDARD_CODE.finditer(loose):
+        add("code", match.group(1))
+    for match in _FILE_TOKEN.finditer(loose):
+        add("file", match.group(0).casefold())
+    for match in _DOTTED_FIELD.finditer(loose):
+        if _FILE_TOKEN.fullmatch(match.group(0)):
+            continue
+        add("field", match.group(0))
+    for match in _FILTER_EXPR.finditer(loose):
+        add("filter", _compact(match.group(0)))
+    return found
+
+
+def _token_in(kind: str, value: str, passage: str) -> bool:
+    loose = _loosen(passage)
+    if kind == "measure":
+        present = {
+            _canon_measure(match.group(1), match.group(2), match.group(3))
+            for match in _MEASURE_WITH_UNIT.finditer(loose)
+        }
+        if value in present:
+            return True
+        # "0.5 LU" is the same figure as "±0.5 LU". A minus is not.
+        if value[:1] not in "-±":
+            return f"±{value}" in present
+        return False
+    if kind == "code":
+        return re.search(rf"\btech\s*{re.escape(value)}\b", loose) is not None
+    if kind == "filter":
+        return value in _compact(loose)
+    return re.search(rf"(?<!\w){re.escape(value)}(?!\w)", loose) is not None
+
+
+def _passage_supports(
+    tokens: list[tuple[str, str]], passage: str
+) -> list[tuple[str, str]]:
+    return [token for token in tokens if _token_in(token[0], token[1], passage)]
+
+
 def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
-    """Keep excerpts whose wording the reply uses, preferring numbers it cited."""
+    """Keep the passages that contain the reply's technical tokens.
+
+    The model's own [n] markers are the starting point. A token that is missing
+    from the cited passage is re-attributed to another retrieved passage that
+    has it. A token that is in none of them drops the citation. Ordinary words
+    in parentheses are ignored. A reply that never writes a source number is
+    not given one afterwards.
+    """
     if not answer or _REFUSAL.search(answer):
         return []
     cited = [
         number for number in cited_source_indexes(answer) if 1 <= number <= len(sources)
     ]
-    pool = cited or list(range(1, len(sources) + 1))
-    chosen = []
-    for number in pool:
-        source = dict(sources[number - 1])
-        if not _excerpt_supports(answer, source.get("text", "")):
+    if not cited:
+        return []
+    tokens = technical_tokens(answer)
+    if not tokens:
+        chosen = []
+        for number in cited:
+            source = dict(sources[number - 1])
+            source["number"] = number
+            chosen.append(source)
+        return chosen
+    kept: list[int] = []
+    covered: set[tuple[str, str]] = set()
+    for number in cited:
+        held = _passage_supports(tokens, sources[number - 1].get("text", ""))
+        if not held:
             continue
-        source["number"] = number
+        kept.append(number - 1)
+        covered.update(held)
+    for token in tokens:
+        if token in covered:
+            continue
+        for index, source in enumerate(sources):
+            if not _token_in(token[0], token[1], source.get("text", "")):
+                continue
+            if index not in kept:
+                kept.append(index)
+            covered.add(token)
+            break
+        else:
+            return []
+    chosen = []
+    for index in kept:
+        source = dict(sources[index])
+        source["number"] = index + 1
         chosen.append(source)
-    return chosen[:2] if not cited else chosen
+    return chosen
 
 
 def source_label(source: dict) -> str:

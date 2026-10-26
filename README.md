@@ -12,7 +12,8 @@ The chat window is the main view. The library, system status, and upload area si
 - Adds a file in one step. Drop a file on the library panel, or click the drop area and choose one. Talkback saves it and starts indexing. Uploading the same name replaces that file only.
 - Leaves files that have not changed in the index. New and changed files are embedded. Removed files drop their chunks.
 - Answers greetings and general questions with no sources. A question that names a library file is answered from that file. Each cited claim keeps its source number, with the page and excerpt beside it.
-- Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in chat-model name. Embeddings default to `intfloat/multilingual-e5-small` (French, English, and Spanish). `BAAI/bge-m3` is the larger server option, set with `EMBED_MODEL`. The embedding model downloads once, and only when `OFFLINE_MODE=false`.
+- Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in chat-model name. Embeddings default to `BAAI/bge-m3` (MIT, French, English, and Spanish). `intfloat/multilingual-e5-small` remains available by setting `EMBED_MODEL`. The embedding model downloads once, and only when `OFFLINE_MODE=false`.
+- Reranks the top 20 chunks with `BAAI/bge-reranker-v2-m3` (Apache-2.0, local cache) and keeps four. Each query-passage pair is capped at 512 tokens. On a GPU server the reranker should run on the GPU. On this Mac, in Docker, six main-set questions reached the first word in about 28 seconds at 15 or 20 candidates and about 44 seconds at 30. Main-set recall at 4 and at 8 stayed 14/15 for all three. The reranker score is logged and does not choose the path. The model always sees the top passages. A citation is kept when its filters, dotted fields, numbers with units, standard codes, and file names sit in a retrieved passage; a token found in a different passage is re-attributed there. Words in parentheses are not checked. If no citation survives, the reply is marked as not from the documents.
 - Streams the reply into the chat, then shows the folder, file, and page for each source the answer used. The **Stop** button cancels the stream. `POST /query` still returns the full answer in one response.
 
 ## Quick start
@@ -96,13 +97,19 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `OLLAMA_BASE_URL` | Ollama address as seen from the API container | `http://host.docker.internal:11434` |
 | `CHAT_BACKEND` | `ollama` or `vllm`. `vllm` disables `/llm/models`, `/llm/select`, and `/llm/pull` | `ollama` |
 | `CHAT_BASE_URL` | OpenAI-compatible origin when it is not `OLLAMA_BASE_URL` | `OLLAMA_BASE_URL` |
-| `EMBED_MODEL` | Local embedding model. `BAAI/bge-m3` is the larger server option | `intfloat/multilingual-e5-small` |
+| `EMBED_MODEL` | Local embedding model. `intfloat/multilingual-e5-small` is the smaller option | `BAAI/bge-m3` |
 | `EMBED_BATCH` | Chunks per embedding batch. Progress updates after each batch | `16` |
 | `CHUNK_SIZE` | Chunk size in tokens | `512` |
 | `CHUNK_OVERLAP` | Overlap between chunks | `64` |
-| `RETRIEVE_CANDIDATES` | Chunks retrieved before the per-file cap | `8` |
+| `RETRIEVE_CANDIDATES` | Chunks retrieved before the reranker, unless `RERANK_CANDIDATES` is higher | `8` |
+| `RERANK_MODEL` | Local cross-encoder. Apache-2.0 | `BAAI/bge-reranker-v2-m3` |
+| `RERANK_CANDIDATES` | Chunks scored by the reranker | `20` |
+| `RERANK_MAX_LENGTH` | Token cap for each query-passage pair. Use the GPU on a GPU server | `512` |
+| `RERANK_THRESHOLD` | Logged only. It does not choose the path | `-7.5` |
+| `RERANK` | Set to `false` to use the similarity threshold instead | `true` |
 | `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
-| `RETRIEVE_PER_FILE` | Maximum chunks from one file | `2` |
+| `RETRIEVE_PER_FILE` | Maximum chunks from one file, once the hits span more files than `RETRIEVE_BALANCE_FILES` | `2` |
+| `RETRIEVE_BALANCE_FILES` | Per-file cap applies only above this many files. Three PDFs do not trigger it | `3` |
 | `RELEVANCE_THRESHOLD` | Best e5 score required before a library answer | `0.75` |
 | `OLLAMA_CONTEXT` | Ollama context window (`num_ctx`) | `4096` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |

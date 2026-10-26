@@ -336,7 +336,7 @@ class PromptTests(unittest.TestCase):
             "Inlock keeps enterprise data completely private.",
             sources,
         )
-        self.assertEqual([item["number"] for item in uncited], [1])
+        self.assertEqual(uncited, [])
         self.assertEqual(
             prompts.library_miss("I think it is Paris."),
             "The library does not cover that.",
@@ -500,6 +500,17 @@ class LibraryPlanTests(unittest.TestCase):
         self.assertIn("inlock campaign v4.pdf", names)
         self.assertEqual(names.count("Python Basics.pdf"), 2)
         self.assertLessEqual(len(chosen), 4)
+        same_file = [
+            Node("bbc.pdf"),
+            Node("bbc.pdf"),
+            Node("bbc.pdf"),
+            Node("wire.pdf"),
+        ]
+        kept = library.balance_matches(same_file, per_file=2, limit=4, balance_after=3)
+        self.assertEqual(
+            [node.metadata["file_name"] for node in kept],
+            ["bbc.pdf", "bbc.pdf", "bbc.pdf", "wire.pdf"],
+        )
 
 
 class ConfigTests(unittest.TestCase):
@@ -526,10 +537,10 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("EMBED_MODEL", None)
             os.environ.pop("EMBED_BATCH", None)
             os.environ.pop("OLLAMA_MODEL", None)
+            self.assertEqual(config.embed_model_name(), "BAAI/bge-m3")
             self.assertEqual(
-                config.embed_model_name(), "intfloat/multilingual-e5-small"
+                config.COMPACT_EMBED_MODEL, "intfloat/multilingual-e5-small"
             )
-            self.assertEqual(config.SERVER_EMBED_MODEL, "BAAI/bge-m3")
             self.assertEqual(config.embed_batch(), 16)
             self.assertEqual(config.configured_model(), "")
             with self.assertRaises(ValueError):
