@@ -65,6 +65,11 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Local-only eval sets (copyrighted corpora). Never commit book text or questions.
+tests/eval/local/
+tests/eval/engineering*.json
+!tests/eval/engineering.example.json
+
 # Documentation builds
 docs/_build/
 
