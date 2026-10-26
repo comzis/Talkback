@@ -61,7 +61,8 @@ If you still have `./status/library.sqlite` from before the named volume:
 docker run --rm \
   -v talkback-refactor_talkback_status:/status \
   -v "$PWD/status:/src:ro" \
-  alpine cp /src/library.sqlite /status/library.sqlite
+  alpine sh -c 'cp /src/library.sqlite /status/library.sqlite && chown -R 502:20 /status'
 ```
 
-Recreate the API and indexer afterward so they mount the volume.
+Use the image UID/GID from the compose build (default `502:20`). Recreate the API
+and indexer afterward so they mount the volume.
