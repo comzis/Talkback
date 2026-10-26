@@ -1,32 +1,24 @@
 # Pilot corpus checklist
 
-Use this when the engineering document folder is ready. Do not point
-`LIBRARY_PATH` at a company folder until inventory and the sensitivity scan
-are clean enough for a local demo.
+New engineering documents go into a subfolder of the existing library. Leave
+`LIBRARY_PATH` pointed at `/Users/comzis/TalkbackDemo`. Do not change the
+library root and do not upload folders from the GUI.
 
 ## 1. Copy the files
 
-- Put about 50–100 non-sensitive files in a dedicated folder on the machine
-  that runs Docker.
+- Create `/Users/comzis/TalkbackDemo/engineering/` if it does not exist.
+- Copy about 50–100 non-sensitive files into that subfolder.
 - Prefer PDFs with a text layer, Markdown, and plain text. Scans and images
   index poorly (see the inventory report).
-- Keep the three demo PDFs out of this folder (or use a separate compose
-  project) so demo tuning stays frozen.
+- Leave the three demo PDFs in the library root (or elsewhere under
+  `TalkbackDemo`) so the existing demo eval stays usable.
 
-## 2. Set `LIBRARY_PATH`
+## 2. Inventory
 
-In `.env` (not committed):
-
-```bash
-LIBRARY_PATH=/absolute/path/to/pilot-folder
-```
-
-Compose already mounts that path read-only into the API and the indexer.
-
-## 3. Inventory
+Run inventory on the engineering subfolder only:
 
 ```bash
-python scripts/inventory.py "$LIBRARY_PATH"
+python scripts/inventory.py /Users/comzis/TalkbackDemo/engineering
 ```
 
 Check:
@@ -35,48 +27,48 @@ Check:
 - PDFs listed as scans (little or no text layer)
 - Files Talkback would **index**, **index poorly**, or **skip**
 
-Remove or replace scans and secrets before indexing if you can.
+Remove or replace scans before indexing if you can.
 
-## 4. Sensitivity scan (report only)
+## 3. Sensitivity scan (report only)
 
 ```bash
-python scripts/sensitivity_scan.py "$LIBRARY_PATH"
+python scripts/sensitivity_scan.py /Users/comzis/TalkbackDemo/engineering
 ```
 
 Review every hit (credentials, API keys, private keys, emails, phones, IP/MAC
 lists). The script does not change files. Drop or redact anything that must
 not enter the local index.
 
-## 5. Full rebuild
+## 4. Incremental re-index
 
-Give Docker Desktop at least 16 GiB. With the host reranker installed
-(`scripts/install-rerank-host.sh`), start the stack and rebuild the library:
+Keep the stack running with the usual `LIBRARY_PATH`. Do **not** wipe Chroma
+or force a full rebuild for this drop.
 
-```bash
-docker compose up -d --build
-# Wait until /system/status shows the new collection count and no reindex alarm.
-```
+In the UI, use **Re-index** (or the normal indexer poll) so only new and
+changed files under `engineering/` are added. Wait until `/system/status`
+shows the collection count risen and no reindex alarm.
 
-If the folder replaces an older library with a different embedding identity,
-follow the README full re-index steps. Confirm `OFFLINE_MODE` stays on after
-models are cached.
+Confirm Docker has enough memory (16 GiB in the README) and that the host
+reranker is up if you use `RERANK_URL`.
 
-## 6. Smoke five questions
+## 5. Smoke five questions
 
-Ask five hand-written questions in the UI (or via `/query/stream`):
+Ask five hand-written questions about the new files (UI or `/query/stream`):
 
-1. A short factual question with a known page
+1. A short factual question with a known page in `engineering/`
 2. A cross-language question if the corpus is mixed
 3. A short one-line answer (name, figure, or file)
-4. A question the corpus does not cover
+4. A question the new files do not cover
 5. A follow-up (“tell me more”) after a library hit
 
-Confirm citations, language, and that uncovered questions do not keep a card.
+Confirm citations name the engineering file, language is right, and uncovered
+questions do not keep a card.
 
-## 7. Eval
+## 6. Eval
 
 1. Engineers fill `tests/eval/questions.template.csv` (see
-   [eval-authoring.md](eval-authoring.md)).
+   [eval-authoring.md](eval-authoring.md)), with `file` paths that match the
+   library (for example `engineering/some-guide.pdf`).
 2. Convert with `scripts/csv_to_eval.py` into main and held-out JSON.
 3. Freeze held-out and refresh `tests/eval/heldout.sha256` if that file is
    replaced.
