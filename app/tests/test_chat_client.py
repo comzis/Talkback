@@ -27,11 +27,15 @@ def test_ollama_body_pins_keep_alive_and_skips_reasoning():
         think=False,
     )
     assert body["keep_alive"] == "3h"
-    assert body["options"] == {"num_ctx": 8192}
-    assert body["reasoning_effort"] == "none"
+    assert body["think"] is False
+    assert body["options"] == {"num_ctx": 8192, "temperature": 0.1}
+    assert "reasoning_effort" not in body
     assert body["messages"] == [{"role": "user", "content": "hello"}]
-    assert client.completions_url("http://host.docker.internal:11434") == (
-        "http://host.docker.internal:11434/v1/chat/completions"
+    assert client.chat_url("http://host.docker.internal:11434", "ollama") == (
+        "http://host.docker.internal:11434/api/chat"
+    )
+    assert client.chat_url("http://host.docker.internal:11434/v1", "ollama") == (
+        "http://host.docker.internal:11434/api/chat"
     )
 
 
@@ -51,17 +55,28 @@ def test_vllm_body_omits_ollama_fields():
     assert "reasoning_effort" not in body
 
 
-def test_stream_reads_content_deltas():
+def test_ollama_stream_reads_content_and_skips_thinking():
     httpx = pytest.importorskip("httpx")
     client_mod = _client()
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
         seen["body"] = json.loads(request.content.decode())
-        payload = (
-            'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'
-            'data: {"choices":[{"delta":{"content":" there"}}]}\n\n'
-            "data: [DONE]\n\n"
+        payload = "\n".join(
+            [
+                json.dumps(
+                    {"message": {"role": "assistant", "thinking": "hidden", "content": ""}}
+                ),
+                json.dumps({"message": {"role": "assistant", "content": "Hi"}}),
+                json.dumps(
+                    {
+                        "message": {"role": "assistant", "content": " there"},
+                        "done": True,
+                        "prompt_eval_count": 4,
+                    }
+                ),
+            ]
         )
         return httpx.Response(200, text=payload)
 
@@ -76,7 +91,38 @@ def test_stream_reads_content_deltas():
         transport=httpx.MockTransport(handler),
     )
     assert "".join(client.stream("hello", temperature=0.1)) == "Hi there"
+    assert seen["url"] == "http://chat.local/api/chat"
     assert seen["body"]["keep_alive"] == "3h"
+    assert seen["body"]["think"] is False
+    assert seen["body"]["options"]["num_ctx"] == 8192
+
+
+def test_vllm_stream_reads_openai_deltas():
+    httpx = pytest.importorskip("httpx")
+    client_mod = _client()
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        payload = (
+            'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'
+            'data: {"choices":[{"delta":{"content":" there"}}]}\n\n'
+            "data: [DONE]\n\n"
+        )
+        return httpx.Response(200, text=payload)
+
+    client = client_mod.ChatClient(
+        base_url="http://chat.local",
+        model="qwen",
+        backend="vllm",
+        timeout=5,
+        context=8192,
+        keep_alive="3h",
+        think=False,
+        transport=httpx.MockTransport(handler),
+    )
+    assert "".join(client.stream("hello", temperature=0.1)) == "Hi there"
+    assert seen["url"] == "http://chat.local/v1/chat/completions"
 
 
 def test_vllm_status_reads_the_models_list():

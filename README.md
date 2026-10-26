@@ -111,7 +111,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `RETRIEVE_PER_FILE` | Maximum chunks from one file, once the hits span more files than `RETRIEVE_BALANCE_FILES` | `2` |
 | `RETRIEVE_BALANCE_FILES` | Per-file cap applies only above this many files. Three PDFs do not trigger it | `3` |
 | `RELEVANCE_THRESHOLD` | Best e5 score required before a library answer | `0.75` |
-| `OLLAMA_CONTEXT` | Ollama context window (`num_ctx`) | `4096` |
+| `OLLAMA_CONTEXT` | Context window sent as `num_ctx` on Ollama `/api/chat` | `4096` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |
 | `OLLAMA_THINK` | Send a hidden reasoning trace before the reply | `false` |
 | `TORCH_THREADS` | Torch CPU threads | half the cores |
@@ -124,7 +124,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 
 Pilot models must be Apache 2.0 or MIT licensed. Check the model card before you set `OLLAMA_MODEL`.
 
-Chat uses `POST /v1/chat/completions`. With `CHAT_BACKEND=ollama` the request includes `keep_alive` and, when `OLLAMA_THINK=false`, `reasoning_effort` set to `none`. With `CHAT_BACKEND=vllm` those Ollama fields are left out, and the model list, model switch, and model pull endpoints are disabled. The vLLM path is not tested against a real vLLM server. Library answers stream as the model writes them. If a check against the excerpts changes the wording, the correction is a footnote and the words already shown stay.
+With `CHAT_BACKEND=ollama`, chat uses `POST /api/chat`. Ollama 0.40.6 ignores `num_ctx` on `/v1/chat/completions`, and a model such as `qwen3.8:27b` would otherwise load at its full card length (262144). The native request sends `options.num_ctx` from `OLLAMA_CONTEXT`, `keep_alive`, and `think` from `OLLAMA_THINK`. With `CHAT_BACKEND=vllm`, chat uses `POST /v1/chat/completions` and those Ollama fields are left out. The model list, model switch, and model pull endpoints are disabled on that path. The vLLM path is not tested against a real vLLM server. Library answers stream as the model writes them. If a check against the excerpts changes the wording, the correction is a footnote and the words already shown stay.
 
 Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first with `ollama pull`, using the name from the model card.
 

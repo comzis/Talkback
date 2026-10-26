@@ -1,11 +1,11 @@
-"""OpenAI-compatible chat client.
+"""Chat client.
 
-Host Ollama 0.40.6 accepts keep_alive on POST /v1/chat/completions. The same
-call ignores think:false for Qwen and still fills the reasoning field, so a
-disabled trace is sent as reasoning_effort "none".
+Ollama 0.40.6 ignores num_ctx on POST /v1/chat/completions, so a model whose
+card says 262144 stays loaded at that size. The Ollama backend uses
+POST /api/chat, which applies options.num_ctx, keep_alive, and think.
 
-The vLLM path is not tested against a real vLLM server. Tests use a fake
-httpx transport.
+vLLM stays on the OpenAI chat-completions path. That path is not tested
+against a real vLLM server. Tests use a fake httpx transport.
 """
 
 from __future__ import annotations
@@ -44,6 +44,16 @@ def completions_url(base: str) -> str:
     return root + "/v1/chat/completions"
 
 
+def chat_url(base: str, backend: str) -> str:
+    """Ollama uses the native chat API. vLLM uses OpenAI chat completions."""
+    if backend == "vllm":
+        return completions_url(base)
+    root = base.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[:-3]
+    return root + "/api/chat"
+
+
 def models_url(base: str, backend: str) -> str:
     """Ollama lists /api/tags. A vLLM server lists /v1/models.
 
@@ -77,24 +87,32 @@ def chat_request_body(
     context: int,
     think: bool,
 ) -> dict:
-    """One chat-completions body. Ollama fields are omitted for vLLM."""
+    """One chat body. Ollama fields are omitted for vLLM."""
+    messages = [{"role": "user", "content": prompt}]
+    if backend == "ollama":
+        options: dict = {"num_ctx": context}
+        if temperature is not None:
+            options["temperature"] = temperature
+        return {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "keep_alive": keep_alive,
+            "think": think,
+            "options": options,
+        }
     body: dict = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "stream": True,
     }
     if temperature is not None:
         body["temperature"] = temperature
-    if backend == "ollama":
-        body["keep_alive"] = keep_alive
-        body["options"] = {"num_ctx": context}
-        if not think:
-            body["reasoning_effort"] = "none"
     return body
 
 
 class ChatClient:
-    """Streams /v1/chat/completions. One prompt is one user message."""
+    """Streams one user message. Ollama speaks /api/chat. vLLM speaks OpenAI."""
 
     def __init__(
         self,
@@ -134,9 +152,10 @@ class ChatClient:
             think=self.think,
         )
         timeout = httpx.Timeout(self.timeout)
+        parse = _native_content if self.backend == "ollama" else _delta_text
         with httpx.Client(timeout=timeout, transport=self._transport) as client:
             with client.stream(
-                "POST", completions_url(self.base_url), json=body
+                "POST", chat_url(self.base_url, self.backend), json=body
             ) as response:
                 if response.status_code != 200:
                     response.read()
@@ -144,9 +163,19 @@ class ChatClient:
                         f"Chat completion failed ({response.status_code})."
                     )
                 for line in response.iter_lines():
-                    delta = _delta_text(line)
+                    delta = parse(line)
                     if delta:
                         yield delta
+
+
+def _native_content(line: str) -> str:
+    """Assistant text from one /api/chat line. A thinking trace is not shown."""
+    text = (line or "").strip()
+    if not text:
+        return ""
+    payload = json.loads(text)
+    message = payload.get("message") or {}
+    return message.get("content") or ""
 
 
 def _delta_text(line: str) -> str:
@@ -222,7 +251,7 @@ def _complete(prompt: str, temperature: float | None = None) -> str:
 
 
 def _stream_deltas(prompt: str, temperature: float | None = None):
-    """Yield text deltas from the OpenAI-compatible chat stream."""
+    """Yield text deltas from the chat stream."""
     chat = get().chat
     if chat is None:
         raise RuntimeError("The chat client is not ready.")
