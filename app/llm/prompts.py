@@ -920,12 +920,23 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
     return cleaned
 
 
-_UNIT_TOKEN = re.compile(r"\b(?:dBTP|dBFS|LUFS|LKFS|dB|LU)\b", re.IGNORECASE)
 _FILE_TOKEN = re.compile(
     r"\b[\w.-]+\.(?:pdf|ini|txt|ya?ml|cfg|conf|json|csv)\b",
     re.IGNORECASE,
 )
-_MEASURE_TOKEN = re.compile(r"\b\d+(?:[.,]\d+)+\b|\b\d{2,}\b")
+_MEASURE_WITH_UNIT = re.compile(
+    r"(?<![\w.])([±+-]?)\s*(\d+(?:\.\d+)?)\s*(dbtp|dbfs|lufs|lkfs|db|lu)\b"
+)
+_STANDARD_CODE = re.compile(r"\btech\s*(\d{3,4})\b")
+_DOTTED_FIELD = re.compile(r"\b[a-z][a-z0-9_]+\.[a-z][a-z0-9_.]*\b")
+_FILTER_NAME = r"[a-z_][\w.]*"
+_FILTER_VALUE = r"[a-z0-9_\"'-]+"
+_FILTER_ATOM = rf"{_FILTER_NAME}\s*==\s*{_FILTER_VALUE}"
+_FILTER_EXPR = re.compile(
+    rf"(?:{_FILTER_ATOM})(?:\s*(?:&&|\|\|)\s*(?:{_FILTER_ATOM}))+"
+    rf"|{_FILTER_ATOM}"
+    rf"|{_FILTER_NAME}(?:\s*(?:&&|\|\|)\s*{_FILTER_NAME})+"
+)
 
 
 def _compact(text: str) -> str:
@@ -941,50 +952,117 @@ def _loosen(text: str) -> str:
     return re.sub(r"(?<=[a-z])(?=\d)", " ", folded)
 
 
-def _has_bounded(passage: str, token: str) -> bool:
-    needle = token.replace("−", "-").replace(",", ".").casefold()
-    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", _loosen(passage)) is not None
+def _canon_measure(sign: str, number: str, unit: str) -> str:
+    """One form for 0.5 / 0,5 and for − / -."""
+    prefix = "±" if sign == "±" else "-" if sign == "-" else ""
+    return f"{prefix}{number} {unit}"
 
 
-def _claim_tokens(text: str) -> list[tuple[str, str]]:
-    """Numbers, units, filters, comparisons, and file names. Not ordinary words."""
-    body = strip_citations(text)
+def technical_tokens(text: str) -> list[tuple[str, str]]:
+    """Filters, dotted fields, numbers with units, standard codes, and file names.
+
+    A parenthesis group of ordinary words, such as "(Option A)" or "(LRA)",
+    is not a token. A bare number is not a token either.
+    """
+    loose = _loosen(strip_citations(text))
     found: list[tuple[str, str]] = []
-    for pattern in (_MEASURE_TOKEN, _UNIT_TOKEN, _FILE_TOKEN):
-        found.extend(("plain", match.group(0)) for match in pattern.finditer(body))
-    for pattern in (_FILTER_SPAN, _COMPARE):
-        found.extend(("code", match.group(0)) for match in pattern.finditer(body))
+    seen: set[tuple[str, str]] = set()
+
+    def add(kind: str, value: str) -> None:
+        item = (kind, value)
+        if item not in seen:
+            seen.add(item)
+            found.append(item)
+
+    for match in _MEASURE_WITH_UNIT.finditer(loose):
+        add("measure", _canon_measure(match.group(1), match.group(2), match.group(3)))
+    for match in _STANDARD_CODE.finditer(loose):
+        add("code", match.group(1))
+    for match in _FILE_TOKEN.finditer(loose):
+        add("file", match.group(0).casefold())
+    for match in _DOTTED_FIELD.finditer(loose):
+        if _FILE_TOKEN.fullmatch(match.group(0)):
+            continue
+        add("field", match.group(0))
+    for match in _FILTER_EXPR.finditer(loose):
+        add("filter", _compact(match.group(0)))
     return found
 
 
-def _tokens_missing(answer: str, passage: str) -> bool:
-    """True when a language-independent token in the reply is absent from the passage."""
-    for kind, token in _claim_tokens(answer):
-        if kind == "code":
-            if _compact(token) not in _compact(passage):
-                return True
-        elif not _has_bounded(passage, token):
+def _token_in(kind: str, value: str, passage: str) -> bool:
+    loose = _loosen(passage)
+    if kind == "measure":
+        present = {
+            _canon_measure(match.group(1), match.group(2), match.group(3))
+            for match in _MEASURE_WITH_UNIT.finditer(loose)
+        }
+        if value in present:
             return True
-    return False
+        # "0.5 LU" is the same figure as "±0.5 LU". A minus is not.
+        if value[:1] not in "-±":
+            return f"±{value}" in present
+        return False
+    if kind == "code":
+        return re.search(rf"\btech\s*{re.escape(value)}\b", loose) is not None
+    if kind == "filter":
+        return value in _compact(loose)
+    return re.search(rf"(?<!\w){re.escape(value)}(?!\w)", loose) is not None
+
+
+def _passage_supports(
+    tokens: list[tuple[str, str]], passage: str
+) -> list[tuple[str, str]]:
+    return [token for token in tokens if _token_in(token[0], token[1], passage)]
 
 
 def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
-    """Keep the passages the reply cites when their figures and names match.
+    """Keep the passages that contain the reply's technical tokens.
 
-    Word overlap is not used. A reply that never writes a source number is not
-    given one afterwards.
+    The model's own [n] markers are the starting point. A token that is missing
+    from the cited passage is re-attributed to another retrieved passage that
+    has it. A token that is in none of them drops the citation. Ordinary words
+    in parentheses are ignored. A reply that never writes a source number is
+    not given one afterwards.
     """
     if not answer or _REFUSAL.search(answer):
         return []
     cited = [
         number for number in cited_source_indexes(answer) if 1 <= number <= len(sources)
     ]
-    chosen = []
+    if not cited:
+        return []
+    tokens = technical_tokens(answer)
+    if not tokens:
+        chosen = []
+        for number in cited:
+            source = dict(sources[number - 1])
+            source["number"] = number
+            chosen.append(source)
+        return chosen
+    kept: list[int] = []
+    covered: set[tuple[str, str]] = set()
     for number in cited:
-        source = dict(sources[number - 1])
-        if _tokens_missing(answer, source.get("text", "")):
+        held = _passage_supports(tokens, sources[number - 1].get("text", ""))
+        if not held:
             continue
-        source["number"] = number
+        kept.append(number - 1)
+        covered.update(held)
+    for token in tokens:
+        if token in covered:
+            continue
+        for index, source in enumerate(sources):
+            if not _token_in(token[0], token[1], source.get("text", "")):
+                continue
+            if index not in kept:
+                kept.append(index)
+            covered.add(token)
+            break
+        else:
+            return []
+    chosen = []
+    for index in kept:
+        source = dict(sources[index])
+        source["number"] = index + 1
         chosen.append(source)
     return chosen
 
