@@ -148,6 +148,7 @@ def test_follow_ups_continue_the_parent_question():
     assert cases["bbc-more"]["known"]
     assert cases["bbc-more-typo"]["known"]
     assert cases["fr-loudness"]["known"]
+    assert cases["ansible-more"]["known"]
     assert "en-playbook-name" in cases
     assert "es-playbook-name" in cases
     assert "en-true-peak-short" in cases

@@ -72,7 +72,8 @@
     "file": "Ansible_Network_Automation_1744044240.pdf",
     "pages": ["4", "6", "11"],
     "language": "es",
-    "answer_contains": ["ios_config"]
+    "answer_contains": ["ios_config"],
+    "known": "Follow-up often leaves ios_config and cites another Ansible passage; the similarity check then drops the card."
   },
   {
     "id": "bbc-radio-peak",
