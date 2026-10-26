@@ -217,7 +217,7 @@ def clean_history(history, limit: int = 8) -> list[tuple[str, str]]:
     return turns[-limit:]
 
 
-def format_history(history) -> str:
+def format_history(history, *, continue_from_passages: bool = False) -> str:
     """Earlier turns, placed above the latest question."""
     turns = clean_history(history)
     if not turns:
@@ -225,11 +225,19 @@ def format_history(history) -> str:
     lines = [
         f"{'User' if role == 'user' else 'Assistant'}: {text}" for role, text in turns
     ]
-    return (
-        "Earlier in this conversation:\n"
-        + "\n".join(lines)
-        + "\nAnswer the latest question as a continuation of these turns. Do not start over.\n\n"
-    )
+    if continue_from_passages:
+        closing = (
+            "The latest line asks you to continue. "
+            "Answer with information from the excerpts that is not already in the earlier answer, "
+            "including measurements and limits that answer left out. "
+            "Do not repeat that answer.\n\n"
+        )
+    else:
+        closing = (
+            "Answer the latest question as a continuation of these turns. "
+            "Do not start over.\n\n"
+        )
+    return "Earlier in this conversation:\n" + "\n".join(lines) + "\n" + closing
 
 
 def _loose(text: str) -> str:
@@ -509,7 +517,7 @@ def explanation_prompt(
         "Do not invent a measurement. Never write a dBTP, LUFS, LU, or dB figure unless the excerpts answer the question and contain that figure.\n"
         "When the user asked for placeholders, write each one in square brackets.\n"
         f"{shape}\n"
-        f"{format_history(history)}"
+        f"{format_history(history, continue_from_passages=_continuation_only(query))}"
         f"Library excerpts:\n{shown}\n\n"
         f"User:\n{query}\n"
         "If the excerpts do not answer the question, do not write a dBTP, LUFS, LU, or dB number.\n"

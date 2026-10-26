@@ -215,6 +215,27 @@ def test_a_filter_and_a_file_name_are_re_attributed():
     ]
 
 
+def test_tell_me_more_asks_for_facts_not_already_given():
+    history = [
+        ("user", "What audio loudness level do the BBC standards require?"),
+        ("assistant", "Live programmes target -23.0 LUFS."),
+    ]
+    text = prompts.explanation_prompt(
+        "Tell me more.", ["a.pdf"], ["Do not exceed -3 dBTP."], history
+    )
+    assert "not already in the earlier answer" in text
+    assert "Do not repeat that answer." in text
+    fresh = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
+    assert "not already in the earlier answer" not in fresh
+    other = prompts.explanation_prompt(
+        "What about the deadline?",
+        ["a.pdf"],
+        ["Monday."],
+        [("user", "What does the agreement say?")],
+    )
+    assert "not already in the earlier answer" not in other
+
+
 def test_a_first_question_keeps_the_standing_notice():
     assert (
         prompts.notice_for_general(
