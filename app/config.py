@@ -27,7 +27,7 @@ DEFAULT_OLLAMA_THINK = False
 DEFAULT_RELEVANCE_THRESHOLD = 0.75
 # BAAI/bge-reranker-v2-m3 is Apache-2.0. It runs from the local cache.
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-DEFAULT_RERANK_CANDIDATES = 20
+DEFAULT_RERANK_CANDIDATES = 50
 # Token cap for each query-passage pair. The forward pass does not see more.
 DEFAULT_RERANK_MAX_LENGTH = 512
 # Logged only. It does not choose the path. Correct pages landed as low as
