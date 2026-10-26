@@ -29,13 +29,14 @@ docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
 docker compose up -d
 ```
 
-On a Mac the reranker can run on the Apple GPU, outside Docker. Docker Desktop cannot see that GPU. From the repository root:
+On a Mac the reranker can run on the Apple GPU, outside Docker. Docker Desktop cannot see that GPU. Install it as a user agent so it starts at login, bound to `127.0.0.1:11435`:
 
 ```bash
-scripts/start-rerank-host.sh
+scripts/install-rerank-host.sh
+scripts/uninstall-rerank-host.sh
 ```
 
-The script keeps a virtualenv in `.rerank-host`, loads `BAAI/bge-reranker-v2-m3` once from `./hf_cache` (offline), and listens on `127.0.0.1:11435`. Device order is CUDA, then MPS, then CPU. Set `RERANK_URL=http://host.docker.internal:11435` and recreate the API. Leave `RERANK_URL` unset and the container scores pairs itself, which is what CI and a machine without this process do. If the URL is set and the host process is down, the container scores pairs on CPU and `/system/status` reports that fallback. The warning is logged once per outage. The embedding model stays in the container.
+`scripts/start-rerank-host.sh` is the same process without login startup. The plist template is `scripts/com.talkback.rerank-host.plist`; the installer writes this checkout's path into `~/Library/LaunchAgents`. The script keeps a virtualenv in `.rerank-host`, loads `BAAI/bge-reranker-v2-m3` once from `./hf_cache` (offline), and listens on `127.0.0.1` only. Device order is CUDA, then MPS, then CPU. Set `RERANK_URL=http://host.docker.internal:11435` and recreate the API. Leave `RERANK_URL` unset and the container scores pairs itself, which is what CI and a machine without this process do. If the URL is set and the host process is down, the container scores pairs on CPU and `/system/status` reports that fallback. The warning is logged once per outage. The embedding model stays in the container.
 
 ### Linux server
 
