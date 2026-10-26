@@ -30,7 +30,8 @@ def test_cases_cover_the_four_demo_questions():
     } <= set(cases)
     assert cases["bbc-loudness"]["page"] == "16"
     assert cases["icmp-filter"]["page"] == "34"
-    assert cases["ansible-modules"]["pages"] == ["4", "6"]
+    assert cases["ansible-modules"]["pages"] == ["4", "6", "11"]
+    assert cases["ansible-more"]["pages"] == ["4", "6", "11"]
     assert cases["ansible-modules"]["language"] == "es"
     assert "ios_config" in cases["ansible-modules"]["answer_contains"]
     assert cases["srt-outage"]["path"] == "general"
@@ -81,6 +82,12 @@ def test_ansible_accepts_page_4_or_6_in_spanish():
         {"event": "done", "data": {}},
     ]
     assert runner.judge(case, spanish) == []
+    page_11 = [
+        _token("El ejemplo usa ios_config."),
+        _source("Ansible_Network_Automation_1744044240.pdf", "11"),
+        {"event": "done", "data": {}},
+    ]
+    assert runner.judge(case, page_11) == []
     english = [
         _token("The module is ios_config."),
         _source("Ansible_Network_Automation_1744044240.pdf", "6"),
@@ -92,7 +99,7 @@ def test_ansible_accepts_page_4_or_6_in_spanish():
         _source("Ansible_Network_Automation_1744044240.pdf", "5"),
         {"event": "done", "data": {}},
     ]
-    assert runner.judge(case, other_page) == ["page was ['5'], expected 4 or 6"]
+    assert runner.judge(case, other_page) == ["page was ['5'], expected 4 or 6 or 11"]
 
 
 def test_general_case_requires_the_notice_and_a_placeholder():
