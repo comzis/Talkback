@@ -28,6 +28,7 @@ DEFAULT_RELEVANCE_THRESHOLD = 0.75
 # BAAI/bge-reranker-v2-m3 is Apache-2.0. It runs from the local cache.
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 DEFAULT_RERANK_CANDIDATES = 50
+DEFAULT_BM25_CANDIDATES = 50
 # Token cap for each query-passage pair. The forward pass does not see more.
 DEFAULT_RERANK_MAX_LENGTH = 512
 # Logged only. It does not choose the path. Correct pages landed as low as
@@ -177,6 +178,22 @@ def embed_url() -> str:
 
 def rerank_candidates() -> int:
     return _positive_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES)
+
+
+def hybrid_bm25() -> bool:
+    """Merge BM25 hits into the vector pool before rerank. Default off.
+
+    At 12k chunks, reserved-slot hybrid helped held-out keyword misses without
+    hurting the main stage table, but it did not lift main miss@100 cases.
+    """
+    raw = _raw("HYBRID_BM25").lower()
+    if not raw:
+        return False
+    return raw not in {"0", "false", "no"}
+
+
+def bm25_candidates() -> int:
+    return _positive_int("BM25_CANDIDATES", DEFAULT_BM25_CANDIDATES)
 
 
 def rerank_max_length() -> int:

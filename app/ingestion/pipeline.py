@@ -234,6 +234,9 @@ def _touch_resources() -> None:
 
 def _note_indexed() -> None:
     """Remember when a pass finished, including one that found nothing new."""
+    from retrieval import bm25 as bm25_index
+
+    bm25_index.invalidate()
     get().last_indexed_at = time.time()
 
 
