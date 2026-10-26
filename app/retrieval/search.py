@@ -104,13 +104,22 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
     if config.rerank_enabled():
         candidates = max(candidates, config.rerank_candidates())
     global_nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
-    named = named_library_files(query, library_files)
-    boosted = False
     nodes = global_nodes
+    boosted = False
+    if config.hybrid_bm25():
+        from retrieval import bm25 as bm25_index
+
+        lexical = bm25_index.retrieve_nodes(query, config.bm25_candidates())
+        if lexical:
+            # Keep most vector slots; reserve a slice for keyword-only hits.
+            reserved = max(10, candidates // 5)
+            nodes = _hybrid_merge(nodes, lexical, candidates, reserved)
+            boosted = True
+    named = named_library_files(query, library_files)
     if named:
         pinned = _retrieve_named(index, query, named, candidates)
         if pinned:
-            nodes = _merge_candidates(global_nodes, pinned, candidates)
+            nodes = _merge_candidates(nodes, pinned, candidates)
             boosted = True
     ordered = _order_nodes(nodes, query)
     _log_rerank(ordered)
@@ -140,6 +149,31 @@ def _merge_candidates(global_nodes, named_nodes, limit: int):
         merged.append(node)
         if len(merged) >= limit:
             break
+    return merged
+
+
+def _hybrid_merge(vector_nodes, lexical_nodes, limit: int, reserved: int):
+    """Vector-first pool with reserved slots filled from BM25."""
+    reserved = min(reserved, limit)
+    vector_budget = limit - reserved
+    merged = []
+    seen: set[str] = set()
+    for node in vector_nodes:
+        if len(merged) >= vector_budget:
+            break
+        key = _node_key(node)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(node)
+    for node in lexical_nodes:
+        if len(merged) >= limit:
+            break
+        key = _node_key(node)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(node)
     return merged
 
 
