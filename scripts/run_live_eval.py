@@ -20,6 +20,8 @@ Scorer:
   Any one phrasing satisfies the fact. Do not add a phrasing because a model
   answer happened to use it. Held-out phrasings stay as written unless the
   case is moved to the main set.
+- known marks a case that still fails for a documented reason. It stays in the
+  report and still counts in the pass rate. Do not retune retrieval from it.
 """
 
 from __future__ import annotations
@@ -353,7 +355,11 @@ def summarise(case: dict, runs: list[list[dict]]) -> tuple[int, list[str]]:
         lines.append(line)
     pages = ", ".join(seen) if seen else "none"
     header = f"{passed}/{len(runs)}  {case['id']}  pages seen: {pages}"
-    return passed, [header, *lines]
+    lead = [header]
+    if case.get("known"):
+        lead[0] += "  [known limitation]"
+        lead.append(f"  known: {case['known']}")
+    return passed, [*lead, *lines]
 
 
 def ask(

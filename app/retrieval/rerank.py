@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _model = None
 _tokenizer = None
+_host_warning_logged = False
+
+
+class HostUnreachable(Exception):
+    """The configured host reranker did not accept a connection."""
 
 
 def clears_threshold(score: float, threshold: float) -> bool:
@@ -82,23 +87,142 @@ def _mark(node, score: float):
     return node
 
 
+def _passage(node) -> str:
+    if hasattr(node, "get_content"):
+        return node.get_content() or ""
+    return node.get_text() or ""
+
+
+def _post_scores(url: str, body: dict) -> dict:
+    import httpx
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
+            response = client.post(url.rstrip("/") + "/rerank", json=body)
+    except httpx.HTTPError as exc:
+        raise HostUnreachable(str(exc)) from exc
+    if response.status_code != 200:
+        raise RuntimeError(f"Host reranker failed ({response.status_code}).")
+    payload = response.json()
+    scores = payload.get("scores")
+    if not isinstance(scores, list):
+        raise RuntimeError("Host reranker returned no scores.")
+    return payload
+
+
+def _host_health(url: str) -> dict | None:
+    """Health payload, or None when the host process cannot be reached."""
+    import httpx
+
+    try:
+        response = httpx.get(url.rstrip("/") + "/health", timeout=httpx.Timeout(2.0))
+    except httpx.HTTPError:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _warn_host_down(url: str) -> None:
+    """One warning for an outage. A later success arms the warning again."""
+    global _host_warning_logged
+    if _host_warning_logged:
+        return
+    _host_warning_logged = True
+    logger.warning(
+        "Host reranker at %s is unreachable. Scoring pairs in this container on CPU.",
+        url,
+    )
+
+
+def _host_recovered() -> None:
+    global _host_warning_logged
+    _host_warning_logged = False
+
+
+def active_rerank() -> dict:
+    """The reranker the next query will use.
+
+    A set RERANK_URL is probed. If that process is down, queries score pairs
+    in this container and this report says so.
+    """
+    url = config.rerank_url()
+    if not url:
+        return {"mode": "container", "device": "cpu", "url": ""}
+    health = _host_health(url)
+    if health is None:
+        _warn_host_down(url)
+        return {
+            "mode": "container",
+            "device": "cpu",
+            "url": url,
+            "host": "unreachable",
+        }
+    _host_recovered()
+    return {
+        "mode": "host",
+        "device": str(health.get("device") or "host"),
+        "url": url,
+        "host": "reachable",
+    }
+
+
 def rerank_nodes(query: str, nodes: list):
     """Return the same nodes, highest reranker logit first."""
     if not nodes:
         return []
-    import torch
+    import time
 
-    model, tokenizer = _load()
     limit = config.rerank_max_length()
     # The tokenizer drops anything past the cap. Cut the string first so a long
     # chunk is not tokenised only to be thrown away.
     char_cap = limit * 4
-    pairs = []
-    for node in nodes:
-        text = node.get_content() if hasattr(node, "get_content") else node.get_text()
-        pairs.append([query[:char_cap], (text or "")[:char_cap]])
+    query_text = query[:char_cap]
+    passages = [_passage(node)[:char_cap] for node in nodes]
+    url = config.rerank_url()
+    started = time.perf_counter()
+    if url:
+        try:
+            payload = _post_scores(
+                url,
+                {"query": query_text, "passages": passages, "max_length": limit},
+            )
+        except HostUnreachable:
+            _warn_host_down(url)
+            scores, where = _local_scores(query_text, passages, limit)
+        else:
+            _host_recovered()
+            scores = [float(score) for score in payload["scores"]]
+            if len(scores) != len(nodes):
+                raise RuntimeError(
+                    "Host reranker returned a different number of scores."
+                )
+            where = str(payload.get("device") or url)
+    else:
+        scores, where = _local_scores(query_text, passages, limit)
+    logger.info(
+        "Reranked %s pairs on %s in %.3fs",
+        len(passages),
+        where,
+        time.perf_counter() - started,
+    )
+    order = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)
+    return [_mark(nodes[index], scores[index]) for index in order]
+
+
+def _local_scores(
+    query: str, passages: list[str], limit: int
+) -> tuple[list[float], str]:
+    import torch
+
+    model, tokenizer = _load()
+    pairs = [[query, text] for text in passages]
     device = next(model.parameters()).device
-    scored: list[tuple[float, int]] = []
+    scores: list[float] = []
     with torch.no_grad():
         for start in range(0, len(pairs), 8):
             batch = pairs[start : start + 8]
@@ -111,7 +235,5 @@ def rerank_nodes(query: str, nodes: list):
             )
             inputs = inputs.to(device)
             logits = model(**inputs, return_dict=True).logits.view(-1).float()
-            for offset, score in enumerate(logits.tolist()):
-                scored.append((float(score), start + offset))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [_mark(nodes[index], score) for score, index in scored]
+            scores.extend(float(score) for score in logits.tolist())
+    return scores, str(device)

@@ -108,6 +108,12 @@ _GENERAL_MARK = {
     "fr": "D'après les connaissances générales :",
     "es": "Según el conocimiento general:",
 }
+_GENERAL_FIGURE = re.compile(
+    r"(?<![\w.])[±+\-−–]?\s*\d+(?:[.,]\d+)?\s*"
+    r"(?:dBTP|dBFS|LUFS|LKFS|dB|LU|ms|Mbit/s|kbit/s|Gbit/s)\b",
+    re.IGNORECASE,
+)
+_VERIFY_FIGURE = "not from the documents, verify"
 _SPANISH_QUESTION = re.compile(
     r"[¿¡ñ]|\b(?:qué|puedes|detalle|módulos|modulos|más)\b",
     re.IGNORECASE,
@@ -116,6 +122,53 @@ _FRENCH_QUESTION = re.compile(
     r"[àâçéèêëïîôùûüœ]|\b(?:donne|détails|details|filtre)\b",
     re.IGNORECASE,
 )
+
+
+def _plain_apostrophe(text: str) -> str:
+    return (text or "").replace("’", "'").replace("‘", "'")
+
+
+def scrub_general_figures(text: str) -> str:
+    """Replace measurements inside a labelled general-knowledge remark.
+
+    Figures before the label stay. The label itself stays.
+    """
+    normalized = _plain_apostrophe(text)
+    found_at = None
+    found = ""
+    for mark in _GENERAL_MARK.values():
+        at = normalized.find(mark)
+        if at != -1 and (found_at is None or at < found_at):
+            found_at = at
+            found = mark
+    if found_at is None:
+        return text
+    tail = normalized[found_at + len(found) :]
+    return text[:found_at] + found + _GENERAL_FIGURE.sub(_VERIFY_FIGURE, tail)
+
+
+def take_stream_piece(pending: str) -> tuple[str, str, bool]:
+    """Split one buffer into text to send, text to keep, and whether the mark started.
+
+    A suffix that could still grow into the general-knowledge label is kept.
+    """
+    normalized = _plain_apostrophe(pending)
+    found_at = None
+    for mark in _GENERAL_MARK.values():
+        at = normalized.find(mark)
+        if at != -1 and (found_at is None or at < found_at):
+            found_at = at
+    if found_at is not None:
+        return pending[:found_at], normalized[found_at:], True
+    limit = max(len(mark) for mark in _GENERAL_MARK.values())
+    hold = 0
+    for size in range(1, min(limit, len(normalized)) + 1):
+        suffix = normalized[-size:]
+        if any(mark.startswith(suffix) for mark in _GENERAL_MARK.values()):
+            hold = size
+    if hold:
+        return pending[:-hold], pending[-hold:], False
+    return pending, "", False
 
 
 def question_language(query: str) -> str:
@@ -228,8 +281,9 @@ def format_history(history, *, continue_from_passages: bool = False) -> str:
     if continue_from_passages:
         closing = (
             "The latest line asks you to continue. "
-            "Answer with information from the excerpts that is not already in the earlier answer, "
-            "including measurements and limits that answer left out. "
+            "Prefer facts from the same page or passage as the earlier answer "
+            "that were not already stated, including measurements and limits that answer left out. "
+            "Use a different page only after that page has nothing further to add. "
             "Do not repeat that answer.\n\n"
         )
     else:
@@ -1082,6 +1136,106 @@ def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
         source["number"] = index + 1
         chosen.append(source)
     return chosen
+
+
+# Calibrated on main-set sentences against the cited passage (bge-m3, best 700-character
+# window). Relevant sentences, including Spanish and French, scored about 0.60 to 0.76.
+# An SRT incident draft against the television pages scored about 0.45 to 0.49.
+CITATION_MIN_SIMILARITY = 0.55
+# A short reply such as "Se llama Playbook." scores low against a long page on its
+# own. Join it with the question so the comparison keeps the topic. A short reply
+# that shares no content word with the passage still drops, so a wrong one-word
+# answer cannot ride the question's similarity.
+SHORT_CITATION_WORDS = 8
+
+
+def passage_windows(text: str, size: int = 700, step: int = 350) -> list[str]:
+    """Overlapping slices of a passage, so a short sentence can match one part of it."""
+    folded = " ".join((text or "").split())
+    if not folded:
+        return []
+    if len(folded) <= size:
+        return [folded]
+    cuts = []
+    start = 0
+    while start < len(folded):
+        cuts.append(folded[start : start + size])
+        if start + size >= len(folded):
+            break
+        start += step
+    return cuts
+
+
+def citing_sentence(answer: str, number: int) -> str:
+    """The sentence that carries this source number, without the marker.
+
+    A marker that sits after the full stop, or alone on the next line, still
+    belongs to that sentence. A draft with no full stops is scored a line at
+    a time, so a trailing marker is not compared with the whole draft.
+    """
+    parts = re.split(r"(?<=[.!?])\s+|\n+", (answer or "").strip())
+    merged: list[str] = []
+    for part in parts:
+        if merged and re.fullmatch(r"(?:\[\d+\]\s*)+", part):
+            merged[-1] = f"{merged[-1]} {part}"
+        else:
+            merged.append(part)
+    hits = [part for part in merged if re.search(rf"\[{number}\]", part)]
+    return _CITATION.sub("", " ".join(hits)).strip()
+
+
+def _citation_words(text: str) -> list[str]:
+    return [word for word in (text or "").split() if word]
+
+
+def citation_compare_text(sentence: str, query: str = "") -> str:
+    """Text compared to the passage. Short replies include the question."""
+    if len(_citation_words(sentence)) < SHORT_CITATION_WORDS and (query or "").strip():
+        return f"{query.strip()} {sentence.strip()}"
+    return sentence
+
+
+def sentence_touches_passage(sentence: str, passage: str) -> bool:
+    """True when a content word from the sentence appears in the passage."""
+    folded = (passage or "").casefold()
+    for word in re.findall(r"[a-z0-9à-ÿœ]+", (sentence or "").casefold()):
+        if len(word) < 3 or word in _STOP:
+            continue
+        if re.search(rf"\b{re.escape(word)}\b", folded):
+            return True
+    return False
+
+
+def keep_close_citations(
+    answer: str, sources: list[dict], score, query: str = ""
+) -> list[dict]:
+    """Drop a citation whose sentence is not close to the cited passage.
+
+    A citation the model did not write has no sentence to compare, so the
+    technical-token check stands. `score` returns the bge-m3 similarity.
+    A short sentence is scored with the question, and only when it still
+    shares a content word with the passage.
+    """
+    kept = []
+    for source in sources:
+        number = int(source.get("number") or 0)
+        if not re.search(rf"\[{number}\]", answer or ""):
+            kept.append(source)
+            continue
+        sentence = citing_sentence(answer, number)
+        if not sentence:
+            continue
+        passage = source.get("text") or ""
+        if (
+            len(_citation_words(sentence)) < SHORT_CITATION_WORDS
+            and (query or "").strip()
+        ):
+            if not sentence_touches_passage(sentence, passage):
+                continue
+        compared = citation_compare_text(sentence, query)
+        if float(score(compared, passage)) >= CITATION_MIN_SIMILARITY:
+            kept.append(source)
+    return kept
 
 
 def source_label(source: dict) -> str:

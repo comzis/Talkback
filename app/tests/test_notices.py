@@ -221,12 +221,16 @@ def test_tell_me_more_asks_for_facts_not_already_given():
         ("assistant", "Live programmes target -23.0 LUFS."),
     ]
     text = prompts.explanation_prompt(
-        "Tell me more.", ["a.pdf"], ["Do not exceed -3 dBTP."], history
+        "Tell me more.",
+        ["a.pdf"],
+        ["line-up tone on page 17", "Live programmes target -23.0 LUFS on page 16"],
+        history,
     )
-    assert "not already in the earlier answer" in text
+    assert "same page or passage" in text
     assert "Do not repeat that answer." in text
+    assert text.index("[1] line-up tone") < text.index("[2] Live programmes")
     fresh = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
-    assert "not already in the earlier answer" not in fresh
+    assert "same page or passage" not in fresh
     other = prompts.explanation_prompt(
         "What about the deadline?",
         ["a.pdf"],
@@ -234,6 +238,109 @@ def test_tell_me_more_asks_for_facts_not_already_given():
         [("user", "What does the agreement say?")],
     )
     assert "not already in the earlier answer" not in other
+
+
+def test_a_distant_sentence_loses_its_citation():
+    sources = [
+        {
+            "number": 1,
+            "text": "OPTION C: A single link, with no backup is acceptable.",
+            "page": "33",
+        }
+    ]
+    answer = "Incident update: the SRT outage lasted 10 minutes. [1]"
+    assert (
+        prompts.keep_close_citations(answer, sources, lambda sentence, passage: 0.49)
+        == []
+    )
+    kept = prompts.keep_close_citations(answer, sources, lambda sentence, passage: 0.70)
+    assert [item["page"] for item in kept] == ["33"]
+    assert prompts.CITATION_MIN_SIMILARITY == 0.55
+
+
+def test_a_short_correct_reply_is_scored_with_the_question():
+    sources = [
+        {
+            "number": 1,
+            "text": "Playbook: YAML file that contains automation instructions.",
+            "page": "4",
+        }
+    ]
+    answer = "Se llama Playbook. [1]"
+    query = (
+        "¿Cómo se llama el fichero de instrucciones de automatización escrito en YAML?"
+    )
+    seen = []
+
+    def score(sentence, passage):
+        seen.append(sentence)
+        return 0.66
+
+    kept = prompts.keep_close_citations(answer, sources, score, query=query)
+    assert [item["page"] for item in kept] == ["4"]
+    assert query in seen[0]
+    assert "Playbook" in seen[0]
+    assert prompts.citation_compare_text("Se llama Playbook.", query).startswith(
+        "¿Cómo"
+    )
+    wrong = prompts.keep_close_citations(
+        "Paris. [1]", sources, lambda sentence, passage: 0.99, query=query
+    )
+    assert wrong == []
+
+
+def test_an_unmarked_citation_is_not_scored():
+    sources = [{"number": 1, "text": "anything", "page": "4"}]
+    kept = prompts.keep_close_citations(
+        "No marker here.", sources, lambda sentence, passage: 0.0
+    )
+    assert kept == sources
+
+
+def test_the_sentence_next_to_the_marker_is_the_one_compared():
+    answer = "The outage lasted 10 minutes. The filter is icmp.type == 3. [2]"
+    assert "icmp.type" in prompts.citing_sentence(answer, 2)
+    assert "outage" not in prompts.citing_sentence(answer, 2)
+    draft = (
+        "Incident Update: SRT Outage\n\n"
+        "Duration: 10 minutes\n"
+        "- [Placeholder for long-term fix]\n\n"
+        "[3]"
+    )
+    sentence = prompts.citing_sentence(draft, 3)
+    assert "long-term fix" in sentence
+    assert "SRT" not in sentence
+
+
+def test_a_general_remark_loses_its_measurements():
+    raw = (
+        "The excerpts are about television. From general knowledge: "
+        "radio true peak is -1 dBTP and the delay is 40 ms at 5 Mbit/s."
+    )
+    cleaned = prompts.scrub_general_figures(raw)
+    assert "-1" not in cleaned
+    assert "dBTP" not in cleaned
+    assert "40" not in cleaned
+    assert "Mbit/s" not in cleaned
+    assert cleaned.count("not from the documents, verify") == 3
+    assert "television" in cleaned
+    french = "D'après les connaissances générales : le niveau est de -23,0 LUFS."
+    assert "LUFS" not in prompts.scrub_general_figures(french)
+    cited = "Live programmes are -23.0 LUFS. [1]"
+    assert prompts.scrub_general_figures(cited) == cited
+
+
+def test_the_stream_holds_a_partial_general_label():
+    emit, keep, started = prompts.take_stream_piece("From general")
+    assert emit == ""
+    assert started is False
+    assert keep == "From general"
+    emit, keep, started = prompts.take_stream_piece(
+        "The excerpts do not answer. From general knowledge: radio is -1 dBTP."
+    )
+    assert emit == "The excerpts do not answer. "
+    assert started is True
+    assert keep.startswith("From general knowledge:")
 
 
 def test_a_first_question_keeps_the_standing_notice():

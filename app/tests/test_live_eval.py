@@ -30,7 +30,8 @@ def test_cases_cover_the_four_demo_questions():
     } <= set(cases)
     assert cases["bbc-loudness"]["page"] == "16"
     assert cases["icmp-filter"]["page"] == "34"
-    assert cases["ansible-modules"]["pages"] == ["4", "6"]
+    assert cases["ansible-modules"]["pages"] == ["4", "6", "11"]
+    assert cases["ansible-more"]["pages"] == ["4", "6", "11"]
     assert cases["ansible-modules"]["language"] == "es"
     assert "ios_config" in cases["ansible-modules"]["answer_contains"]
     assert cases["srt-outage"]["path"] == "general"
@@ -81,6 +82,12 @@ def test_ansible_accepts_page_4_or_6_in_spanish():
         {"event": "done", "data": {}},
     ]
     assert runner.judge(case, spanish) == []
+    page_11 = [
+        _token("El ejemplo usa ios_config."),
+        _source("Ansible_Network_Automation_1744044240.pdf", "11"),
+        {"event": "done", "data": {}},
+    ]
+    assert runner.judge(case, page_11) == []
     english = [
         _token("The module is ios_config."),
         _source("Ansible_Network_Automation_1744044240.pdf", "6"),
@@ -92,7 +99,7 @@ def test_ansible_accepts_page_4_or_6_in_spanish():
         _source("Ansible_Network_Automation_1744044240.pdf", "5"),
         {"event": "done", "data": {}},
     ]
-    assert runner.judge(case, other_page) == ["page was ['5'], expected 4 or 6"]
+    assert runner.judge(case, other_page) == ["page was ['5'], expected 4 or 6 or 11"]
 
 
 def test_general_case_requires_the_notice_and_a_placeholder():
@@ -123,6 +130,12 @@ def test_repeated_runs_keep_every_cited_page():
     assert lines[0] == "3/3  ansible-modules  pages seen: 4, 6"
     assert "p. 4" in lines[1]
     assert "p. 6" in lines[2]
+    known_case = dict(case)
+    known_case["id"] = "demo-known"
+    known_case["known"] = "documented gap"
+    _passed, known_lines = runner.summarise(known_case, [page_four])
+    assert "[known limitation]" in known_lines[0]
+    assert "documented gap" in known_lines[1]
 
 
 def test_follow_ups_continue_the_parent_question():
@@ -132,6 +145,14 @@ def test_follow_ups_continue_the_parent_question():
     assert cases["icmp-more"]["continues"] == "icmp-filter"
     assert cases["ansible-more"]["continues"] == "ansible-modules"
     assert cases["bbc-radio-peak"]["path"] == "uncovered"
+    assert cases["bbc-more"]["known"]
+    assert cases["bbc-more-typo"]["known"]
+    assert cases["fr-loudness"]["known"]
+    assert cases["ansible-more"]["known"]
+    assert "en-playbook-name" in cases
+    assert "es-playbook-name" in cases
+    assert "en-true-peak-short" in cases
+    assert "es-inventory-short" in cases
     parent_events = [
         _token("Live loudness is -23.0 LUFS, tolerance 1.0 LU."),
         _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),

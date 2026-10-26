@@ -13,25 +13,36 @@ The chat window is the main view. The library, system status, and upload area si
 - Leaves files that have not changed in the index. New and changed files are embedded. Removed files drop their chunks.
 - Answers greetings and general questions with no sources. A question that names a library file is answered from that file. Each cited claim keeps its source number, with the page and excerpt beside it.
 - Uses the model named by `OLLAMA_MODEL` in `.env`. There is no built-in chat-model name. Embeddings default to `BAAI/bge-m3` (MIT, French, English, and Spanish). `intfloat/multilingual-e5-small` remains available by setting `EMBED_MODEL`. The embedding model downloads once, and only when `OFFLINE_MODE=false`.
-- Reranks the top 20 chunks with `BAAI/bge-reranker-v2-m3` (Apache-2.0, local cache) and keeps four. Each query-passage pair is capped at 512 tokens. On a GPU server the reranker should run on the GPU. On this Mac, in Docker, six main-set questions reached the first word in about 28 seconds at 15 or 20 candidates and about 44 seconds at 30. Main-set recall at 4 and at 8 stayed 14/15 for all three. The reranker score is logged and does not choose the path. The model always sees the top passages. A citation is kept when its filters, dotted fields, numbers with units, standard codes, and file names sit in a retrieved passage; a token found in a different passage is re-attributed there. Words in parentheses are not checked. If no citation survives, the reply is marked as not from the documents.
+- Reranks the top 20 chunks with `BAAI/bge-reranker-v2-m3` (Apache-2.0, local cache) and keeps four. Each query-passage pair is capped at 512 tokens. On a GPU server the reranker should run on the GPU. On this Mac, in Docker, six main-set questions reached the first word in about 28 seconds at 15 or 20 candidates and about 44 seconds at 30. Main-set recall at 4 and at 8 stayed 14/15 for all three. The reranker score is logged and does not choose the path. The model always sees the top passages. A citation is kept when its filters, dotted fields, numbers with units, standard codes, and file names sit in a retrieved passage; a token found in a different passage is re-attributed there. Words in parentheses are not checked. A citation the model wrote is also dropped when its sentence is below 0.55 bge-m3 similarity to the cited passage, so an unrelated draft does not keep a card. A short sentence (under eight words) is scored together with the question, and only when it still shares a content word with the passage. If no citation survives, the reply is marked as not from the documents.
 - Streams the reply into the chat, then shows the folder, file, and page for each source the answer used. The **Stop** button cancels the stream. `POST /query` still returns the full answer in one response.
 
 ## Quick start
 
-Talkback needs Docker, Ollama on the host, about 8 GB of RAM, and several GB of free disk for the image and model. The same compose file runs on a Mac and on a Linux server. `host.docker.internal` is mapped to the host gateway, so the container reaches Ollama on either machine.
+Talkback needs Docker, Ollama on the host, and several GB of free disk for the image and model. Give Docker Desktop 16 GiB of memory. The API loads the embedding model in the container, and the reranker as well unless `RERANK_URL` points at the host service below. The same compose file runs on a Mac and on a Linux server. `host.docker.internal` is mapped to the host gateway, so the container reaches Ollama on either machine.
 
 ### Mac
 
-Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Ollama](https://ollama.com/). The image builds as UID `502` and GID `20` unless you override them. If the library files are not readable in the container, rebuild with your ids:
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Ollama](https://ollama.com/). In Docker Desktop's settings, set memory to 16 GiB. The image builds as UID `502` and GID `20` unless you override them. If the library files are not readable in the container, rebuild with your ids:
 
 ```bash
 docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
 docker compose up -d
 ```
 
+On a Mac the reranker can run on the Apple GPU, outside Docker. Docker Desktop cannot see that GPU. Install it as a user agent so it starts at login, bound to `127.0.0.1:11435`:
+
+```bash
+scripts/install-rerank-host.sh
+scripts/uninstall-rerank-host.sh
+```
+
+`scripts/start-rerank-host.sh` is the same process without login startup. The plist template is `scripts/com.talkback.rerank-host.plist`; the installer writes this checkout's path into `~/Library/LaunchAgents`. The script keeps a virtualenv in `.rerank-host`, loads `BAAI/bge-reranker-v2-m3` once from `./hf_cache` (offline), and listens on `127.0.0.1` only. Device order is CUDA, then MPS, then CPU. Set `RERANK_URL=http://host.docker.internal:11435` and recreate the API. Leave `RERANK_URL` unset and the container scores pairs itself, which is what CI and a machine without this process do. If the URL is set and the host process is down, the container scores pairs on CPU and `/system/status` reports that fallback. The warning is logged once per outage. The embedding model stays in the container.
+
 ### Linux server
 
 Install Docker Engine and the Docker Compose plugin, and install Ollama on the host so it can use the machine's GPU. Build as the user that owns the library folder. The Mac default of UID `502` will not match a typical server account.
+
+On a Linux GPU server, do not start the Mac host reranker. Rebuild the API image with a CUDA torch wheel instead of the CPU wheel in the Dockerfile, and leave `RERANK_URL` unset. The container then runs the reranker, and the embedding model, on the NVIDIA GPU. The host service exists because Docker Desktop on a Mac cannot see the Apple GPU.
 
 ```bash
 docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"
@@ -107,11 +118,12 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `RERANK_MAX_LENGTH` | Token cap for each query-passage pair. Use the GPU on a GPU server | `512` |
 | `RERANK_THRESHOLD` | Logged only. It does not choose the path | `-7.5` |
 | `RERANK` | Set to `false` to use the similarity threshold instead | `true` |
+| `RERANK_URL` | Host reranker, for a Mac Apple GPU. Empty scores pairs in the container | unset |
 | `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
 | `RETRIEVE_PER_FILE` | Maximum chunks from one file, once the hits span more files than `RETRIEVE_BALANCE_FILES` | `2` |
 | `RETRIEVE_BALANCE_FILES` | Per-file cap applies only above this many files. Three PDFs do not trigger it | `3` |
 | `RELEVANCE_THRESHOLD` | Best e5 score required before a library answer | `0.75` |
-| `OLLAMA_CONTEXT` | Ollama context window (`num_ctx`) | `4096` |
+| `OLLAMA_CONTEXT` | Context window sent as `num_ctx` on Ollama `/api/chat` | `4096` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |
 | `OLLAMA_THINK` | Send a hidden reasoning trace before the reply | `false` |
 | `TORCH_THREADS` | Torch CPU threads | half the cores |
@@ -124,7 +136,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 
 Pilot models must be Apache 2.0 or MIT licensed. Check the model card before you set `OLLAMA_MODEL`.
 
-Chat uses `POST /v1/chat/completions`. With `CHAT_BACKEND=ollama` the request includes `keep_alive` and, when `OLLAMA_THINK=false`, `reasoning_effort` set to `none`. With `CHAT_BACKEND=vllm` those Ollama fields are left out, and the model list, model switch, and model pull endpoints are disabled. The vLLM path is not tested against a real vLLM server. Library answers stream as the model writes them. If a check against the excerpts changes the wording, the correction is a footnote and the words already shown stay.
+With `CHAT_BACKEND=ollama`, chat uses `POST /api/chat`. Ollama 0.40.6 ignores `num_ctx` on `/v1/chat/completions`, and a model such as `qwen3.8:27b` would otherwise load at its full card length (262144). The native request sends `options.num_ctx` from `OLLAMA_CONTEXT`, `keep_alive`, and `think` from `OLLAMA_THINK`. With `CHAT_BACKEND=vllm`, chat uses `POST /v1/chat/completions` and those Ollama fields are left out. The model list, model switch, and model pull endpoints are disabled on that path. The vLLM path is not tested against a real vLLM server. Library answers stream as the model writes them. If a check against the excerpts changes the wording, the correction is a footnote and the words already shown stay.
 
 Change the model from the **Change Model** button in System Pulse, or set `OLLAMA_MODEL` and run `docker compose restart rag-api`. Pull any new model on the host first with `ollama pull`, using the name from the model card.
 

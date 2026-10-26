@@ -26,6 +26,7 @@ wheels/
 # Virtual Environments
 venv/
 .venv/
+.rerank-host/
 ENV/
 env/
 
