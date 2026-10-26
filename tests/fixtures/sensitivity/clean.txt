@@ -1,0 +1,2 @@
+Playbook: YAML file that contains automation instructions.
+The inventory file hosts.ini lists each device.
