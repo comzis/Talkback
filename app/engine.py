@@ -60,6 +60,7 @@ from llm.prompts import (
     ground_library_reply,
     cited_source_indexes,
     explanation_prompt,
+    order_continuation_sources,
     outside_document_note,
     passage_windows,
     retrieval_text,
@@ -299,6 +300,7 @@ def iter_answer(query: str, history=None):
         sources = [
             _source_record(node, number, query) for number, node in enumerate(nodes, 1)
         ]
+        sources = order_continuation_sources(sources, history, query)
         prompt = explanation_prompt(
             query,
             library_files,

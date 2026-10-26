@@ -535,10 +535,15 @@ def excerpts_mention(query: str, texts: list[str]) -> bool:
     return any(word in blob for word in words)
 
 
-def _same_passage_first(excerpts: list[str], history, query: str) -> list[str]:
-    """On a bare continuation, put the passage that matches the previous answer first."""
-    if not excerpts or not _continuation_only(query):
-        return list(excerpts)
+def order_continuation_sources(sources: list[dict], history, query: str) -> list[dict]:
+    """On a bare continuation, put unused facts from the earlier answer's page first.
+
+    The page is the one whose text shares the most words with that answer.
+    Other pages keep their retrieved order. Excerpt numbers follow this list,
+    so the caller must prompt from the same order.
+    """
+    if not sources or not _continuation_only(query):
+        return list(sources)
     previous = ""
     for role, text in clean_history(history):
         if role == "assistant":
@@ -549,15 +554,25 @@ def _same_passage_first(excerpts: list[str], history, query: str) -> list[str]:
         if len(word) > 2 and word not in _STOP
     ]
     if not words:
-        return list(excerpts)
+        return list(sources)
 
-    def overlap(text: str) -> int:
-        folded = text.casefold()
+    def overlap(source: dict) -> int:
+        folded = (source.get("text") or "").casefold()
         return sum(1 for word in words if word in folded)
 
-    if max(overlap(text) for text in excerpts) == 0:
-        return list(excerpts)
-    return sorted(excerpts, key=overlap, reverse=True)
+    if max(overlap(source) for source in sources) == 0:
+        return list(sources)
+    best = max(sources, key=overlap)
+    page = str(best.get("page") or "")
+    file_name = best.get("source")
+    same = [
+        source
+        for source in sources
+        if source.get("source") == file_name and str(source.get("page") or "") == page
+    ]
+    rest = [source for source in sources if source not in same]
+    same.sort(key=overlap)
+    return same + rest
 
 
 def explanation_prompt(
@@ -565,8 +580,7 @@ def explanation_prompt(
 ) -> str:
     """Prompt that explains pasted text and reasons only with library excerpts."""
     names = ", ".join(library_files) if library_files else "(none yet)"
-    ordered = _same_passage_first(excerpts, history, query)
-    shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(ordered, 1))
+    shown = "\n\n".join(f"[{index}] {text}" for index, text in enumerate(excerpts, 1))
     if not shown:
         shown = "(no matching excerpts)"
     if asks_for_steps(query):

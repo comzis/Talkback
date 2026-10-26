@@ -228,9 +228,24 @@ def test_tell_me_more_asks_for_facts_not_already_given():
     )
     assert "same page or passage" in text
     assert "Do not repeat that answer." in text
-    assert text.index("[1] Live programmes target -23.0 LUFS") < text.index(
-        "[2] line-up tone"
+    ordered = prompts.order_continuation_sources(
+        [
+            {"source": "a.pdf", "page": "17", "text": "line-up tone on page 17"},
+            {
+                "source": "a.pdf",
+                "page": "16",
+                "text": "Live programmes target -23.0 LUFS",
+            },
+            {"source": "a.pdf", "page": "16", "text": "Do not exceed -3 dBTP"},
+        ],
+        history,
+        "Tell me more.",
     )
+    assert [item["text"] for item in ordered] == [
+        "Do not exceed -3 dBTP",
+        "Live programmes target -23.0 LUFS",
+        "line-up tone on page 17",
+    ]
     fresh = prompts.explanation_prompt("What is the level?", ["a.pdf"], ["-23.0 LUFS"])
     assert "same page or passage" not in fresh
     other = prompts.explanation_prompt(
