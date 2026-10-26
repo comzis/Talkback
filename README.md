@@ -120,9 +120,9 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `RERANK` | Set to `false` to use the similarity threshold instead | `true` |
 | `RERANK_URL` | Host reranker, for a Mac Apple GPU. Empty scores pairs in the container | unset |
 | `EMBED_URL` | Host embedder (same process as the reranker). Empty embeds in the container | unset |
-| `RETRIEVE_LIMIT` | Chunks kept for the answer | `4` |
+| `RETRIEVE_LIMIT` | Chunks kept for the answer | `6` |
 | `RETRIEVE_PER_FILE` | Maximum chunks from one file, once the hits span more files than `RETRIEVE_BALANCE_FILES` | `2` |
-| `RETRIEVE_BALANCE_FILES` | Per-file cap applies only above this many files. Three PDFs do not trigger it | `3` |
+| `RETRIEVE_BALANCE_FILES` | Per-file cap applies only above this many files | `5` |
 | `RELEVANCE_THRESHOLD` | Best e5 score required before a library answer | `0.75` |
 | `OLLAMA_CONTEXT` | Context window sent as `num_ctx` on Ollama `/api/chat` | `4096` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps the model loaded | `30m` |

@@ -590,7 +590,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.chunk_size(), 512)
             self.assertEqual(config.chunk_overlap(), 64)
             self.assertEqual(config.retrieve_candidates(), 8)
-            self.assertEqual(config.retrieve_limit(), 4)
+            self.assertEqual(config.retrieve_limit(), 6)
             self.assertEqual(config.retrieve_per_file(), 2)
             self.assertEqual(config.ollama_context(), 4096)
             self.assertEqual(config.ollama_keep_alive(), "30m")
