@@ -236,6 +236,38 @@ def test_tell_me_more_asks_for_facts_not_already_given():
     assert "not already in the earlier answer" not in other
 
 
+def test_a_distant_sentence_loses_its_citation():
+    sources = [
+        {
+            "number": 1,
+            "text": "OPTION C: A single link, with no backup is acceptable.",
+            "page": "33",
+        }
+    ]
+    answer = "Incident update: the SRT outage lasted 10 minutes. [1]"
+    assert (
+        prompts.keep_close_citations(answer, sources, lambda sentence, passage: 0.49)
+        == []
+    )
+    kept = prompts.keep_close_citations(answer, sources, lambda sentence, passage: 0.70)
+    assert [item["page"] for item in kept] == ["33"]
+    assert prompts.CITATION_MIN_SIMILARITY == 0.55
+
+
+def test_an_unmarked_citation_is_not_scored():
+    sources = [{"number": 1, "text": "anything", "page": "4"}]
+    kept = prompts.keep_close_citations(
+        "No marker here.", sources, lambda sentence, passage: 0.0
+    )
+    assert kept == sources
+
+
+def test_the_sentence_next_to_the_marker_is_the_one_compared():
+    answer = "The outage lasted 10 minutes. The filter is icmp.type == 3. [2]"
+    assert "icmp.type" in prompts.citing_sentence(answer, 2)
+    assert "outage" not in prompts.citing_sentence(answer, 2)
+
+
 def test_a_first_question_keeps_the_standing_notice():
     assert (
         prompts.notice_for_general(

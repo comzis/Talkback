@@ -1084,6 +1084,67 @@ def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
     return chosen
 
 
+# Calibrated on main-set sentences against the cited passage (bge-m3, best 700-character
+# window). Relevant sentences, including Spanish and French, scored about 0.60 to 0.76.
+# An SRT incident draft against the television pages scored about 0.45 to 0.49.
+CITATION_MIN_SIMILARITY = 0.55
+
+
+def passage_windows(text: str, size: int = 700, step: int = 350) -> list[str]:
+    """Overlapping slices of a passage, so a short sentence can match one part of it."""
+    folded = " ".join((text or "").split())
+    if not folded:
+        return []
+    if len(folded) <= size:
+        return [folded]
+    cuts = []
+    start = 0
+    while start < len(folded):
+        cuts.append(folded[start : start + size])
+        if start + size >= len(folded):
+            break
+        start += step
+    return cuts
+
+
+def citing_sentence(answer: str, number: int) -> str:
+    """The sentence that carries this source number, without the marker.
+
+    A marker that sits after the full stop still belongs to that sentence.
+    """
+    parts = re.split(r"(?<=[.!?])\s+", (answer or "").strip())
+    merged: list[str] = []
+    for part in parts:
+        if merged and re.fullmatch(r"(?:\[\d+\]\s*)+", part):
+            merged[-1] = f"{merged[-1]} {part}"
+        else:
+            merged.append(part)
+    hits = [part for part in merged if re.search(rf"\[{number}\]", part)]
+    return _CITATION.sub("", " ".join(hits)).strip()
+
+
+def keep_close_citations(answer: str, sources: list[dict], score) -> list[dict]:
+    """Drop a citation whose sentence is not close to the cited passage.
+
+    A citation the model did not write has no sentence to compare, so the
+    technical-token check stands. `score` returns the bge-m3 similarity.
+    """
+    kept = []
+    for source in sources:
+        number = int(source.get("number") or 0)
+        if not re.search(rf"\[{number}\]", answer or ""):
+            kept.append(source)
+            continue
+        sentence = citing_sentence(answer, number)
+        if (
+            sentence
+            and float(score(sentence, source.get("text") or ""))
+            >= CITATION_MIN_SIMILARITY
+        ):
+            kept.append(source)
+    return kept
+
+
 def source_label(source: dict) -> str:
     """Show the folder and file, and the page when the reader stored one."""
     path = source.get("path") or source.get("source") or "Document"

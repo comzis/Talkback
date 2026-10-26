@@ -61,6 +61,7 @@ from llm.prompts import (
     cited_source_indexes,
     explanation_prompt,
     outside_document_note,
+    passage_windows,
     retrieval_text,
     should_search_library,
     supporting_sources,
@@ -163,7 +164,7 @@ def _stream_prompt(
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
         return
-    used = supporting_sources(shown, sources)
+    used = _close_citations(shown, supporting_sources(shown, sources))
     if used and not cited_source_indexes(reply):
         marks = " ".join(f"[{source['number']}]" for source in used)
         extra = f" {marks}"
@@ -186,6 +187,42 @@ def _stream_prompt(
         source["text"] = display_excerpt(source.get("text") or "", query, reply)
     yield {"event": "sources", "data": {"sources": used}}
     yield {"event": "done", "data": {}}
+
+
+def _citation_similarity(sentence: str, passage: str) -> float:
+    """Best cosine similarity between the sentence and a window of the passage.
+
+    Unit tests have no embedding model. They keep the technical-token result.
+    """
+    from llama_index.core import Settings
+
+    embedder = Settings.embed_model
+    if embedder is None or not sentence:
+        return 1.0
+    pieces = passage_windows(passage)
+    if not pieces:
+        return 0.0
+    vectors = embedder.get_text_embedding_batch([sentence, *pieces])
+
+    def dot(left, right):
+        return sum(a * b for a, b in zip(left, right))
+
+    def norm(vector):
+        return sum(value * value for value in vector) ** 0.5 or 1.0
+
+    base = vectors[0]
+    return max(dot(base, other) / (norm(base) * norm(other)) for other in vectors[1:])
+
+
+def _close_citations(answer: str, sources: list):
+    from llm.prompts import keep_close_citations
+
+    def score(sentence, passage):
+        value = _citation_similarity(sentence, passage)
+        logger.info("Citation similarity %.3f", value)
+        return value
+
+    return keep_close_citations(answer, sources, score)
 
 
 def iter_answer(query: str, history=None):
