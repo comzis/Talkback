@@ -40,7 +40,8 @@
     "path": "library",
     "file": "TechnicalDeliveryStandardsBBCLive.pdf",
     "page": "16",
-    "answer_contains": ["-3 dBTP", "-1 dBTP"]
+    "answer_contains": ["-3 dBTP", "-1 dBTP"],
+    "known": "Follow-up often restates loudness or moves to page 17 instead of the true-peak limits on page 16."
   },
   {
     "id": "bbc-more-typo",
@@ -49,7 +50,8 @@
     "path": "library",
     "file": "TechnicalDeliveryStandardsBBCLive.pdf",
     "page": "16",
-    "answer_contains": ["-3 dBTP", "-1 dBTP"]
+    "answer_contains": ["-3 dBTP", "-1 dBTP"],
+    "known": "Same follow-up gap as bbc-more; the typo form is kept to check retrieval_text, not peak limits."
   },
   {
     "id": "icmp-more",
@@ -88,7 +90,8 @@
     "page": "16",
     "language": "fr",
     "answer_contains": ["LUFS"],
-    "answer_any_of": [["-23.0", "-23,0", "-23 LUFS"], ["1.0 LU", "1.0LU", "±1", "1 LU"]]
+    "answer_any_of": [["-23.0", "-23,0", "-23 LUFS"], ["1.0 LU", "1.0LU", "±1", "1 LU"]],
+    "known": "French loudness still misses page 16 at retrieval (rank past the top 20). Not retuned from held-out or this result."
   },
   {
     "id": "es-loudness",
@@ -152,5 +155,39 @@
     "file": "TechnicalDeliveryStandardsBBCLive.pdf",
     "page": "33",
     "answer_any_of": [["geographically", "electrically separate", "separately located"]]
+  },
+  {
+    "id": "en-playbook-name",
+    "query": "What is the YAML file of automation instructions called in the Ansible guide?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "page": "4",
+    "answer_any_of": [["playbook", "Playbook"]]
+  },
+  {
+    "id": "es-playbook-name",
+    "query": "¿Cómo se llama el archivo YAML de instrucciones de automatización en la guía Ansible?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "page": "4",
+    "language": "es",
+    "answer_any_of": [["playbook", "Playbook"]]
+  },
+  {
+    "id": "en-true-peak-short",
+    "query": "What maximum true-peak level should a live programme not exceed?",
+    "path": "library",
+    "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+    "page": "16",
+    "answer_any_of": [["-3 dBTP", "-3dBTP", "−3 dBTP"]]
+  },
+  {
+    "id": "es-inventory-short",
+    "query": "¿Cómo se llama el archivo de inventario en el ejemplo de Ansible?",
+    "path": "library",
+    "file": "Ansible_Network_Automation_1744044240.pdf",
+    "pages": ["4", "6"],
+    "language": "es",
+    "answer_any_of": [["hosts.ini", "inventory", "inventario"]]
   }
 ]

@@ -1142,6 +1142,11 @@ def supporting_sources(answer: str, sources: list[dict]) -> list[dict]:
 # window). Relevant sentences, including Spanish and French, scored about 0.60 to 0.76.
 # An SRT incident draft against the television pages scored about 0.45 to 0.49.
 CITATION_MIN_SIMILARITY = 0.55
+# A short reply such as "Se llama Playbook." scores low against a long page on its
+# own. Join it with the question so the comparison keeps the topic. A short reply
+# that shares no content word with the passage still drops, so a wrong one-word
+# answer cannot ride the question's similarity.
+SHORT_CITATION_WORDS = 8
 
 
 def passage_windows(text: str, size: int = 700, step: int = 350) -> list[str]:
@@ -1179,11 +1184,37 @@ def citing_sentence(answer: str, number: int) -> str:
     return _CITATION.sub("", " ".join(hits)).strip()
 
 
-def keep_close_citations(answer: str, sources: list[dict], score) -> list[dict]:
+def _citation_words(text: str) -> list[str]:
+    return [word for word in (text or "").split() if word]
+
+
+def citation_compare_text(sentence: str, query: str = "") -> str:
+    """Text compared to the passage. Short replies include the question."""
+    if len(_citation_words(sentence)) < SHORT_CITATION_WORDS and (query or "").strip():
+        return f"{query.strip()} {sentence.strip()}"
+    return sentence
+
+
+def sentence_touches_passage(sentence: str, passage: str) -> bool:
+    """True when a content word from the sentence appears in the passage."""
+    folded = (passage or "").casefold()
+    for word in re.findall(r"[a-z0-9à-ÿœ]+", (sentence or "").casefold()):
+        if len(word) < 3 or word in _STOP:
+            continue
+        if re.search(rf"\b{re.escape(word)}\b", folded):
+            return True
+    return False
+
+
+def keep_close_citations(
+    answer: str, sources: list[dict], score, query: str = ""
+) -> list[dict]:
     """Drop a citation whose sentence is not close to the cited passage.
 
     A citation the model did not write has no sentence to compare, so the
     technical-token check stands. `score` returns the bge-m3 similarity.
+    A short sentence is scored with the question, and only when it still
+    shares a content word with the passage.
     """
     kept = []
     for source in sources:
@@ -1192,11 +1223,17 @@ def keep_close_citations(answer: str, sources: list[dict], score) -> list[dict]:
             kept.append(source)
             continue
         sentence = citing_sentence(answer, number)
+        if not sentence:
+            continue
+        passage = source.get("text") or ""
         if (
-            sentence
-            and float(score(sentence, source.get("text") or ""))
-            >= CITATION_MIN_SIMILARITY
+            len(_citation_words(sentence)) < SHORT_CITATION_WORDS
+            and (query or "").strip()
         ):
+            if not sentence_touches_passage(sentence, passage):
+                continue
+        compared = citation_compare_text(sentence, query)
+        if float(score(compared, passage)) >= CITATION_MIN_SIMILARITY:
             kept.append(source)
     return kept
 

@@ -258,6 +258,37 @@ def test_a_distant_sentence_loses_its_citation():
     assert prompts.CITATION_MIN_SIMILARITY == 0.55
 
 
+def test_a_short_correct_reply_is_scored_with_the_question():
+    sources = [
+        {
+            "number": 1,
+            "text": "Playbook: YAML file that contains automation instructions.",
+            "page": "4",
+        }
+    ]
+    answer = "Se llama Playbook. [1]"
+    query = (
+        "¿Cómo se llama el fichero de instrucciones de automatización escrito en YAML?"
+    )
+    seen = []
+
+    def score(sentence, passage):
+        seen.append(sentence)
+        return 0.66
+
+    kept = prompts.keep_close_citations(answer, sources, score, query=query)
+    assert [item["page"] for item in kept] == ["4"]
+    assert query in seen[0]
+    assert "Playbook" in seen[0]
+    assert prompts.citation_compare_text("Se llama Playbook.", query).startswith(
+        "¿Cómo"
+    )
+    wrong = prompts.keep_close_citations(
+        "Paris. [1]", sources, lambda sentence, passage: 0.99, query=query
+    )
+    assert wrong == []
+
+
 def test_an_unmarked_citation_is_not_scored():
     sources = [{"number": 1, "text": "anything", "page": "4"}]
     kept = prompts.keep_close_citations(

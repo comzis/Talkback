@@ -185,7 +185,7 @@ def _stream_prompt(
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
         return
-    used = _close_citations(shown, supporting_sources(shown, sources))
+    used = _close_citations(shown, supporting_sources(shown, sources), query)
     if used and not cited_source_indexes(reply):
         marks = " ".join(f"[{source['number']}]" for source in used)
         extra = f" {marks}"
@@ -235,7 +235,7 @@ def _citation_similarity(sentence: str, passage: str) -> float:
     return max(dot(base, other) / (norm(base) * norm(other)) for other in vectors[1:])
 
 
-def _close_citations(answer: str, sources: list):
+def _close_citations(answer: str, sources: list, query: str = ""):
     from llm.prompts import keep_close_citations
 
     def score(sentence, passage):
@@ -243,7 +243,7 @@ def _close_citations(answer: str, sources: list):
         logger.info("Citation similarity %.3f", value)
         return value
 
-    return keep_close_citations(answer, sources, score)
+    return keep_close_citations(answer, sources, score, query=query)
 
 
 def iter_answer(query: str, history=None):

@@ -130,6 +130,12 @@ def test_repeated_runs_keep_every_cited_page():
     assert lines[0] == "3/3  ansible-modules  pages seen: 4, 6"
     assert "p. 4" in lines[1]
     assert "p. 6" in lines[2]
+    known_case = dict(case)
+    known_case["id"] = "demo-known"
+    known_case["known"] = "documented gap"
+    _passed, known_lines = runner.summarise(known_case, [page_four])
+    assert "[known limitation]" in known_lines[0]
+    assert "documented gap" in known_lines[1]
 
 
 def test_follow_ups_continue_the_parent_question():
@@ -139,6 +145,13 @@ def test_follow_ups_continue_the_parent_question():
     assert cases["icmp-more"]["continues"] == "icmp-filter"
     assert cases["ansible-more"]["continues"] == "ansible-modules"
     assert cases["bbc-radio-peak"]["path"] == "uncovered"
+    assert cases["bbc-more"]["known"]
+    assert cases["bbc-more-typo"]["known"]
+    assert cases["fr-loudness"]["known"]
+    assert "en-playbook-name" in cases
+    assert "es-playbook-name" in cases
+    assert "en-true-peak-short" in cases
+    assert "es-inventory-short" in cases
     parent_events = [
         _token("Live loudness is -23.0 LUFS, tolerance 1.0 LU."),
         _source("TechnicalDeliveryStandardsBBCLive.pdf", "16"),
