@@ -18,6 +18,7 @@ import asyncio
 import config
 import retrieval.rerank as rerank
 import store.embeddings as embeddings
+import store.host_embed as host_embed
 import engine
 from state import get
 from store.status_db import StatusStore
@@ -221,6 +222,7 @@ async def get_system_status():
         "reindex_required": engine.reindex_required(),
         "files_waiting": engine.files_waiting(),
         "embed_model": config.embed_model_name(),
+        "embed": host_embed.active_embed(),
         "rerank": rerank.active_rerank(),
         "database": {
             "status": "unknown",

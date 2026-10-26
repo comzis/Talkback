@@ -34,6 +34,34 @@ def test_listing_skips_macos_metadata(tmp_path: Path):
     ]
 
 
+def test_talkbackignore_skips_named_files_without_deleting_them(tmp_path: Path):
+    (tmp_path / "keep.pdf").write_bytes(b"%PDF-keep")
+    skipped = tmp_path / "Design of Design.PDF"
+    skipped.write_bytes(b"%PDF-skip")
+    (tmp_path / "engineering").mkdir()
+    nested = tmp_path / "engineering" / "The Pragmatic Programmer PDF.pdf"
+    nested.write_bytes(b"%PDF-nested")
+    (tmp_path / ".talkbackignore").write_text(
+        "# comment\nDesign of Design.PDF\nThe Pragmatic Programmer PDF.pdf\n",
+        encoding="utf-8",
+    )
+
+    assert [item.id for item in FilesystemSource(tmp_path).list_items()] == ["keep.pdf"]
+    assert skipped.is_file()
+    assert nested.is_file()
+
+
+def test_talkbackignore_directory_prefix_skips_a_subtree(tmp_path: Path):
+    (tmp_path / "root.pdf").write_bytes(b"%PDF-root")
+    (tmp_path / "engineering").mkdir()
+    kept_out = tmp_path / "engineering" / "book.pdf"
+    kept_out.write_bytes(b"%PDF-eng")
+    (tmp_path / ".talkbackignore").write_text("engineering/\n", encoding="utf-8")
+
+    assert [item.id for item in FilesystemSource(tmp_path).list_items()] == ["root.pdf"]
+    assert kept_out.is_file()
+
+
 def test_deleted_ids_are_known_ids_that_left(tmp_path: Path):
     (tmp_path / "keep.txt").write_text("a", encoding="utf-8")
     source = FilesystemSource(tmp_path)

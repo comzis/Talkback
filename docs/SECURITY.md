@@ -24,7 +24,7 @@ There is no LangSmith client and no telemetry endpoint.
 | Chroma 8000 | ChromaDB, not published. The API and the indexer use `chromadb:8000` on the Docker network | Those two containers. For host debugging, publish `127.0.0.1:8002:8000` and do not use `8002:8000` |
 | none | `talkback_status` is a named volume, not a port. The indexer writes a heartbeat under `/tmp` inside its own container for its healthcheck | The API and the indexer |
 | 11434 | Host Ollama | The API container, via `host.docker.internal` |
-| 127.0.0.1:11435 | Optional host reranker (`scripts/start-rerank-host.sh`). The API uses it only when `RERANK_URL` is set | The API container, via `host.docker.internal`. Unset, the reranker stays in the API process |
+| 127.0.0.1:11435 | Optional host reranker/embedder (`scripts/start-rerank-host.sh`). Used when `RERANK_URL` / `EMBED_URL` are set | The API and indexer containers, via `host.docker.internal`. Unset, those models stay in-process |
 
 ## Outbound network
 

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
 from pathlib import Path
 
 from ingestion.plan import library_key, read_only_requested
 from sources.base import ReadOnlyLibrary, SourceItem
+
+IGNORE_NAME = ".talkbackignore"
 
 
 class InvalidFilename(ValueError):
@@ -49,14 +52,63 @@ def is_macos_metadata(path: Path) -> bool:
     return path.name == ".DS_Store" or path.name.startswith("._")
 
 
+def load_talkback_ignore(root: Path) -> list[str]:
+    """Patterns from `.talkbackignore` at the library root. Missing file → none."""
+    path = root / IGNORE_NAME
+    if not path.is_file():
+        return []
+    patterns = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.append(line.replace("\\", "/"))
+    return patterns
+
+
+def is_talkback_ignored(
+    path: Path, root: Path, patterns: list[str] | None = None
+) -> bool:
+    """True when the relative path matches a `.talkbackignore` pattern."""
+    rules = load_talkback_ignore(root) if patterns is None else patterns
+    if not rules:
+        return False
+    try:
+        relative = path.relative_to(root).as_posix()
+    except ValueError:
+        relative = path.as_posix()
+    name = Path(relative).name
+    for pattern in rules:
+        cleaned = pattern.rstrip("/")
+        if pattern.endswith("/"):
+            # Directory prefix: engineering/ matches engineering/a.pdf
+            if relative == cleaned or relative.startswith(cleaned + "/"):
+                return True
+            continue
+        if "/" not in cleaned:
+            if fnmatch.fnmatch(name, cleaned) or fnmatch.fnmatch(
+                relative, f"*/{cleaned}"
+            ):
+                return True
+        elif fnmatch.fnmatch(relative, cleaned):
+            return True
+    return False
+
+
 def visible_files(root: Path) -> list[Path]:
     """Files under root that ingest and the library list should show."""
     if not root.exists():
         return []
+    patterns = load_talkback_ignore(root)
     files = []
     for path in root.rglob("*"):
-        if path.is_file() and not is_hidden(path, root) and not is_macos_metadata(path):
-            files.append(path)
+        if not path.is_file():
+            continue
+        if is_hidden(path, root) or is_macos_metadata(path):
+            continue
+        if is_talkback_ignored(path, root, patterns):
+            continue
+        files.append(path)
     return files
 
 

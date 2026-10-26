@@ -170,6 +170,11 @@ def rerank_url() -> str:
     return _raw("RERANK_URL")
 
 
+def embed_url() -> str:
+    """Host embedder. Empty means embed inside this process."""
+    return _raw("EMBED_URL")
+
+
 def rerank_candidates() -> int:
     return _positive_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES)
 

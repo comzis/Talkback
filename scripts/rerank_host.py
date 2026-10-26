@@ -1,8 +1,8 @@
-"""Score reranker pairs on this machine's GPU.
+"""Score reranker pairs and embed texts on this machine's GPU.
 
 Docker on a Mac cannot see the Apple GPU, so the API calls this process the
 same way it calls Ollama. CUDA wins when it is present, then MPS, then CPU.
-A Linux GPU server should run the reranker inside the container on CUDA
+A Linux GPU server should run these models inside the container on CUDA
 instead of starting this process.
 """
 
@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -72,7 +73,55 @@ class _Scorer:
         return found
 
 
-def _handler(scorer: _Scorer):
+class _Embedder:
+    """bge-m3 (or EMBED_MODEL) via sentence-transformers on the host GPU."""
+
+    def __init__(self, cache: str) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self.device = _torch_device()
+        name = os.environ.get("EMBED_MODEL") or "BAAI/bge-m3"
+        self.name = name
+        self.model = SentenceTransformer(
+            name,
+            device=str(self.device),
+            cache_folder=cache,
+            local_files_only=True,
+        )
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        vectors = self.model.encode(
+            texts,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        return [vector.tolist() for vector in vectors]
+
+
+class _Models:
+    """Reranker loads at start. Embedder loads on the first /embed call."""
+
+    def __init__(self, rerank_cache: str, embed_cache: str) -> None:
+        self.rerank_cache = rerank_cache
+        self.embed_cache = embed_cache
+        self.scorer = _Scorer(rerank_cache)
+        self._embedder: _Embedder | None = None
+        self._embed_lock = threading.Lock()
+
+    def embedder(self) -> _Embedder:
+        with self._embed_lock:
+            if self._embedder is None:
+                print("rerank-host loading embedder", flush=True)
+                self._embedder = _Embedder(self.embed_cache)
+                print(
+                    f"rerank-host embedder ready device={self._embedder.device} "
+                    f"model={self._embedder.name}",
+                    flush=True,
+                )
+            return self._embedder
+
+
+def _handler(models: _Models):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args) -> None:
             print(f"rerank-host {self.address_string()} {fmt % args}", flush=True)
@@ -89,48 +138,104 @@ def _handler(scorer: _Scorer):
             if self.path.split("?", 1)[0] != "/health":
                 self._send(404, {"error": "not found"})
                 return
+            embedder = models._embedder
             self._send(
                 200,
-                {"status": "ok", "device": str(scorer.device), "model": scorer.name},
+                {
+                    "status": "ok",
+                    "device": str(models.scorer.device),
+                    "model": models.scorer.name,
+                    "embed_loaded": embedder is not None,
+                    "embed_device": str(embedder.device) if embedder else None,
+                    "embed_model": embedder.name if embedder else None,
+                },
             )
 
         def do_POST(self) -> None:
-            if self.path.split("?", 1)[0] != "/rerank":
-                self._send(404, {"error": "not found"})
-                return
+            path = self.path.split("?", 1)[0]
             length = int(self.headers.get("Content-Length") or "0")
             try:
                 body = json.loads(self.rfile.read(length).decode() or "{}")
-                query = str(body.get("query") or "")
-                passages = body.get("passages") or []
-                limit = int(body.get("max_length") or 512)
-                if not isinstance(passages, list) or not query:
-                    raise ValueError("query and passages are required")
-                texts = [str(item) for item in passages]
-                scores = scorer.scores(query, texts, limit)
             except Exception as exc:
                 self._send(400, {"error": str(exc)})
                 return
-            self._send(
-                200,
-                {"scores": scores, "device": str(scorer.device), "pairs": len(scores)},
-            )
+
+            if path == "/rerank":
+                try:
+                    query = str(body.get("query") or "")
+                    passages = body.get("passages") or []
+                    limit = int(body.get("max_length") or 512)
+                    if not isinstance(passages, list) or not query:
+                        raise ValueError("query and passages are required")
+                    texts = [str(item) for item in passages]
+                    scores = models.scorer.scores(query, texts, limit)
+                except Exception as exc:
+                    self._send(400, {"error": str(exc)})
+                    return
+                self._send(
+                    200,
+                    {
+                        "scores": scores,
+                        "device": str(models.scorer.device),
+                        "pairs": len(scores),
+                    },
+                )
+                return
+
+            if path == "/embed":
+                try:
+                    texts = body.get("texts") or []
+                    if not isinstance(texts, list) or not texts:
+                        raise ValueError("texts is required")
+                    prepared = [str(item) for item in texts]
+                    embedder = models.embedder()
+                    vectors = embedder.embed(prepared)
+                except Exception as exc:
+                    self._send(400, {"error": str(exc)})
+                    return
+                self._send(
+                    200,
+                    {
+                        "embeddings": vectors,
+                        "device": str(embedder.device),
+                        "model": embedder.name,
+                        "count": len(vectors),
+                    },
+                )
+                return
+
+            self._send(404, {"error": "not found"})
 
     return Handler
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Host reranker for the Talkback API")
-    parser.add_argument("--cache", required=True, help="Hugging Face hub directory")
+    parser = argparse.ArgumentParser(
+        description="Host reranker and embedder for the Talkback API"
+    )
+    parser.add_argument(
+        "--cache", required=True, help="Reranker Hugging Face hub directory"
+    )
+    parser.add_argument(
+        "--embed-cache",
+        default="",
+        help="Sentence-transformers cache (defaults to sibling llama_index cache)",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=11435)
     args = parser.parse_args()
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    scorer = _Scorer(args.cache)
-    server = ThreadingHTTPServer((args.host, args.port), _handler(scorer))
+    embed_cache = args.embed_cache
+    if not embed_cache:
+        # HuggingFaceEmbedding stores BAAI/bge-m3 under llama_index/, not hub/.
+        embed_cache = os.path.join(os.path.dirname(args.cache), "..", "llama_index")
+        embed_cache = os.path.abspath(embed_cache)
+    models = _Models(args.cache, embed_cache)
+    server = ThreadingHTTPServer((args.host, args.port), _handler(models))
     print(
-        f"rerank-host listening on {args.host}:{args.port} device={scorer.device}",
+        f"rerank-host listening on {args.host}:{args.port} "
+        f"rerank_device={models.scorer.device} embed_cache={embed_cache}",
         flush=True,
     )
     server.serve_forever()
