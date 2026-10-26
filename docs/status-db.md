@@ -53,16 +53,22 @@ docker run --rm -it \
   talkback-refactor-rag-api bash
 ```
 
-## Copy an old `./status` file into the volume once
+## Fresh volume ownership
 
-If you still have `./status/library.sqlite` from before the named volume:
+The image creates `/app/status` owned by the app UID/GID (default `502:20`).
+Docker copies that directory into an empty named volume on first use, so a brand-new
+`talkback_status` volume is writable without a manual `chown`.
+
+## Restore a backup into the volume
+
+Only when copying a host file onto the volume (ownership would otherwise be root):
 
 ```bash
 docker run --rm \
   -v talkback-refactor_talkback_status:/status \
-  -v "$PWD/status:/src:ro" \
-  alpine sh -c 'cp /src/library.sqlite /status/library.sqlite && chown -R 502:20 /status'
+  -v "$PWD:/backup:ro" \
+  alpine sh -c 'cp /backup/library.sqlite.bak /status/library.sqlite && chown -R 502:20 /status'
 ```
 
 Use the image UID/GID from the compose build (default `502:20`). Recreate the API
-and indexer afterward so they mount the volume.
+and indexer afterward.
