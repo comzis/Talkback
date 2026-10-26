@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _model = None
 _tokenizer = None
+_host_warning_logged = False
+
+
+class HostUnreachable(Exception):
+    """The configured host reranker did not accept a connection."""
 
 
 def clears_threshold(score: float, threshold: float) -> bool:
@@ -91,8 +96,11 @@ def _passage(node) -> str:
 def _post_scores(url: str, body: dict) -> dict:
     import httpx
 
-    with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
-        response = client.post(url.rstrip("/") + "/rerank", json=body)
+    try:
+        with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
+            response = client.post(url.rstrip("/") + "/rerank", json=body)
+    except httpx.HTTPError as exc:
+        raise HostUnreachable(str(exc)) from exc
     if response.status_code != 200:
         raise RuntimeError(f"Host reranker failed ({response.status_code}).")
     payload = response.json()
@@ -100,6 +108,67 @@ def _post_scores(url: str, body: dict) -> dict:
     if not isinstance(scores, list):
         raise RuntimeError("Host reranker returned no scores.")
     return payload
+
+
+def _host_health(url: str) -> dict | None:
+    """Health payload, or None when the host process cannot be reached."""
+    import httpx
+
+    try:
+        response = httpx.get(url.rstrip("/") + "/health", timeout=httpx.Timeout(2.0))
+    except httpx.HTTPError:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _warn_host_down(url: str) -> None:
+    """One warning for an outage. A later success arms the warning again."""
+    global _host_warning_logged
+    if _host_warning_logged:
+        return
+    _host_warning_logged = True
+    logger.warning(
+        "Host reranker at %s is unreachable. Scoring pairs in this container on CPU.",
+        url,
+    )
+
+
+def _host_recovered() -> None:
+    global _host_warning_logged
+    _host_warning_logged = False
+
+
+def active_rerank() -> dict:
+    """The reranker the next query will use.
+
+    A set RERANK_URL is probed. If that process is down, queries score pairs
+    in this container and this report says so.
+    """
+    url = config.rerank_url()
+    if not url:
+        return {"mode": "container", "device": "cpu", "url": ""}
+    health = _host_health(url)
+    if health is None:
+        _warn_host_down(url)
+        return {
+            "mode": "container",
+            "device": "cpu",
+            "url": url,
+            "host": "unreachable",
+        }
+    _host_recovered()
+    return {
+        "mode": "host",
+        "device": str(health.get("device") or "host"),
+        "url": url,
+        "host": "reachable",
+    }
 
 
 def rerank_nodes(query: str, nodes: list):
@@ -117,14 +186,22 @@ def rerank_nodes(query: str, nodes: list):
     url = config.rerank_url()
     started = time.perf_counter()
     if url:
-        payload = _post_scores(
-            url,
-            {"query": query_text, "passages": passages, "max_length": limit},
-        )
-        scores = [float(score) for score in payload["scores"]]
-        if len(scores) != len(nodes):
-            raise RuntimeError("Host reranker returned a different number of scores.")
-        where = str(payload.get("device") or url)
+        try:
+            payload = _post_scores(
+                url,
+                {"query": query_text, "passages": passages, "max_length": limit},
+            )
+        except HostUnreachable:
+            _warn_host_down(url)
+            scores, where = _local_scores(query_text, passages, limit)
+        else:
+            _host_recovered()
+            scores = [float(score) for score in payload["scores"]]
+            if len(scores) != len(nodes):
+                raise RuntimeError(
+                    "Host reranker returned a different number of scores."
+                )
+            where = str(payload.get("device") or url)
     else:
         scores, where = _local_scores(query_text, passages, limit)
     logger.info(

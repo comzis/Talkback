@@ -16,6 +16,7 @@ from typing import List
 import asyncio
 
 import config
+import retrieval.rerank as rerank
 import store.embeddings as embeddings
 import engine
 from state import get
@@ -220,6 +221,7 @@ async def get_system_status():
         "reindex_required": engine.reindex_required(),
         "files_waiting": engine.files_waiting(),
         "embed_model": config.embed_model_name(),
+        "rerank": rerank.active_rerank(),
         "database": {
             "status": "unknown",
             "connected": False,
@@ -269,6 +271,15 @@ async def get_system_status():
                 "type": "error",
                 "component": "database",
                 "message": "Database connection error",
+            }
+        )
+
+    if status["rerank"].get("host") == "unreachable":
+        status["alarms"].append(
+            {
+                "type": "warning",
+                "component": "rerank",
+                "message": "Host reranker is unreachable. Scoring pairs in the container.",
             }
         )
 

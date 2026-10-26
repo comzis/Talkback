@@ -63,6 +63,64 @@ def test_remote_rerank_orders_scores_and_does_not_load_the_model(monkeypatch):
     assert seen["body"]["max_length"] == 512
 
 
+def test_unreachable_host_uses_the_container_and_warns_once(monkeypatch, caplog):
+    import retrieval.rerank as rerank
+
+    monkeypatch.setenv("RERANK_URL", "http://rerank.local")
+    rerank._host_warning_logged = False
+    monkeypatch.setattr(
+        rerank,
+        "_post_scores",
+        lambda url, body: (_ for _ in ()).throw(rerank.HostUnreachable("down")),
+    )
+    monkeypatch.setattr(
+        rerank, "_local_scores", lambda query, passages, limit: ([1.5], "cpu")
+    )
+
+    class Node:
+        def __init__(self):
+            self.metadata = {}
+            self.score = None
+
+        def get_content(self):
+            return "passage"
+
+    with caplog.at_level("WARNING"):
+        first = rerank.rerank_nodes("query", [Node()])
+        second = rerank.rerank_nodes("query", [Node()])
+    assert first[0].metadata["rerank_score"] == 1.5
+    assert second[0].metadata["rerank_score"] == 1.5
+    warnings = [record for record in caplog.records if "unreachable" in record.message]
+    assert len(warnings) == 1
+
+
+def test_active_rerank_reports_a_down_host_as_container(monkeypatch):
+    import retrieval.rerank as rerank
+
+    monkeypatch.setenv("RERANK_URL", "http://rerank.local")
+    rerank._host_warning_logged = False
+    monkeypatch.setattr(rerank, "_host_health", lambda url: None)
+    report = rerank.active_rerank()
+    assert report["mode"] == "container"
+    assert report["host"] == "unreachable"
+    again = rerank.active_rerank()
+    assert again["mode"] == "container"
+
+
+def test_active_rerank_reports_the_host_device(monkeypatch):
+    import retrieval.rerank as rerank
+
+    monkeypatch.setenv("RERANK_URL", "http://rerank.local")
+    monkeypatch.setattr(rerank, "_host_health", lambda url: {"device": "mps"})
+    report = rerank.active_rerank()
+    assert report == {
+        "mode": "host",
+        "device": "mps",
+        "url": "http://rerank.local",
+        "host": "reachable",
+    }
+
+
 def test_remote_rerank_rejects_a_short_score_list(monkeypatch):
     import retrieval.rerank as rerank
 

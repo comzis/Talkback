@@ -66,6 +66,7 @@ const elements = {
     llmModel: document.getElementById('llmModel'),
     llmLight: document.getElementById('llmLight'),
     embeddingStatus: document.getElementById('embeddingStatus'),
+    rerankMode: document.getElementById('rerankMode'),
     embeddingLight: document.getElementById('embeddingLight'),
     embeddingProgress: document.getElementById('embeddingProgress'),
     embeddingProgressText: document.getElementById('embeddingProgressText'),
@@ -846,6 +847,13 @@ async function checkSystemStatus() {
             setTrafficLight(elements.dbLight, 'red');
         }
         
+        if (elements.rerankMode && data.rerank) {
+            const mode = data.rerank.mode || 'container';
+            const device = data.rerank.device ? ` · ${data.rerank.device}` : '';
+            const down = data.rerank.host === 'unreachable' ? ' · host unreachable' : '';
+            elements.rerankMode.textContent = `Rerank · ${mode}${device}${down}`;
+        }
+
         // LLM Status
         if (data.llm?.available) {
             elements.llmStatus.textContent = 'Ready';

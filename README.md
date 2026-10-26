@@ -35,7 +35,7 @@ On a Mac the reranker can run on the Apple GPU, outside Docker. Docker Desktop c
 scripts/start-rerank-host.sh
 ```
 
-The script keeps a virtualenv in `.rerank-host`, loads `BAAI/bge-reranker-v2-m3` once from `./hf_cache` (offline), and listens on `127.0.0.1:11435`. Device order is CUDA, then MPS, then CPU. Set `RERANK_URL=http://host.docker.internal:11435` and recreate the API. Leave `RERANK_URL` unset and the container scores pairs itself, which is what CI and a machine without this process do. The embedding model stays in the container.
+The script keeps a virtualenv in `.rerank-host`, loads `BAAI/bge-reranker-v2-m3` once from `./hf_cache` (offline), and listens on `127.0.0.1:11435`. Device order is CUDA, then MPS, then CPU. Set `RERANK_URL=http://host.docker.internal:11435` and recreate the API. Leave `RERANK_URL` unset and the container scores pairs itself, which is what CI and a machine without this process do. If the URL is set and the host process is down, the container scores pairs on CPU and `/system/status` reports that fallback. The warning is logged once per outage. The embedding model stays in the container.
 
 ### Linux server
 
