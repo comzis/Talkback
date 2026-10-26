@@ -272,6 +272,15 @@ def test_the_sentence_next_to_the_marker_is_the_one_compared():
     answer = "The outage lasted 10 minutes. The filter is icmp.type == 3. [2]"
     assert "icmp.type" in prompts.citing_sentence(answer, 2)
     assert "outage" not in prompts.citing_sentence(answer, 2)
+    draft = (
+        "Incident Update: SRT Outage\n\n"
+        "Duration: 10 minutes\n"
+        "- [Placeholder for long-term fix]\n\n"
+        "[3]"
+    )
+    sentence = prompts.citing_sentence(draft, 3)
+    assert "long-term fix" in sentence
+    assert "SRT" not in sentence
 
 
 def test_a_general_remark_loses_its_measurements():

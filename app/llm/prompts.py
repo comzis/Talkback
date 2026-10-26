@@ -1190,9 +1190,11 @@ def passage_windows(text: str, size: int = 700, step: int = 350) -> list[str]:
 def citing_sentence(answer: str, number: int) -> str:
     """The sentence that carries this source number, without the marker.
 
-    A marker that sits after the full stop still belongs to that sentence.
+    A marker that sits after the full stop, or alone on the next line, still
+    belongs to that sentence. A draft with no full stops is scored a line at
+    a time, so a trailing marker is not compared with the whole draft.
     """
-    parts = re.split(r"(?<=[.!?])\s+", (answer or "").strip())
+    parts = re.split(r"(?<=[.!?])\s+|\n+", (answer or "").strip())
     merged: list[str] = []
     for part in parts:
         if merged and re.fullmatch(r"(?:\[\d+\]\s*)+", part):
