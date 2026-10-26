@@ -268,6 +268,37 @@ def test_the_sentence_next_to_the_marker_is_the_one_compared():
     assert "outage" not in prompts.citing_sentence(answer, 2)
 
 
+def test_a_general_remark_loses_its_measurements():
+    raw = (
+        "The excerpts are about television. From general knowledge: "
+        "radio true peak is -1 dBTP and the delay is 40 ms at 5 Mbit/s."
+    )
+    cleaned = prompts.scrub_general_figures(raw)
+    assert "-1" not in cleaned
+    assert "dBTP" not in cleaned
+    assert "40" not in cleaned
+    assert "Mbit/s" not in cleaned
+    assert cleaned.count("not from the documents, verify") == 3
+    assert "television" in cleaned
+    french = "D'après les connaissances générales : le niveau est de -23,0 LUFS."
+    assert "LUFS" not in prompts.scrub_general_figures(french)
+    cited = "Live programmes are -23.0 LUFS. [1]"
+    assert prompts.scrub_general_figures(cited) == cited
+
+
+def test_the_stream_holds_a_partial_general_label():
+    emit, keep, started = prompts.take_stream_piece("From general")
+    assert emit == ""
+    assert started is False
+    assert keep == "From general"
+    emit, keep, started = prompts.take_stream_piece(
+        "The excerpts do not answer. From general knowledge: radio is -1 dBTP."
+    )
+    assert emit == "The excerpts do not answer. "
+    assert started is True
+    assert keep.startswith("From general knowledge:")
+
+
 def test_a_first_question_keeps_the_standing_notice():
     assert (
         prompts.notice_for_general(

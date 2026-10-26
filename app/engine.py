@@ -63,6 +63,8 @@ from llm.prompts import (
     outside_document_note,
     passage_windows,
     retrieval_text,
+    scrub_general_figures,
+    take_stream_piece,
     should_search_library,
     supporting_sources,
 )
@@ -149,9 +151,28 @@ def _stream_prompt(
         yield {"event": "notice", "data": {"text": notice}}
     parts: list[str] = []
     library = sources is not None
+    pending = ""
+    general = None
     for delta in _stream_deltas(prompt, temperature):
-        parts.append(delta)
-        yield {"event": "token", "data": {"text": delta}}
+        if general is not None:
+            general += delta
+            continue
+        pending += delta
+        emit, pending, started = take_stream_piece(pending)
+        if emit:
+            parts.append(emit)
+            yield {"event": "token", "data": {"text": emit}}
+        if started:
+            general = pending
+            pending = ""
+    if general is not None:
+        cleaned = scrub_general_figures(general)
+        if cleaned:
+            parts.append(cleaned)
+            yield {"event": "token", "data": {"text": cleaned}}
+    elif pending:
+        parts.append(pending)
+        yield {"event": "token", "data": {"text": pending}}
     shown = "".join(parts).strip()
     reply = shown
     correction = None

@@ -108,6 +108,12 @@ _GENERAL_MARK = {
     "fr": "D'après les connaissances générales :",
     "es": "Según el conocimiento general:",
 }
+_GENERAL_FIGURE = re.compile(
+    r"(?<![\w.])[±+\-−–]?\s*\d+(?:[.,]\d+)?\s*"
+    r"(?:dBTP|dBFS|LUFS|LKFS|dB|LU|ms|Mbit/s|kbit/s|Gbit/s)\b",
+    re.IGNORECASE,
+)
+_VERIFY_FIGURE = "not from the documents, verify"
 _SPANISH_QUESTION = re.compile(
     r"[¿¡ñ]|\b(?:qué|puedes|detalle|módulos|modulos|más)\b",
     re.IGNORECASE,
@@ -116,6 +122,53 @@ _FRENCH_QUESTION = re.compile(
     r"[àâçéèêëïîôùûüœ]|\b(?:donne|détails|details|filtre)\b",
     re.IGNORECASE,
 )
+
+
+def _plain_apostrophe(text: str) -> str:
+    return (text or "").replace("’", "'").replace("‘", "'")
+
+
+def scrub_general_figures(text: str) -> str:
+    """Replace measurements inside a labelled general-knowledge remark.
+
+    Figures before the label stay. The label itself stays.
+    """
+    normalized = _plain_apostrophe(text)
+    found_at = None
+    found = ""
+    for mark in _GENERAL_MARK.values():
+        at = normalized.find(mark)
+        if at != -1 and (found_at is None or at < found_at):
+            found_at = at
+            found = mark
+    if found_at is None:
+        return text
+    tail = normalized[found_at + len(found) :]
+    return text[:found_at] + found + _GENERAL_FIGURE.sub(_VERIFY_FIGURE, tail)
+
+
+def take_stream_piece(pending: str) -> tuple[str, str, bool]:
+    """Split one buffer into text to send, text to keep, and whether the mark started.
+
+    A suffix that could still grow into the general-knowledge label is kept.
+    """
+    normalized = _plain_apostrophe(pending)
+    found_at = None
+    for mark in _GENERAL_MARK.values():
+        at = normalized.find(mark)
+        if at != -1 and (found_at is None or at < found_at):
+            found_at = at
+    if found_at is not None:
+        return pending[:found_at], normalized[found_at:], True
+    limit = max(len(mark) for mark in _GENERAL_MARK.values())
+    hold = 0
+    for size in range(1, min(limit, len(normalized)) + 1):
+        suffix = normalized[-size:]
+        if any(mark.startswith(suffix) for mark in _GENERAL_MARK.values()):
+            hold = size
+    if hold:
+        return pending[:-hold], pending[-hold:], False
+    return pending, "", False
 
 
 def question_language(query: str) -> str:
