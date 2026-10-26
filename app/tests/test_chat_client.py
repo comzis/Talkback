@@ -66,7 +66,13 @@ def test_ollama_stream_reads_content_and_skips_thinking():
         payload = "\n".join(
             [
                 json.dumps(
-                    {"message": {"role": "assistant", "thinking": "hidden", "content": ""}}
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "thinking": "hidden",
+                            "content": "",
+                        }
+                    }
                 ),
                 json.dumps({"message": {"role": "assistant", "content": "Hi"}}),
                 json.dumps(
