@@ -64,7 +64,9 @@ class StatusStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA journal_mode=WAL")
+        # DELETE avoids WAL -wal/-shm sidecars. Those files were unreliable on a
+        # macOS Docker bind mount shared by the API and the indexer.
+        self._db.execute("PRAGMA journal_mode=DELETE")
         self._db.execute("PRAGMA busy_timeout=5000")
         self._db.execute(_SCHEMA)
         self._db.execute(_LOCK_SCHEMA)

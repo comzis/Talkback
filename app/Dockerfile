@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     && if ! getent group ${GID} >/dev/null; then groupadd --gid ${GID} appgroup; fi \
     && useradd --uid ${UID} --gid ${GID} --create-home --no-log-init appuser \
-    && mkdir -p /cache/huggingface /app/data \
+    && mkdir -p /cache/huggingface /app/data /app/status \
     && chown -R ${UID}:${GID} /app /cache
 
 COPY requirements.txt .

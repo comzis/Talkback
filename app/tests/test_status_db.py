@@ -13,6 +13,12 @@ def _store(tmp_path: Path) -> StatusStore:
     return store
 
 
+def test_status_db_uses_delete_journal_mode(tmp_path: Path):
+    store = _store(tmp_path)
+    mode = store._conn().execute("PRAGMA journal_mode").fetchone()[0]
+    assert str(mode).lower() == "delete"
+
+
 def _finished(name: str, signature: tuple) -> dict:
     size, day, mtime = signature
     return {

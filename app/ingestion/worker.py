@@ -9,12 +9,15 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import sqlite3
 import threading
 import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 HEARTBEAT_PATH = Path("/tmp/talkback-indexer-heartbeat")
+SQLITE_BACKOFF_SECONDS = 3
+SQLITE_FAIL_LIMIT = 5
 
 
 def write_heartbeat(path: Path = HEARTBEAT_PATH) -> None:
@@ -33,6 +36,57 @@ def next_kind(store) -> str | None:
     if store.lock_held():
         return None
     return store.peek_request()
+
+
+def record_run_failed(store_factory, message: str) -> None:
+    """Write an error job row. A second I/O failure is only logged."""
+    try:
+        with store_factory() as store:
+            store.write_job(
+                {
+                    "status": "error",
+                    "progress": 0,
+                    "current": 0,
+                    "total": 0,
+                    "message": message,
+                    "error": message,
+                    "current_file": None,
+                    "total_files": 0,
+                    "processed_files": 0,
+                    "start_time": None,
+                    "finished_at": time.time(),
+                    "chunks_per_second": 0.0,
+                    "cpu_percent": 0.0,
+                    "memory_percent": 0.0,
+                    "estimated_time_remaining": 0,
+                }
+            )
+    except sqlite3.OperationalError:
+        logger.warning("Could not record the failed status after a disk I/O error")
+
+
+def handle_sqlite_error(
+    failures: int,
+    store_factory,
+    *,
+    message: str = "Status database disk I/O failed repeatedly.",
+    backoff: float = SQLITE_BACKOFF_SECONDS,
+    limit: int = SQLITE_FAIL_LIMIT,
+    sleep=time.sleep,
+) -> int:
+    """Log, back off, and after `limit` failures mark the run failed. Returns the new count."""
+    failures += 1
+    logger.warning(
+        "Status database error (%s/%s); backing off %.0fs",
+        failures,
+        limit,
+        backoff,
+    )
+    if failures >= limit:
+        record_run_failed(store_factory, message)
+        failures = 0
+    sleep(backoff)
+    return failures
 
 
 def main() -> None:
@@ -57,12 +111,16 @@ def main() -> None:
     start_initial_index()
 
     def stop(_signum, _frame) -> None:
-        finish_ingestion()
+        try:
+            finish_ingestion()
+        except sqlite3.OperationalError:
+            logger.warning("Could not release the ingest lock during shutdown")
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
 
+    sqlite_failures = 0
     while True:
         time.sleep(2)
         started = False
@@ -74,17 +132,29 @@ def main() -> None:
                     kind = store.take_request()
                 else:
                     kind = None
+            sqlite_failures = 0
             if not started:
                 continue
-            if kind == "rebuild":
-                logger.info("Full re-index requested.")
-                rebuild_library()
-            elif kind:
-                logger.info("Incremental index requested.")
-                process_ingestion()
-        finally:
-            if started:
-                finish_ingestion()
+            try:
+                if kind == "rebuild":
+                    logger.info("Full re-index requested.")
+                    rebuild_library()
+                elif kind:
+                    logger.info("Incremental index requested.")
+                    process_ingestion()
+            except sqlite3.OperationalError:
+                sqlite_failures = handle_sqlite_error(sqlite_failures, open_status)
+            finally:
+                if started:
+                    try:
+                        finish_ingestion()
+                    except sqlite3.OperationalError:
+                        logger.warning("Could not release the ingest lock after a run")
+                        sqlite_failures = handle_sqlite_error(
+                            sqlite_failures, open_status
+                        )
+        except sqlite3.OperationalError:
+            sqlite_failures = handle_sqlite_error(sqlite_failures, open_status)
 
 
 if __name__ == "__main__":

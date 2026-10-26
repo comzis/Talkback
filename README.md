@@ -61,7 +61,7 @@ cp .env.example .env
 
 Set `OLLAMA_MODEL` in `.env` to a model you have pulled on the host. Pilot models must be Apache 2.0 or MIT licensed. Check the license on the model card before you choose one. Talkback does not ship a default model name. Set `LIBRARY_PATH` to the absolute path of the document folder. Compose mounts that folder at `/app/data` for the API and the indexer, and refuses to start when it is missing.
 
-`CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The file-status database is in `./status`. The API is published on `127.0.0.1:8001` only.
+`CHROMA_PORT=8000` is the port inside the Docker network. Chroma is not published on the host. The database files are in `./chroma_data`. The file-status database is the named volume `talkback_status` (see [docs/status-db.md](docs/status-db.md)). The API is published on `127.0.0.1:8001` only.
 
 ```bash
 ollama pull "$OLLAMA_MODEL"
