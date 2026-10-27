@@ -104,6 +104,29 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("Sentinel", text)
         self.assertNotIn("superhero", text.lower())
 
+    def test_card_excerpt_prefers_answer_tokens_over_earlier_icmp(self):
+        """A page with ICMP and a later retransmission filter must open on the filter."""
+        chunk = """
+Example 2: ICMP Packets
+(icmp.type == 3 && icmp.code == 2) || (icmp.type == 4 && icmp.code == 0)
+
+Example 3: Retransmissions
+not tcp.analysis.duplicate_ack and not tcp.analysis.retransmission
+"""
+        answer = (
+            "The filter is `not tcp.analysis.duplicate_ack and "
+            "not tcp.analysis.retransmission`."
+        )
+        query = (
+            "What Wireshark display filter excludes duplicate ACKs and retransmissions?"
+        )
+        card = prompts.display_excerpt(chunk, query, answer)
+        self.assertIn("tcp.analysis.duplicate_ack", card)
+        self.assertIn("tcp.analysis.retransmission", card)
+        self.assertLess(card.find("tcp.analysis"), 80)
+        self.assertNotIn("icmp.type", card)
+        self.assertLessEqual(len(card), 500)
+
     def test_general_questions_skip_the_library(self):
         files = ["Python Basics.pdf", "inlock campaign v4.pdf"]
         self.assertFalse(
