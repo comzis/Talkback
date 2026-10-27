@@ -228,6 +228,13 @@ async def get_system_status():
         "embed_model": config.embed_model_name(),
         "embed": host_embed.active_embed(),
         "rerank": rerank.active_rerank(),
+        "retrieval": {
+            "hybrid_bm25": config.hybrid_bm25(),
+            "rerank_candidates": config.rerank_candidates(),
+            "retrieve_limit": config.retrieve_limit(),
+            "retrieve_balance_files": config.retrieve_balance_files(),
+            "retrieve_per_file": config.retrieve_per_file(),
+        },
         "database": {
             "status": "unknown",
             "connected": False,

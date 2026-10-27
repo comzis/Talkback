@@ -114,7 +114,7 @@ Images can be uploaded. Text is taken from files the reader can parse. A scanned
 | `CHUNK_OVERLAP` | Overlap between chunks | `64` |
 | `RETRIEVE_CANDIDATES` | Chunks retrieved before the reranker, unless `RERANK_CANDIDATES` is higher | `8` |
 | `RERANK_MODEL` | Local cross-encoder. Apache-2.0 | `BAAI/bge-reranker-v2-m3` |
-| `RERANK_CANDIDATES` | Chunks scored by the reranker | `50` |
+| `RERANK_CANDIDATES` | Chunks scored by the reranker | `40` |
 | `HYBRID_BM25` | Merge BM25 keyword hits into the vector pool before rerank | `true` |
 | `BM25_CANDIDATES` | BM25 hits merged into the pool | `50` |
 | `RERANK_MAX_LENGTH` | Token cap for each query-passage pair. Use the GPU on a GPU server | `512` |
