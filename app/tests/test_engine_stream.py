@@ -21,7 +21,6 @@ def _events(monkeypatch, deltas, grounded, supported):
         return supported
 
     monkeypatch.setattr(engine, "supporting_sources", support)
-    monkeypatch.setattr(engine, "cited_source_indexes", lambda answer: [1])
     events = list(
         engine._stream_prompt(
             "prompt",
@@ -78,7 +77,6 @@ def test_a_french_question_still_calls_the_model(monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(engine, "cited_source_indexes", lambda answer: [1])
     events = list(
         engine._stream_prompt(
             "prompt",
