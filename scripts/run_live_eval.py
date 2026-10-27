@@ -367,9 +367,13 @@ def ask(
     query: str,
     history: list[dict] | None = None,
     timeout: float = 180,
+    scope: str | None = None,
 ) -> tuple[list[dict], float | None]:
     """Return the events and the seconds until the first token event."""
-    payload = json.dumps({"query": query, "history": history or []}).encode()
+    body = {"query": query, "history": history or []}
+    if scope:
+        body["scope"] = scope
+    payload = json.dumps(body).encode()
     request = urllib.request.Request(
         base_url.rstrip("/") + "/query/stream",
         data=payload,
@@ -397,6 +401,11 @@ def main() -> int:
     parser.add_argument(
         "--id", action="append", default=[], help="Run only these case ids"
     )
+    parser.add_argument(
+        "--scope-file",
+        action="store_true",
+        help="Scope each library case to its expected file (report-only runs).",
+    )
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
@@ -411,14 +420,22 @@ def main() -> int:
     by_id = {case["id"]: case for case in cases}
     for case in cases:
         results = []
+        scope = case.get("file") if args.scope_file and case.get("file") else None
         for _ in range(args.runs):
             history = []
             parent_id = case.get("continues")
             if parent_id:
                 parent = by_id[parent_id]
-                parent_events, _parent_first = ask(args.base_url, parent["query"])
+                parent_scope = (
+                    parent.get("file")
+                    if args.scope_file and parent.get("file")
+                    else None
+                )
+                parent_events, _parent_first = ask(
+                    args.base_url, parent["query"], scope=parent_scope
+                )
                 history = prior_turns(parent, parent_events)
-            results.append(ask(args.base_url, case["query"], history))
+            results.append(ask(args.base_url, case["query"], history, scope=scope))
         runs = [events for events, _first in results]
         firsts = [first for _events, first in results]
         passed, lines = summarise(case, runs)
@@ -427,6 +444,8 @@ def main() -> int:
             "n/a" if first is None else f"{first:.1f}s" for first in firsts
         )
         lines.insert(1, f"  first word {shown}")
+        if scope:
+            lines.insert(1, f"  scope {scope}")
         print("\n".join(lines))
     return 1 if missed else 0
 

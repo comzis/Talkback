@@ -87,10 +87,30 @@ def _prefer_focused(nodes, query: str):
     return sorted(nodes, key=key)
 
 
-def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str]):
+def resolve_scope(scope: str | None, library_files: list[str]) -> list[str] | None:
+    """Map a UI scope to exact relative_path values, or None for the whole library."""
+    if scope is None:
+        return None
+    text = str(scope).strip().rstrip("/")
+    if not text or text.lower() in {"all", "*", "library"}:
+        return None
+    if text in library_files:
+        return [text]
+    prefix = text + "/"
+    matched = [path for path in library_files if path == text or path.startswith(prefix)]
+    return matched
+
+
+def _retrieve_nodes(
+    index: VectorStoreIndex,
+    query: str,
+    library_files: list[str],
+    scope: str | None = None,
+):
     """Search the library. Named files boost the global pool; they never replace it.
 
-    Returns the kept nodes and whether a named-file boost was applied.
+    When ``scope`` is set (file or folder relative_path), retrieval is hard-filtered
+    to that set. Returns the kept nodes and whether a named-file boost was applied.
     """
     per_file = config.retrieve_per_file()
     limit = config.retrieve_limit()
@@ -103,19 +123,29 @@ def _retrieve_nodes(index: VectorStoreIndex, query: str, library_files: list[str
         candidates = max(candidates, 16)
     if config.rerank_enabled():
         candidates = max(candidates, config.rerank_candidates())
-    global_nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
+    allowed = resolve_scope(scope, library_files)
+    if allowed is not None and not allowed:
+        return [], False
+    if allowed is not None:
+        global_nodes = _retrieve_named(index, query, allowed, candidates)
+    else:
+        global_nodes = index.as_retriever(similarity_top_k=candidates).retrieve(query)
     nodes = global_nodes
     boosted = False
     if config.hybrid_bm25():
         from retrieval import bm25 as bm25_index
 
-        lexical = bm25_index.retrieve_nodes(query, config.bm25_candidates())
+        lexical = bm25_index.retrieve_nodes(
+            query, config.bm25_candidates(), allowed_paths=allowed
+        )
         if lexical:
             # Keep most vector slots; reserve a slice for keyword-only hits.
             reserved = max(10, candidates // 5)
             nodes = _hybrid_merge(nodes, lexical, candidates, reserved)
             boosted = True
     named = named_library_files(query, library_files)
+    if allowed is not None:
+        named = [name for name in named if name in allowed]
     if named:
         pinned = _retrieve_named(index, query, named, candidates)
         if pinned:
