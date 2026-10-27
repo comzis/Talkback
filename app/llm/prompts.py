@@ -853,14 +853,15 @@ def prompt_passage(text: str) -> str:
 def display_excerpt(text: str, query: str = "", answer: str = "") -> str:
     """Clip the source card to the part of the chunk that matches the answer.
 
-    The window used to be the first 500 characters, which hid a filter that
-    started later in the same chunk.
+    Prefer a window that holds the answer's technical tokens (filters, dotted
+    field names, numbers with units, codes). When the answer has none, open on
+    the window most similar to the answer text.
     """
     limit = 900 if asks_for_example(query) or asks_for_steps(query) else 500
     body = repair_pdf_spacing(text or "")
     if not body:
         return ""
-    start = _excerpt_start(body, answer, query)
+    start = _excerpt_start(body, answer, query, limit)
     return body[start : start + limit].lstrip()
 
 
@@ -868,36 +869,94 @@ def _fold_match(text: str) -> str:
     return (text or "").replace("−", "-").replace("–", "-").lower()
 
 
-def _excerpt_start(body: str, answer: str, query: str) -> int:
-    """Index where the card should open, just before the matching phrase."""
-    folded = _fold_match(body)
-    anchor = _answer_anchor(folded, _fold_match(answer))
-    if anchor is None and (asks_for_example(query) or asks_for_steps(query)):
-        match = re.search(r"example\s+\d+\s*:", folded)
-        if not match:
-            match = re.search(r"contains\s+[\"“']|==", folded)
-        if match:
-            anchor = match.start()
-    if not anchor:
+def _excerpt_start(body: str, answer: str, query: str, limit: int = 500) -> int:
+    """Index where the card should open, just before the matching evidence."""
+    tokens = technical_tokens(answer)
+    if tokens:
+        anchor = _technical_anchor(body, tokens)
+        if anchor is not None:
+            return max(0, anchor - 40)
         return 0
-    return max(0, anchor - 40)
+    return _similar_window_start(body, answer or query, limit)
 
 
-def _answer_anchor(body: str, answer: str) -> int | None:
-    """Where the longest answer phrase sits in the chunk."""
-    spans = [span.strip() for span in re.split(r"(?<=[.!?])\s+|\n+", answer or "")]
-    spans += re.findall(r"\([^()]{0,160}\)", answer or "")
-    spans += re.findall(r"-?\d+(?:[.,]\d+)?\s*(?:dbtp|lufs|lkfs|lu)\b", answer or "")
-    best_at = None
-    best_len = 7
-    for span in spans:
-        compact = " ".join(span.split())
-        if len(compact) <= best_len:
+def _technical_anchor(body: str, tokens: list[tuple[str, str]]) -> int | None:
+    """Earliest index in the chunk that holds an answer technical token."""
+    positions = [
+        at
+        for kind, value in tokens
+        if (at := _token_index(kind, value, body)) is not None
+    ]
+    if not positions:
+        return None
+    return min(positions)
+
+
+def _token_index(kind: str, value: str, body: str) -> int | None:
+    """Byte index of a technical token inside the display chunk, or None."""
+    folded = _fold_match(body)
+    if kind == "field":
+        match = re.search(rf"(?<!\w){re.escape(value)}(?!\w)", folded)
+        return match.start() if match else None
+    if kind == "file":
+        match = re.search(rf"(?<!\w){re.escape(value)}(?!\w)", folded, re.IGNORECASE)
+        return match.start() if match else None
+    if kind == "code":
+        match = re.search(rf"\btech\s*{re.escape(value)}\b", folded, re.IGNORECASE)
+        return match.start() if match else None
+    if kind == "measure":
+        for match in _MEASURE_WITH_UNIT.finditer(_loosen(body)):
+            if _canon_measure(match.group(1), match.group(2), match.group(3)) == value:
+                # _loosen only inserts spaces; search the folded original form.
+                number = match.group(2)
+                unit = match.group(3)
+                found = re.search(
+                    rf"{re.escape(number)}\s*{re.escape(unit)}\b",
+                    folded,
+                    re.IGNORECASE,
+                )
+                return found.start() if found else match.start()
+        return None
+    if kind == "filter":
+        compact = _compact(body)
+        at = compact.find(value)
+        if at < 0:
+            return None
+        return _index_from_compact(body, at)
+    return None
+
+
+def _index_from_compact(body: str, compact_at: int) -> int:
+    """Map an index in ``_compact(body)`` back to an index in ``body``."""
+    seen = 0
+    for index, char in enumerate(body or ""):
+        piece = char.replace("−", "-").replace("–", "-").replace(",", ".")
+        if not piece or piece.isspace():
             continue
-        at = body.find(compact)
-        if at >= 0:
-            best_at = at
-            best_len = len(compact)
+        folded = piece.casefold()
+        if seen <= compact_at < seen + len(folded):
+            return index
+        seen += len(folded)
+    return 0
+
+
+def _similar_window_start(body: str, needle: str, limit: int) -> int:
+    """Start of the window that shares the most content words with needle."""
+    if not (needle or "").strip() or len(body) <= limit:
+        return 0
+    needle_words = set(re.findall(r"[a-z0-9]{4,}", _fold_match(needle)))
+    if not needle_words:
+        return 0
+    best_at = 0
+    best_score = -1
+    step = max(40, limit // 4)
+    last = max(1, len(body) - limit + 1)
+    for start in range(0, last, step):
+        window = _fold_match(body[start : start + limit])
+        score = len(needle_words & set(re.findall(r"[a-z0-9]{4,}", window)))
+        if score > best_score:
+            best_score = score
+            best_at = start
     return best_at
 
 
