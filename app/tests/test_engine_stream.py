@@ -43,12 +43,14 @@ def test_a_changed_library_answer_stays_on_screen(monkeypatch):
     tokens = [event["data"]["text"] for event in events if event["event"] == "token"]
     assert tokens == ["The level ", "is -99 LUFS."]
     footnotes = [event for event in events if event["event"] == "footnote"]
-    assert footnotes == [
-        {"event": "footnote", "data": {"text": "The level is -23.0 LUFS."}}
-    ]
+    assert len(footnotes) == 1
+    note = footnotes[0]["data"]["text"]
+    assert "-23.0" not in note
+    assert "excerpts" in note.lower() or "detail" in note.lower()
     assert seen["answer"] == "The level is -99 LUFS."
     sources = [event for event in events if event["event"] == "sources"]
     assert sources[0]["data"]["sources"][0]["source"] == "a.pdf"
+    assert "text" in sources[0]["data"]
 
 
 def test_a_french_question_still_calls_the_model(monkeypatch):

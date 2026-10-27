@@ -56,9 +56,10 @@ from llm.prompts import (
     notice_for_general,
     user_line,
     assistant_prompt,
+    correction_note,
     display_excerpt,
+    finalize_citations,
     ground_library_reply,
-    cited_source_indexes,
     explanation_prompt,
     outside_document_note,
     passage_windows,
@@ -144,8 +145,9 @@ def _stream_prompt(
     """Stream tokens as they arrive.
 
     A library reply is checked against the excerpts after the stream. If that
-    check changes the wording, the correction is a footnote. Words already
-    sent stay. Citations use the checked wording.
+    check changes the wording, a short footnote notes it — the full grounded
+    text is never re-sent. Citation markers are finalized with the sources
+    event (inline, once per sentence, renumbered).
     """
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
@@ -175,38 +177,32 @@ def _stream_prompt(
         yield {"event": "token", "data": {"text": pending}}
     shown = "".join(parts).strip()
     reply = shown
-    correction = None
+    note = None
     if library:
         reply = ground_library_reply(shown, sources, query).strip()
-        if reply != shown:
-            correction = reply or user_line("no_detail", query)
+        note = correction_note(shown, reply or user_line("no_detail", query), query)
     if sources is None:
         logger.info("Query answered as assistant")
         yield {"event": "sources", "data": {"sources": []}}
         yield {"event": "done", "data": {}}
         return
     used = _close_citations(shown, supporting_sources(shown, sources), query)
-    if used and not cited_source_indexes(reply):
-        marks = " ".join(f"[{source['number']}]" for source in used)
-        extra = f" {marks}"
-        yield {"event": "token", "data": {"text": extra}}
-    notes = []
-    if correction:
-        notes.append(correction)
+    display, used = finalize_citations(shown, used)
+    if note:
+        yield {"event": "footnote", "data": {"text": note}}
     if not used:
         logger.info("No citation survived the check")
         yield {"event": "notice", "data": {"text": outside_document_note(query)}}
-        if notes:
-            yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
-        yield {"event": "sources", "data": {"sources": []}}
+        yield {
+            "event": "sources",
+            "data": {"sources": [], "text": display},
+        }
         yield {"event": "done", "data": {}}
         return
-    if notes:
-        yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
     logger.info("Query cited %s", [source["source"] for source in used])
     for source in used:
-        source["text"] = display_excerpt(source.get("text") or "", query, reply)
-    yield {"event": "sources", "data": {"sources": used}}
+        source["text"] = display_excerpt(source.get("text") or "", query, display)
+    yield {"event": "sources", "data": {"sources": used, "text": display}}
     yield {"event": "done", "data": {}}
 
 

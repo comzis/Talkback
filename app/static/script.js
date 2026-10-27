@@ -359,7 +359,8 @@ function updateQueue() {
 // Chat
 let activeAnswer = null;
 
-function appendSources(content, sources) {
+function appendSources(parent, sources) {
+    parent.querySelectorAll('.message-sources').forEach((node) => node.remove());
     const sourcesEl = document.createElement('div');
     sourcesEl.className = 'message-sources';
     const title = document.createElement('div');
@@ -386,7 +387,7 @@ function appendSources(content, sources) {
         item.append(number, sourceText);
         sourcesEl.appendChild(item);
     });
-    content.appendChild(sourcesEl);
+    parent.appendChild(sourcesEl);
 }
 
 function showNotice(messageId, text) {
@@ -420,11 +421,18 @@ function showFootnote(messageId, text) {
 }
 
 function setMessageBody(messageId, text, sources) {
-    const content = document.getElementById(messageId)?.querySelector('.message-content');
-    if (!content) return;
+    const body = document.getElementById(messageId)?.querySelector('.message-body');
+    const content = body?.querySelector('.message-content');
+    if (!content || !body) return;
     content.textContent = text;
+    // Sources sit outside the answer text so history stays clean.
     if (sources && sources.length) {
-        appendSources(content, sources);
+        appendSources(body, sources);
+        const block = body.querySelector('.message-sources');
+        const footnote = body.querySelector('.message-footnote');
+        if (block && footnote) body.insertBefore(block, footnote);
+    } else {
+        body.querySelectorAll('.message-sources').forEach((node) => node.remove());
     }
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
@@ -533,6 +541,9 @@ async function sendMessage() {
                 } else if (eventName === 'footnote') {
                     showFootnote(messageId, data.text || '');
                 } else if (eventName === 'sources') {
+                    if (typeof data.text === 'string') {
+                        streamed = data.text;
+                    }
                     setMessageBody(messageId, streamed, data.sources || []);
                 } else if (eventName === 'error') {
                     setMessageBody(messageId, data.detail || 'The query could not be completed.');
@@ -758,7 +769,7 @@ function addMessage(text, role, isLoading = false, sources = []) {
     content.className = 'message-content';
     content.textContent = isLoading ? 'Thinking...' : String(text ?? '').trim();
     body.appendChild(content);
-    if (sources && sources.length > 0) appendSources(content, sources);
+    if (sources && sources.length > 0) appendSources(body, sources);
 
     message.append(avatar, body);
     elements.chatMessages.appendChild(message);

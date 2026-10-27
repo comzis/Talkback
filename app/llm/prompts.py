@@ -317,7 +317,11 @@ def notice_for_general(
 
 
 def clean_history(history, limit: int = 8) -> list[tuple[str, str]]:
-    """Keep the latest user and assistant turns. Each turn is capped so the prompt stays small."""
+    """Keep the latest user and assistant turns. Each turn is capped so the prompt stays small.
+
+    Pure greeting / small-talk assistant turns are dropped so they cannot leak
+    into a later library answer.
+    """
     turns = []
     for item in history or []:
         if isinstance(item, dict):
@@ -331,8 +335,21 @@ def clean_history(history, limit: int = 8) -> list[tuple[str, str]]:
         text = " ".join(str(content or "").split())
         if not text:
             continue
+        if role == "assistant" and _is_greeting_only(text):
+            continue
         turns.append((role, text[:400]))
     return turns[-limit:]
+
+
+def _is_greeting_only(text: str) -> bool:
+    """True when the whole turn is a greeting or thanks, not an answer."""
+    cleaned = strip_citations(text or "").strip()
+    if not cleaned:
+        return True
+    if len(cleaned) > 120 or not _SMALL_TALK.match(cleaned):
+        return False
+    words = re.findall(r"[a-z0-9']+", cleaned.casefold())
+    return len(words) <= 12
 
 
 def format_history(history, *, continue_from_passages: bool = False) -> str:
@@ -711,6 +728,136 @@ def cited_source_indexes(text: str) -> list[int]:
     return indexes
 
 
+def correction_note(shown: str, reply: str, query: str = "") -> str | None:
+    """Short footnote when grounding changed the reply. Never the full text again."""
+    if not reply or _same_answer_body(shown, reply):
+        return None
+    if reply in {user_line("no_detail", query), user_line("no_example", query)}:
+        return reply
+    return user_line("no_detail", query)
+
+
+def _same_answer_body(left: str, right: str) -> bool:
+    """True when two replies match after citations and whitespace are ignored."""
+
+    def norm(text: str) -> str:
+        return re.sub(r"\s+", " ", strip_citations(text or "")).strip().casefold()
+
+    return norm(left) == norm(right)
+
+
+def _strip_trailing_citation_dump(answer: str, allowed: set[int]) -> str:
+    """Drop an end-of-answer marker dump; keep legitimate sentence-end citations."""
+    text = (answer or "").rstrip()
+    match = re.search(r"((?:\s*\[\d+\])+)\s*$", text)
+    if not match:
+        return text
+    trailing = match.group(1)
+    marks = [int(item) for item in re.findall(r"\[(\d+)\]", trailing)]
+    if not marks:
+        return text
+    prefix = text[: match.start()].rstrip()
+    earlier = {int(item) for item in re.findall(r"\[(\d+)\]", prefix)}
+    unique = list(dict.fromkeys(marks))
+    # Classic dump: repeats markers already used, and/or mixes in dead numbers.
+    if earlier and all(number in earlier or number not in allowed for number in marks):
+        return prefix
+    if len(marks) != len(unique):
+        return (prefix + " " + " ".join(f"[{number}]" for number in unique)).strip()
+    return text
+
+
+def finalize_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]:
+    """Keep markers inline once per sentence, drop dead ones, renumber cards 1..n."""
+    if not sources:
+        cleaned = re.sub(r"\s*\[\d+\]", "", answer or "")
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        return re.sub(r" {2,}", " ", cleaned).strip(), []
+
+    allowed = {int(source.get("number") or 0) for source in sources}
+    by_old = {
+        int(source["number"]): dict(source)
+        for source in sources
+        if int(source.get("number") or 0) in allowed
+    }
+    order: list[int] = []
+
+    def take_unique(numbers: list[int]) -> list[int]:
+        kept: list[int] = []
+        seen: set[int] = set()
+        for number in numbers:
+            if number not in allowed or number in seen:
+                continue
+            kept.append(number)
+            seen.add(number)
+            if number not in order:
+                order.append(number)
+        return kept
+
+    answer = _strip_trailing_citation_dump(answer or "", allowed)
+    sentences: list[tuple[str, list[int]]] = []
+    for line in re.split(r"\n+", answer):
+        line = line.strip()
+        if not line:
+            continue
+        for part in re.split(r"(?<=[.!?])\s+", line):
+            part = part.strip()
+            if not part:
+                continue
+            leading = re.match(r"^((?:\[\d+\]\s*)+)", part)
+            lead_marks: list[int] = []
+            if leading:
+                lead_marks = [
+                    int(match) for match in re.findall(r"\[(\d+)\]", leading.group(1))
+                ]
+                part = part[leading.end() :].strip()
+            marks = [int(match) for match in re.findall(r"\[(\d+)\]", part)]
+            body = re.sub(r"\s*\[\d+\]", "", part).strip()
+            body = re.sub(r"\s+", " ", body).strip()
+            if not body:
+                # Markers left alone after a split belong to the previous sentence.
+                if (lead_marks or marks) and sentences:
+                    prev_body, prev_marks = sentences[-1]
+                    sentences[-1] = (
+                        prev_body,
+                        take_unique(prev_marks + lead_marks + marks),
+                    )
+                continue
+            if lead_marks and sentences:
+                prev_body, prev_marks = sentences[-1]
+                sentences[-1] = (prev_body, take_unique(prev_marks + lead_marks))
+            sentences.append((body, take_unique(marks)))
+
+    mapping = {old: new for new, old in enumerate(order, start=1)}
+    # Uncited surviving cards stay at the end, in retrieve order.
+    for number in sorted(allowed):
+        if number not in mapping:
+            mapping[number] = len(mapping) + 1
+            order.append(number)
+
+    lines = []
+    for body, marks in sentences:
+        if not marks:
+            lines.append(body)
+            continue
+        unique = []
+        seen: set[int] = set()
+        for number in marks:
+            mapped = mapping.get(number)
+            if mapped is None or mapped in seen:
+                continue
+            unique.append(mapped)
+            seen.add(mapped)
+        lines.append(body + "".join(f" [{number}]" for number in unique))
+
+    renumbered = []
+    for old in order:
+        source = by_old[old]
+        source["number"] = mapping[old]
+        renumbered.append(source)
+    return "\n".join(lines).strip(), renumbered
+
+
 _FENCE = re.compile(r"```[a-z]*\n?([\s\S]*?)```", re.IGNORECASE)
 _INLINE = re.compile(r"`([^`]{2,120})`")
 _COMPARE = re.compile(
@@ -845,9 +992,14 @@ _FILTER_SPAN = re.compile(
 )
 
 
+def normalize_extracted_text(text: str) -> str:
+    """NFKC plus PDF spacing repair. Used at index time and for card excerpts."""
+    return repair_pdf_spacing(unicodedata.normalize("NFKC", text or ""))
+
+
 def prompt_passage(text: str) -> str:
     """Full chunk text for the prompt and the grounding check."""
-    return repair_pdf_spacing(text or "")
+    return normalize_extracted_text(text or "")
 
 
 def display_excerpt(text: str, query: str = "", answer: str = "") -> str:
@@ -858,7 +1010,7 @@ def display_excerpt(text: str, query: str = "", answer: str = "") -> str:
     the window most similar to the answer text.
     """
     limit = 900 if asks_for_example(query) or asks_for_steps(query) else 500
-    body = repair_pdf_spacing(text or "")
+    body = normalize_extracted_text(text or "")
     if not body:
         return ""
     start = _excerpt_start(body, answer, query, limit)
