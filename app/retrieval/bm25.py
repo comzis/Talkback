@@ -52,7 +52,9 @@ def _ensure(collection) -> None:
     logger.info("BM25 index ready (%s docs)", _count)
 
 
-def retrieve_nodes(query: str, top_k: int, allowed_paths: list[str] | None = None) -> list:
+def retrieve_nodes(
+    query: str, top_k: int, allowed_paths: list[str] | None = None
+) -> list:
     """Return top BM25 hits as LlamaIndex text nodes.
 
     When ``allowed_paths`` is set, only chunks from those relative_path values

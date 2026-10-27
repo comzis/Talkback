@@ -97,7 +97,9 @@ def resolve_scope(scope: str | None, library_files: list[str]) -> list[str] | No
     if text in library_files:
         return [text]
     prefix = text + "/"
-    matched = [path for path in library_files if path == text or path.startswith(prefix)]
+    matched = [
+        path for path in library_files if path == text or path.startswith(prefix)
+    ]
     return matched
 
 

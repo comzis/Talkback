@@ -71,7 +71,7 @@ def main() -> None:
 
             t0 = time.perf_counter()
             raw = index.as_retriever(similarity_top_k=100).retrieve(q)
-            first_word_samples.append(('vec', time.perf_counter() - t0))
+            first_word_samples.append(("vec", time.perf_counter() - t0))
             ranked = [fp(n) for n in raw]
             v20 = first_hit(ranked[:20], want, list(pages))
             v50 = first_hit(ranked[:50], want, list(pages))
@@ -93,7 +93,7 @@ def main() -> None:
 
             t_pipe = time.perf_counter()
             nodes, boosted = _retrieve_nodes(index, q, lib)
-            first_word_samples.append(('pipe', time.perf_counter() - t_pipe))
+            first_word_samples.append(("pipe", time.perf_counter() - t_pipe))
             pipe = first_hit([fp(n) for n in nodes], want, list(pages))
 
             if boosted and named:
@@ -184,7 +184,7 @@ def main() -> None:
         buckets[kind].append(sec)
     for kind, vals in buckets.items():
         print(
-            f"latency_{kind}_s n={len(vals)} avg={sum(vals)/len(vals):.3f} "
+            f"latency_{kind}_s n={len(vals)} avg={sum(vals) / len(vals):.3f} "
             f"max={max(vals):.3f}"
         )
 
