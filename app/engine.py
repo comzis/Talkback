@@ -246,8 +246,11 @@ def _close_citations(answer: str, sources: list, query: str = ""):
     return keep_close_citations(answer, sources, score, query=query)
 
 
-def iter_answer(query: str, history=None):
-    """Yield token events as they arrive, then sources."""
+def iter_answer(query: str, history=None, scope: str | None = None):
+    """Yield token events as they arrive, then sources.
+
+    ``scope`` is an optional relative_path (file or folder). Empty means all.
+    """
     logger.info("Query started (%s characters)", len(query or ""))
     search = retrieval_text(query, history)
     wait_for_models()
@@ -286,7 +289,7 @@ def iter_answer(query: str, history=None):
         index = get_or_create_cached_index()
         indexed, _legacy, _incomplete = indexed_documents()
         library_files = sorted(indexed)
-        nodes, _named_file = _retrieve_nodes(index, search, library_files)
+        nodes, _named_file = _retrieve_nodes(index, search, library_files, scope=scope)
         if not nodes:
             logger.info("No passages retrieved. Answering from general knowledge.")
             yield from _stream_prompt(
@@ -316,13 +319,13 @@ def assistant_reply(query: str) -> str:
     return _complete(assistant_prompt(query))
 
 
-def answer_query(query: str, history=None) -> dict:
+def answer_query(query: str, history=None, scope: str | None = None) -> dict:
     """Answer from the library when it applies, and as an assistant otherwise."""
     text: list[str] = []
     sources: list = []
     notice = None
     footnote = None
-    for event in iter_answer(query, history):
+    for event in iter_answer(query, history, scope=scope):
         kind = event["event"]
         if kind == "token":
             text.append(event["data"]["text"])

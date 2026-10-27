@@ -27,7 +27,7 @@ DEFAULT_OLLAMA_THINK = False
 DEFAULT_RELEVANCE_THRESHOLD = 0.75
 # BAAI/bge-reranker-v2-m3 is Apache-2.0. It runs from the local cache.
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-DEFAULT_RERANK_CANDIDATES = 50
+DEFAULT_RERANK_CANDIDATES = 40
 DEFAULT_BM25_CANDIDATES = 50
 # Token cap for each query-passage pair. The forward pass does not see more.
 DEFAULT_RERANK_MAX_LENGTH = 512
@@ -181,14 +181,15 @@ def rerank_candidates() -> int:
 
 
 def hybrid_bm25() -> bool:
-    """Merge BM25 hits into the vector pool before rerank. Default off.
+    """Merge BM25 hits into the vector pool before rerank. Default on.
 
-    At 12k chunks, reserved-slot hybrid helped held-out keyword misses without
-    hurting the main stage table, but it did not lift main miss@100 cases.
+    Keyword-heavy main questions (codes, field names, exact phrases) gain
+    pipeline recall with reserved-slot hybrid; earlier main misses were mostly
+    semantic, so they understated the benefit.
     """
     raw = _raw("HYBRID_BM25").lower()
     if not raw:
-        return False
+        return True
     return raw not in {"0", "false", "no"}
 
 

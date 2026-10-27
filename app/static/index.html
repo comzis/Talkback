@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache">
     <title>Talkback</title>
-    <link rel="stylesheet" href="/static/style.css?v=4.42">
+    <link rel="stylesheet" href="/static/style.css?v=4.43">
 </head>
 <body>
     <div class="app-container">
@@ -20,6 +20,12 @@
                         <div class="ambient-message">
                             <p class="ambient-text">Ask me anything, or paste a passage. I explain the text and cite your documents when they apply.</p>
                         </div>
+                    </div>
+                    <div class="chat-scope-row">
+                        <label class="chat-scope-label" for="searchScope">Search in</label>
+                        <select id="searchScope" class="chat-scope" aria-label="Search scope">
+                            <option value="">All documents</option>
+                        </select>
                     </div>
                     <div class="chat-input-area">
                         <textarea

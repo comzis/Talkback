@@ -69,6 +69,8 @@ class ChatTurn(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     history: list[ChatTurn] = []
+    # Relative path of a file or folder. Empty / omitted = whole library.
+    scope: str | None = None
 
 
 class QueryResponse(BaseModel):
@@ -159,7 +161,7 @@ async def query_index(request: QueryRequest):
 
     try:
         return await asyncio.to_thread(
-            engine.answer_query, request.query, request.history
+            engine.answer_query, request.query, request.history, request.scope
         )
     except Exception:
         raise HTTPException(status_code=500, detail="The query could not be completed.")
@@ -176,7 +178,9 @@ async def query_stream(request: QueryRequest):
         # Safari drops a fetch stream that stays silent while retrieval starts.
         yield ": open\n\n"
         try:
-            for event in engine.iter_answer(request.query, request.history):
+            for event in engine.iter_answer(
+                request.query, request.history, scope=request.scope
+            ):
                 payload = json.dumps(event["data"], ensure_ascii=False)
                 yield f"event: {event['event']}\ndata: {payload}\n\n"
         except Exception:
@@ -224,6 +228,13 @@ async def get_system_status():
         "embed_model": config.embed_model_name(),
         "embed": host_embed.active_embed(),
         "rerank": rerank.active_rerank(),
+        "retrieval": {
+            "hybrid_bm25": config.hybrid_bm25(),
+            "rerank_candidates": config.rerank_candidates(),
+            "retrieve_limit": config.retrieve_limit(),
+            "retrieve_balance_files": config.retrieve_balance_files(),
+            "retrieve_per_file": config.retrieve_per_file(),
+        },
         "database": {
             "status": "unknown",
             "connected": False,

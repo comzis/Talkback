@@ -42,6 +42,7 @@ const elements = {
     readOnlyLabel: document.getElementById('readOnlyLabel'),
     rebuildNote: document.getElementById('rebuildNote'),
     chatInput: document.getElementById('chatInput'),
+    searchScope: document.getElementById('searchScope'),
     sendBtn: document.getElementById('sendBtn'),
     chatMessages: document.getElementById('chatMessages'),
     queueList: document.getElementById('queueList'),
@@ -246,9 +247,51 @@ async function loadFiles() {
         categorizeFiles();
         updateFileStats();
         renderLibrary();
+        populateSearchScope();
     } catch (error) {
         console.error('Error loading files:', error);
     }
+}
+
+function populateSearchScope() {
+    const select = elements.searchScope;
+    if (!select) return;
+    const previous = select.value;
+    const folders = new Set();
+    (state.files || []).forEach((file) => {
+        const name = file.name || '';
+        const slash = name.lastIndexOf('/');
+        if (slash > 0) folders.add(name.slice(0, slash));
+    });
+    select.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'All documents';
+    select.appendChild(all);
+    [...folders].sort().forEach((folder) => {
+        const option = document.createElement('option');
+        option.value = folder;
+        option.textContent = folder + '/';
+        select.appendChild(option);
+    });
+    (state.files || [])
+        .map((file) => file.name)
+        .filter(Boolean)
+        .sort()
+        .forEach((name) => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            select.appendChild(option);
+        });
+    if ([...select.options].some((opt) => opt.value === previous)) {
+        select.value = previous;
+    }
+}
+
+function currentScope() {
+    const value = elements.searchScope && elements.searchScope.value;
+    return value || null;
 }
 
 function categorizeFiles() {
@@ -423,7 +466,7 @@ async function answerWithoutStream(query, messageId) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-store',
-            body: JSON.stringify({ query, history: priorTurns() })
+            body: JSON.stringify({ query, history: priorTurns(), scope: currentScope() })
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -460,7 +503,7 @@ async function sendMessage() {
         const response = await fetch('/query/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-            body: JSON.stringify({ query, history: priorTurns() }),
+            body: JSON.stringify({ query, history: priorTurns(), scope: currentScope() }),
             cache: 'no-store',
             signal: controller.signal
         });

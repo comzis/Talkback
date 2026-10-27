@@ -156,7 +156,7 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     original_stream = engine._stream_deltas
     original_retrieve = engine._retrieve_nodes
 
-    def retrieve_loudness(index, query, files):
+    def retrieve_loudness(index, query, files, scope=None):
         return [_Node("Target loudness is -23.0 LUFS.", 0.9)], False
 
     def stream_loudness(prompt, temperature):
@@ -175,7 +175,7 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     ]
     assert cards and cards[0]["page"] == "16"
 
-    def retrieve_weak(index, query, files):
+    def retrieve_weak(index, query, files, scope=None):
         return [_Node("Target loudness is -23.0 LUFS.", 0.1)], False
 
     def stream_draft(prompt, temperature):
