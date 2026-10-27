@@ -181,14 +181,15 @@ def rerank_candidates() -> int:
 
 
 def hybrid_bm25() -> bool:
-    """Merge BM25 hits into the vector pool before rerank. Default off.
+    """Merge BM25 hits into the vector pool before rerank. Default on.
 
-    At 12k chunks, reserved-slot hybrid helped held-out keyword misses without
-    hurting the main stage table, but it did not lift main miss@100 cases.
+    Keyword-heavy main questions (codes, field names, exact phrases) gain
+    pipeline recall with reserved-slot hybrid; earlier main misses were mostly
+    semantic, so they understated the benefit.
     """
     raw = _raw("HYBRID_BM25").lower()
     if not raw:
-        return False
+        return True
     return raw not in {"0", "false", "no"}
 
 

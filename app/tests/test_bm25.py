@@ -16,10 +16,12 @@ def test_tokenize_keeps_alnum_words():
     ]
 
 
-def test_hybrid_bm25_defaults_off(monkeypatch):
+def test_hybrid_bm25_defaults_on(monkeypatch):
     import config
 
     monkeypatch.delenv("HYBRID_BM25", raising=False)
+    assert config.hybrid_bm25() is True
+    monkeypatch.setenv("HYBRID_BM25", "false")
     assert config.hybrid_bm25() is False
     monkeypatch.setenv("HYBRID_BM25", "true")
     assert config.hybrid_bm25() is True

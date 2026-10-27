@@ -190,5 +190,110 @@
     "pages": ["4", "6"],
     "language": "es",
     "answer_any_of": [["hosts.ini", "inventory", "inventario"]]
-  }
+  },
+{
+  "id": "en-ppm6-r128",
+  "query": "Which EBU recommendation replaced mixing to the old PPM6 specifications?",
+  "path": "library",
+  "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+  "page": "16",
+  "answer_any_of": [
+    [
+      "EBU R128",
+      "R128"
+    ]
+  ]
+},
+{
+  "id": "en-dialogue-bg-sep",
+  "query": "What minimum loudness separation is recommended between dialogue and background?",
+  "path": "library",
+  "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+  "page": "16",
+  "answer_any_of": [
+    [
+      "4LU",
+      "4 LU"
+    ]
+  ]
+},
+{
+  "id": "en-centre-downmix",
+  "query": "What Centre Down Mix Level is required for BBC Sport and live programmes from Media City UK?",
+  "path": "library",
+  "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+  "page": "33",
+  "answer_any_of": [
+    [
+      "-3dB",
+      "-3 dB"
+    ]
+  ]
+},
+{
+  "id": "en-film-light",
+  "query": "What Line Mode Compression setting is required for BBC Sport and live programmes from Media City UK?",
+  "path": "library",
+  "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+  "page": "33",
+  "answer_any_of": [
+    [
+      "Film Light"
+    ]
+  ]
+},
+{
+  "id": "en-dolby-e-tracks",
+  "query": "Which audio tracks carry surround sound using Dolby E for BBC Sport programmes?",
+  "path": "library",
+  "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+  "page": "34",
+  "answer_any_of": [
+    [
+      "3&4",
+      "3 & 4",
+      "tracks 3",
+      "tracks 3 and 4",
+      "audio tracks 3"
+    ]
+  ]
+},
+{
+  "id": "en-hlg-uhd",
+  "query": "What HDR methodology must live UHD programmes use for delivery?",
+  "path": "library",
+  "file": "TechnicalDeliveryStandardsBBCLive.pdf",
+  "page": "34",
+  "answer_any_of": [
+    [
+      "HLG"
+    ]
+  ]
+},
+{
+  "id": "en-tcp-retransmit-filter",
+  "query": "What Wireshark display filter excludes duplicate ACKs and retransmissions?",
+  "path": "library",
+  "file": "Traffic_analysis_with_wireshark_1746771119.pdf",
+  "page": "34",
+  "answer_contains": [
+    "tcp.analysis.duplicate_ack",
+    "tcp.analysis.retransmission"
+  ],
+  "card_contains": [
+    "tcp.analysis"
+  ]
+},
+{
+  "id": "en-ios-facts",
+  "query": "Which Ansible module gathers facts such as interfaces and OS version from Cisco IOS devices?",
+  "path": "library",
+  "file": "Ansible_Network_Automation_1744044240.pdf",
+  "page": "11",
+  "answer_any_of": [
+    [
+      "ios_facts"
+    ]
+  ]
+}
 ]
