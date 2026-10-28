@@ -592,6 +592,9 @@ async function sendMessage() {
                 } else if (eventName === 'footnote') {
                     showFootnote(messageId, data.text || '');
                 } else if (eventName === 'sources') {
+                    if (typeof data.text === 'string') {
+                        streamed = data.text;
+                    }
                     setMessageBody(
                         messageId,
                         streamed,

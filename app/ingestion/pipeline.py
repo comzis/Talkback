@@ -354,7 +354,17 @@ def _ingest_once() -> None:
         paths = [Path(by_key[name].location) for name in embed_names]
         key_by_resolved = {path.resolve(): key for key, path in zip(embed_names, paths)}
         documents = source.read([str(path) for path in paths])
+        from llm.prompts import normalize_extracted_text
+
         for document in documents:
+            text = document.get_content() if hasattr(document, "get_content") else None
+            if text is None:
+                text = getattr(document, "text", "") or ""
+            normalized = normalize_extracted_text(text)
+            if hasattr(document, "set_content"):
+                document.set_content(normalized)
+            else:
+                document.text = normalized
             file_path = Path(document.metadata.get("file_path", ""))
             relative = key_by_resolved.get(file_path.resolve())
             if relative is None and file_path.is_file():
