@@ -701,6 +701,8 @@ class EmbeddingIdentityTests(unittest.TestCase):
         self.assertEqual(compare_models.tokens_per_second(8, 80_000_000), 100)
         self.assertIsNone(compare_models.tokens_per_second(0, 80_000_000))
         self.assertEqual(len(compare_models.PROMPTS), 3)
+        self.assertIs(compare_models.think_value("qwen3.5:9b"), False)
+        self.assertEqual(compare_models.think_value("gpt-oss:20b"), "low")
         self.assertEqual(
             prompts.UNMATCHED_SOURCE_NOTE, "No source could be matched to this answer."
         )

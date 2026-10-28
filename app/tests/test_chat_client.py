@@ -37,6 +37,19 @@ def test_ollama_body_pins_keep_alive_and_skips_reasoning():
     assert client.chat_url("http://host.docker.internal:11434/v1", "ollama") == (
         "http://host.docker.internal:11434/api/chat"
     )
+    assert client.think_value("qwen3.5:9b", False) is False
+    assert client.think_value("gpt-oss:20b", False) == "low"
+    assert client.think_value("gpt-oss:20b", True) == "medium"
+    oss = client.chat_request_body(
+        backend="ollama",
+        model="gpt-oss:20b",
+        prompt="hello",
+        temperature=0.1,
+        keep_alive="3h",
+        context=8192,
+        think=False,
+    )
+    assert oss["think"] == "low"
 
 
 def test_vllm_body_omits_ollama_fields():
@@ -80,6 +93,8 @@ def test_ollama_stream_reads_content_and_skips_thinking():
                         "message": {"role": "assistant", "content": " there"},
                         "done": True,
                         "prompt_eval_count": 4,
+                        "eval_count": 8,
+                        "eval_duration": 400_000_000,
                     }
                 ),
             ]
@@ -97,6 +112,8 @@ def test_ollama_stream_reads_content_and_skips_thinking():
         transport=httpx.MockTransport(handler),
     )
     assert "".join(client.stream("hello", temperature=0.1)) == "Hi there"
+    assert client.eval_count == 8
+    assert client.eval_duration_ns == 400_000_000
     assert seen["url"] == "http://chat.local/api/chat"
     assert seen["body"]["keep_alive"] == "3h"
     assert seen["body"]["think"] is False

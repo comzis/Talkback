@@ -76,6 +76,18 @@ def installed_model_names(payload: dict, backend: str) -> list[str]:
     return [str(item.get("name") or "") for item in payload.get("models") or []]
 
 
+def think_value(model: str, think: bool) -> bool | str:
+    """Ollama `think` field for this model.
+
+    Qwen accepts true/false. gpt-oss uses low/medium/high; boolean false still
+    reasons at medium, so the lowest setting is the string ``low``.
+    """
+    name = (model or "").lower()
+    if "gpt-oss" in name:
+        return "medium" if think else "low"
+    return bool(think)
+
+
 def chat_request_body(
     *,
     backend: str,
@@ -97,7 +109,7 @@ def chat_request_body(
             "messages": messages,
             "stream": True,
             "keep_alive": keep_alive,
-            "think": think,
+            "think": think_value(model, think),
             "options": options,
         }
     body: dict = {
@@ -132,6 +144,8 @@ class ChatClient:
         self.context = context
         self.keep_alive = keep_alive
         self.think = think
+        self.eval_count: int | None = None
+        self.eval_duration_ns: int | None = None
         self._transport = transport
 
     def use_model(self, model: str) -> None:
@@ -162,9 +176,33 @@ class ChatClient:
                         f"Chat completion failed ({response.status_code})."
                     )
                 for line in response.iter_lines():
+                    if self.backend == "ollama":
+                        stats = _native_stats(line)
+                        if stats is not None:
+                            self.eval_count = stats[0]
+                            self.eval_duration_ns = stats[1]
                     delta = parse(line)
                     if delta:
                         yield delta
+
+
+def _native_stats(line: str) -> tuple[int | None, int | None] | None:
+    """eval_count and eval_duration from a done /api/chat line."""
+    text = (line or "").strip()
+    if not text.startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not payload.get("done"):
+        return None
+    count = payload.get("eval_count")
+    duration = payload.get("eval_duration")
+    return (
+        None if count is None else int(count),
+        None if duration is None else int(duration),
+    )
 
 
 def _native_content(line: str) -> str:
