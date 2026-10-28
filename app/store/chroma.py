@@ -62,6 +62,7 @@ def connect_chroma() -> None:
             logger.info("Connected to ChromaDB on attempt %s", attempt)
             return
         except Exception as exc:
+            # Chroma/httpx/server errors all mean "not ready"; retry, then raise below.
             last_error = exc
             logger.warning("ChromaDB not ready (attempt %s/30): %s", attempt, exc)
             time.sleep(2)

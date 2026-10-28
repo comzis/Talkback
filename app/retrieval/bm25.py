@@ -12,11 +12,6 @@ logger = logging.getLogger(__name__)
 
 _TOKEN = re.compile(r"[a-z0-9]{2,}", re.IGNORECASE)
 _lock = threading.Lock()
-_index = None
-_ids: list[str] = []
-_documents: list[str] = []
-_metadatas: list[dict] = []
-_count = -1
 
 
 def _tokenize(text: str) -> list[str]:
@@ -25,31 +20,30 @@ def _tokenize(text: str) -> list[str]:
 
 def invalidate() -> None:
     """Drop the cached index (after a re-index)."""
-    global _index, _ids, _documents, _metadatas, _count
+    from state import Bm25Cache, get
+
     with _lock:
-        _index = None
-        _ids = []
-        _documents = []
-        _metadatas = []
-        _count = -1
+        get().bm25 = Bm25Cache()
 
 
 def _ensure(collection) -> None:
-    global _index, _ids, _documents, _metadatas, _count
+    from state import get
+
+    cache = get().bm25
     current = collection.count()
-    if _index is not None and current == _count:
+    if cache.index is not None and current == cache.count:
         return
     from rank_bm25 import BM25Okapi
 
     logger.info("Building BM25 index over %s chunks", current)
     stored = collection.get(include=["documents", "metadatas"])
-    _ids = list(stored.get("ids") or [])
-    _documents = [doc or "" for doc in (stored.get("documents") or [])]
-    _metadatas = [meta or {} for meta in (stored.get("metadatas") or [])]
-    tokenized = [_tokenize(doc) for doc in _documents]
-    _index = BM25Okapi(tokenized)
-    _count = current
-    logger.info("BM25 index ready (%s docs)", _count)
+    cache.ids = list(stored.get("ids") or [])
+    cache.documents = [doc or "" for doc in (stored.get("documents") or [])]
+    cache.metadatas = [meta or {} for meta in (stored.get("metadatas") or [])]
+    tokenized = [_tokenize(doc) for doc in cache.documents]
+    cache.index = BM25Okapi(tokenized)
+    cache.count = current
+    logger.info("BM25 index ready (%s docs)", cache.count)
 
 
 def retrieve_nodes(
@@ -70,28 +64,29 @@ def retrieve_nodes(
     allowed = set(allowed_paths) if allowed_paths is not None else None
     with _lock:
         _ensure(collection)
-        assert _index is not None
-        scores = _index.get_scores(_tokenize(query))
+        cache = get().bm25
+        assert cache.index is not None
+        scores = cache.index.get_scores(_tokenize(query))
         order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
         nodes = []
         for index in order:
             if allowed is not None:
-                meta_path = (_metadatas[index] or {}).get("relative_path") or (
-                    _metadatas[index] or {}
+                meta_path = (cache.metadatas[index] or {}).get("relative_path") or (
+                    cache.metadatas[index] or {}
                 ).get("file_name")
                 if meta_path not in allowed:
                     continue
             score = float(scores[index])
             if score <= 0:
                 continue
-            meta = dict(_metadatas[index])
+            meta = dict(cache.metadatas[index])
             for key in list(meta):
                 if str(key).startswith("_"):
                     meta.pop(key, None)
             node = TextNode(
-                text=_documents[index],
+                text=cache.documents[index],
                 metadata=meta,
-                id_=_ids[index],
+                id_=cache.ids[index],
             )
             nodes.append(NodeWithScore(node=node, score=score))
             if len(nodes) >= top_k:

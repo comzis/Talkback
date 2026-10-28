@@ -3,6 +3,15 @@
 import pytest
 
 from support import load_rerank_host
+import state
+
+
+@pytest.fixture(autouse=True)
+def _process():
+    state.reset_for_tests()
+    state.activate()
+    yield
+    state.reset_for_tests()
 
 
 def _host_module():
@@ -62,7 +71,7 @@ def test_unreachable_host_uses_the_container_and_warns_once(monkeypatch, caplog)
     import retrieval.rerank as rerank
 
     monkeypatch.setenv("RERANK_URL", "http://rerank.local")
-    rerank._host_warning_logged = False
+    state.get().rerank_host_warning_logged = False
     monkeypatch.setattr(
         rerank,
         "_post_scores",
@@ -93,7 +102,7 @@ def test_active_rerank_reports_a_down_host_as_container(monkeypatch):
     import retrieval.rerank as rerank
 
     monkeypatch.setenv("RERANK_URL", "http://rerank.local")
-    rerank._host_warning_logged = False
+    state.get().rerank_host_warning_logged = False
     monkeypatch.setattr(rerank, "_host_health", lambda url: None)
     report = rerank.active_rerank()
     assert report["mode"] == "container"

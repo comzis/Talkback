@@ -15,7 +15,8 @@ import config
 import engine
 from engine import _citation_similarity
 from llm.client import wait_for_models
-from llm.prompts import keep_close_citations, named_library_files, supporting_sources
+from llm.citations import keep_close_citations, supporting_sources
+from llm.followups import named_library_files
 from retrieval.recall import fact_pages, first_hit, search_text
 from retrieval.rerank import rerank_nodes
 from retrieval.search import _keep, _order_nodes, _retrieve_named, _retrieve_nodes

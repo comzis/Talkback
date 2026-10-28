@@ -11,9 +11,6 @@ import config
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_model = None
-_tokenizer = None
-_host_warning_logged = False
 
 
 class HostUnreachable(Exception):
@@ -59,24 +56,27 @@ def _device():
 
 
 def _load():
-    global _model, _tokenizer
+    from state import get
+
+    talkback = get()
     with _lock:
-        if _model is None:
+        if talkback.rerank_model is None:
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             name = config.rerank_model_name()
             cache = str(model_cache_dir())
             device = _device()
             logger.info("Loading reranker %s from %s on %s", name, cache, device)
-            _tokenizer = AutoTokenizer.from_pretrained(
+            talkback.rerank_tokenizer = AutoTokenizer.from_pretrained(
                 name, cache_dir=cache, local_files_only=True
             )
-            _model = AutoModelForSequenceClassification.from_pretrained(
+            model = AutoModelForSequenceClassification.from_pretrained(
                 name, cache_dir=cache, local_files_only=True
             )
-            _model.to(device)
-            _model.eval()
-    return _model, _tokenizer
+            model.to(device)
+            model.eval()
+            talkback.rerank_model = model
+    return talkback.rerank_model, talkback.rerank_tokenizer
 
 
 def _mark(node, score: float):
@@ -129,10 +129,11 @@ def _host_health(url: str) -> dict | None:
 
 def _warn_host_down(url: str) -> None:
     """One warning for an outage. A later success arms the warning again."""
-    global _host_warning_logged
-    if _host_warning_logged:
+    from state import get
+
+    if get().rerank_host_warning_logged:
         return
-    _host_warning_logged = True
+    get().rerank_host_warning_logged = True
     logger.warning(
         "Host reranker at %s is unreachable. Scoring pairs in this container on CPU.",
         url,
@@ -140,8 +141,9 @@ def _warn_host_down(url: str) -> None:
 
 
 def _host_recovered() -> None:
-    global _host_warning_logged
-    _host_warning_logged = False
+    from state import get
+
+    get().rerank_host_warning_logged = False
 
 
 def active_rerank() -> dict:

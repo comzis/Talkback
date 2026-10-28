@@ -12,6 +12,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: Install API dependencies
         run: |
           python -m pip install --no-cache-dir torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
@@ -30,3 +33,5 @@ jobs:
           TRANSFORMERS_OFFLINE: "1"
           HF_DATASETS_OFFLINE: "1"
         run: python -m pytest
+      - name: Frontend tests
+        run: node --test app/tests/test_stream_events.mjs

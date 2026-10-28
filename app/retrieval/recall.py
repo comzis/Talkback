@@ -15,7 +15,7 @@ def fact_pages(case: dict) -> list[str]:
 
 def search_text(case: dict, by_id: dict[str, dict]) -> str:
     """The text the app would embed for this question, including a follow-up's topic."""
-    from llm.prompts import retrieval_text
+    from llm.followups import retrieval_text
 
     parent_id = case.get("continues")
     if not parent_id:

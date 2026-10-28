@@ -12,6 +12,17 @@ from pathlib import Path
 _current: Talkback | None = None
 
 
+class Bm25Cache:
+    """The in-memory BM25 index and the chunks it was built from."""
+
+    def __init__(self) -> None:
+        self.index = None
+        self.ids: list[str] = []
+        self.documents: list[str] = []
+        self.metadatas: list[dict] = []
+        self.count = -1
+
+
 class Talkback:
     """Process state that used to live in module globals."""
 
@@ -29,6 +40,12 @@ class Talkback:
         self.ingest_again = False
         self.models_ready = threading.Event()
         self.chat = None
+        self.heartbeat_stop: threading.Event | None = None
+        self.bm25 = Bm25Cache()
+        self.rerank_model = None
+        self.rerank_tokenizer = None
+        self.rerank_host_warning_logged = False
+        self.embed_host_warning_logged = False
         self.ingestion_status = {
             "status": "idle",
             "progress": 0,
