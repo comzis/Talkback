@@ -49,6 +49,8 @@ def test_a_changed_library_answer_stays_on_screen(monkeypatch):
     assert seen["answer"] == "The level is -99 LUFS."
     sources = [event for event in events if event["event"] == "sources"]
     assert sources[0]["data"]["sources"][0]["source"] == "a.pdf"
+    assert sources[0]["data"]["sources"][0]["used"] is True
+    assert "text" in sources[0]["data"]["sources"][0]
     assert "text" in sources[0]["data"]
 
 
@@ -107,7 +109,11 @@ def test_no_surviving_citation_shows_the_outside_note(monkeypatch):
     notices = [event["data"]["text"] for event in events if event["event"] == "notice"]
     assert notices == ["This answer is not from the documents and may not match them."]
     sources = [event for event in events if event["event"] == "sources"]
-    assert sources[0]["data"]["sources"] == []
+    cards = sources[0]["data"]["sources"]
+    assert len(cards) == 1
+    assert cards[0]["used"] is False
+    assert cards[0]["source"] == "a.pdf"
+    assert "text" not in cards[0]
 
 
 def test_an_unchanged_library_answer_has_no_footnote(monkeypatch):

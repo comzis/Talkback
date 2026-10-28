@@ -359,26 +359,38 @@ function updateQueue() {
 // Chat
 let activeAnswer = null;
 
-function appendSources(parent, sources) {
+function sourceHeading(source) {
+    return source.label || source.path || source.source || 'Unknown';
+}
+
+function appendSources(parent, sources, { provisional = false } = {}) {
     parent.querySelectorAll('.message-sources').forEach((node) => node.remove());
+    if (!sources || !sources.length) return;
     const sourcesEl = document.createElement('div');
     sourcesEl.className = 'message-sources';
+    if (provisional) sourcesEl.classList.add('sources-provisional');
     const title = document.createElement('div');
     title.className = 'sources-title';
-    title.textContent = 'Sources';
+    title.textContent = provisional ? 'Passages found' : 'Sources';
     sourcesEl.appendChild(title);
     sources.forEach((source, index) => {
+        const used = provisional || source.used !== false;
         const item = document.createElement('div');
-        item.className = 'source-item';
+        item.className = used ? 'source-item' : 'source-item source-unused';
         const number = document.createElement('div');
         number.className = 'source-number';
         number.textContent = String(source.number || index + 1);
         const sourceText = document.createElement('div');
         sourceText.className = 'source-text';
         const name = document.createElement('strong');
-        name.textContent = source.label || source.path || source.source || 'Unknown';
+        name.textContent = sourceHeading(source);
         sourceText.appendChild(name);
-        if (source.text) {
+        if (!used) {
+            const mark = document.createElement('span');
+            mark.className = 'source-unused-mark';
+            mark.textContent = ' searched, not used';
+            sourceText.appendChild(mark);
+        } else if (source.text) {
             const excerpt = document.createElement('span');
             const snippet = source.text.length > 500 ? `${source.text.slice(0, 500)}…` : source.text;
             excerpt.textContent = ` ${snippet}`;
@@ -387,7 +399,31 @@ function appendSources(parent, sources) {
         item.append(number, sourceText);
         sourcesEl.appendChild(item);
     });
-    parent.appendChild(sourcesEl);
+    const content = parent.querySelector('.message-content');
+    if (content) content.after(sourcesEl);
+    else parent.appendChild(sourcesEl);
+}
+
+function showStatus(messageId, text) {
+    const body = document.getElementById(messageId)?.querySelector('.message-body');
+    if (!body) return;
+    let status = body.querySelector('.message-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.className = 'message-status';
+        const content = body.querySelector('.message-content');
+        if (content) body.insertBefore(status, content);
+        else body.appendChild(status);
+    }
+    const previous = status.dataset.stages
+        ? status.dataset.stages.split('\u2192').map((part) => part.trim()).filter(Boolean)
+        : [];
+    if (!previous.includes(text)) previous.push(text);
+    status.dataset.stages = previous.join('\u2192');
+    status.textContent = previous.join(' → ');
+    const content = body.querySelector('.message-content');
+    if (content && content.textContent === 'Thinking...') content.textContent = '';
+    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
 
 function showNotice(messageId, text) {
@@ -420,19 +456,17 @@ function showFootnote(messageId, text) {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
 
-function setMessageBody(messageId, text, sources) {
+function setMessageBody(messageId, text, sources, questionId) {
     const body = document.getElementById(messageId)?.querySelector('.message-body');
     const content = body?.querySelector('.message-content');
-    if (!content || !body) return;
+    if (!content) return;
     content.textContent = text;
-    // Sources sit outside the answer text so history stays clean.
     if (sources && sources.length) {
-        appendSources(body, sources);
-        const block = body.querySelector('.message-sources');
-        const footnote = body.querySelector('.message-footnote');
-        if (block && footnote) body.insertBefore(block, footnote);
-    } else {
-        body.querySelectorAll('.message-sources').forEach((node) => node.remove());
+        const questionBody = questionId
+            ? document.getElementById(questionId)?.querySelector('.message-body')
+            : null;
+        if (questionBody) appendSources(questionBody, sources);
+        else appendSources(body, sources);
     }
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
@@ -497,10 +531,11 @@ async function sendMessage() {
     const query = elements.chatInput.value.trim();
     if (!query) return;
 
-    addMessage(query, 'user');
+    const questionId = addMessage(query, 'user');
     elements.chatInput.value = '';
     resizeChatInput();
     const messageId = addMessage('Thinking...', 'assistant', true);
+    showStatus(messageId, 'Searching…');
     const controller = new AbortController();
     activeAnswer = controller;
     elements.sendBtn.textContent = 'Stop';
@@ -531,8 +566,24 @@ async function sendMessage() {
             const step = await reader.read();
             buffer += decoder.decode(step.value || new Uint8Array(), { stream: !step.done });
             buffer = consumeSseBuffer(buffer, (eventName, data) => {
-                if (eventName === 'notice') {
+                if (eventName === 'status') {
+                    showStatus(messageId, data.text || '');
+                } else if (eventName === 'notice') {
                     showNotice(messageId, data.text || '');
+                } else if (eventName === 'retrieved') {
+                    const count = Number(data.count) || (data.sources || []).length;
+                    showStatus(
+                        messageId,
+                        `${count} passage${count === 1 ? '' : 's'} found`
+                    );
+                    const questionBody = document
+                        .getElementById(questionId)
+                        ?.querySelector('.message-body');
+                    if (questionBody) {
+                        appendSources(questionBody, data.sources || [], {
+                            provisional: true,
+                        });
+                    }
                 } else if (eventName === 'token') {
                     if (!sawToken) streamed = '';
                     sawToken = true;
@@ -544,7 +595,12 @@ async function sendMessage() {
                     if (typeof data.text === 'string') {
                         streamed = data.text;
                     }
-                    setMessageBody(messageId, streamed, data.sources || []);
+                    setMessageBody(
+                        messageId,
+                        streamed,
+                        data.sources || [],
+                        questionId
+                    );
                 } else if (eventName === 'error') {
                     setMessageBody(messageId, data.detail || 'The query could not be completed.');
                 }

@@ -169,7 +169,7 @@ async def query_index(request: QueryRequest):
 
 @app.post("/query/stream")
 async def query_stream(request: QueryRequest):
-    """Stream answer tokens, then the sources the finished answer used."""
+    """Stream status, retrieved candidates, answer tokens, then final sources."""
     if not request.query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
     _reject_if_reindex_required()
