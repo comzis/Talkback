@@ -47,7 +47,7 @@ __all__ = [
     "start_initial_index",
     "start_reindex_schedule",
 ]
-from llm.client import _complete, _stream_deltas, _warm_up, wait_for_models
+from llm.client import _stream_deltas, _warm_up, wait_for_models
 from retrieval.search import (
     _retrieve_nodes,
     _source_record,
@@ -348,11 +348,6 @@ def iter_answer(query: str, history=None, scope: str | None = None):
     except Exception:
         logger.exception("Query failed")
         raise
-
-
-def assistant_reply(query: str) -> str:
-    """Answer as a general assistant, with no document requirement."""
-    return _complete(assistant_prompt(query))
 
 
 def answer_query(query: str, history=None, scope: str | None = None) -> dict:

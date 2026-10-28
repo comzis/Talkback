@@ -1,19 +1,20 @@
-# app/main.py
+"""HTTP routes for Talkback: chat, library, system status, and model select."""
+
+import asyncio
 import json
-import os
 import logging
+import os
 import shutil
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
-from fastapi.staticfiles import StaticFiles
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List
-import asyncio
 
 import config
 import retrieval.rerank as rerank
@@ -339,8 +340,8 @@ async def get_file_types():
             "total_files": len(files),
             "total_size": sum(f["size"] for f in files),
         }
-    except Exception as e:
-        logger.error(f"Error getting file types: {e}")
+    except Exception:
+        logger.exception("Error getting file types")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
         )
@@ -359,7 +360,7 @@ async def root():
 
 
 @app.post("/upload")
-async def upload_files(files: List[UploadFile] = File(...)):
+async def upload_files(files: list[UploadFile] = File(...)):
     """
     Save files into the library and index them in the same request.
     """
@@ -399,8 +400,8 @@ async def upload_files(files: List[UploadFile] = File(...)):
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error during file upload: {e}")
+    except Exception:
+        logger.exception("Error during file upload")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
         )
@@ -479,8 +480,8 @@ async def list_uploaded_files():
                 for file_type in ["document", "code", "data", "image", "other"]
             },
         }
-    except Exception as e:
-        logger.error(f"Error listing files: {e}")
+    except Exception:
+        logger.exception("Error listing files")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
         )
@@ -525,8 +526,8 @@ async def list_llm_models():
                     status_code=response.status_code,
                     detail="Failed to fetch models from Ollama",
                 )
-    except Exception as e:
-        logger.error(f"Error listing LLM models: {e}")
+    except Exception:
+        logger.exception("Error listing LLM models")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
         )
@@ -585,8 +586,8 @@ async def select_llm_model(request: LLMSelectRequest):
                 )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error selecting LLM model: {e}")
+    except Exception:
+        logger.exception("Error selecting LLM model")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
         )
@@ -625,8 +626,8 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
                         async for line in response.aiter_lines():
                             if line:
                                 logger.info(f"Ollama pull: {line}")
-            except Exception as e:
-                logger.error(f"Error pulling model: {e}")
+            except Exception:
+                logger.exception("Error pulling model")
 
         background_tasks.add_task(pull_model)
 
@@ -635,8 +636,8 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
             "model": request.model,
             "status": "pulling",
         }
-    except Exception as e:
-        logger.error(f"Error initiating model pull: {e}")
+    except Exception:
+        logger.exception("Error initiating model pull")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
         )

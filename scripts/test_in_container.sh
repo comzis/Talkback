@@ -18,7 +18,8 @@ exec docker compose run --rm --no-deps --name talkback-pytest --user root \
   -e PYTHONPATH=/app \
   -v "$PWD/app/tests:/opt/talkback/app/tests:ro" \
   -v "$PWD/scripts:/opt/talkback/scripts:ro" \
-  -v "$PWD/tests/eval:/opt/talkback/tests/eval:ro" \
+  -v "$PWD/tests:/opt/talkback/tests:ro" \
+  -v "$PWD/docker-compose.yml:/opt/talkback/docker-compose.yml:ro" \
   -v "$PWD/requirements-dev.txt:/opt/requirements-dev.txt:ro" \
   rag-api -c '
 import importlib.util

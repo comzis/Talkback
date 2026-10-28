@@ -77,6 +77,14 @@ def collection_count() -> int:
     return get().chroma_collection.count()
 
 
+def chunk_metadatas() -> list:
+    """Every stored chunk's metadata, or [] when Chroma is empty or offline."""
+    if get().chroma_collection is None or collection_count() == 0:
+        return []
+    stored = get().chroma_collection.get(include=["metadatas"])
+    return stored.get("metadatas") or []
+
+
 def get_or_create_cached_index() -> VectorStoreIndex:
     if get().cached_index is not None:
         return get().cached_index

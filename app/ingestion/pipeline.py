@@ -20,6 +20,7 @@ from llm.client import wait_for_models
 from sources.filesystem import filesystem_source
 from state import get
 from store.chroma import (
+    chunk_metadatas,
     collection_count,
     delete_chunks_for_file,
     mark_file_complete,
@@ -293,13 +294,6 @@ def open_status() -> StatusStore:
     return store
 
 
-def _chunk_metadatas() -> list:
-    if get().chroma_collection is None or collection_count() == 0:
-        return []
-    stored = get().chroma_collection.get(include=["metadatas"])
-    return stored.get("metadatas") or []
-
-
 def _ingest_once() -> None:
     """Add new or changed files without dropping documents already indexed."""
     logger.info("Ingestion started for %s", get().upload_dir)
@@ -316,7 +310,7 @@ def _ingest_once() -> None:
         source = filesystem_source()
         status = open_status()
         if status.empty():
-            status.migrate(_chunk_metadatas())
+            status.migrate(chunk_metadatas())
         items = source.list_items()
         by_key = {item.id: item for item in items}
         on_disk = {item.id: disk_signature(Path(item.location)) for item in items}

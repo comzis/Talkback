@@ -408,17 +408,6 @@ class StatusStore:
         conn.commit()
 
 
-def _chunk_metadatas():
-    from state import get
-    from store.chroma import collection_count
-
-    collection = get().chroma_collection
-    if collection is None or collection_count() == 0:
-        return []
-    stored = collection.get(include=["metadatas"])
-    return stored.get("metadatas") or []
-
-
 def main(argv: list[str] | None = None) -> None:
     """migrate copies Chroma metadata into an empty table. rebuild replaces the table."""
     import os
@@ -428,14 +417,14 @@ def main(argv: list[str] | None = None) -> None:
     if args not in (["migrate"], ["rebuild"]):
         raise SystemExit("Usage: python -m store.status_db migrate|rebuild")
     from state import activate, get
-    from store.chroma import connect_chroma
+    from store.chroma import chunk_metadatas, connect_chroma
 
     os.environ.setdefault("STATUS_DIR", "/app/status")
     activate()
     connect_chroma()
     store = StatusStore(get().status_dir / "library.sqlite")
     store.open()
-    metadatas = _chunk_metadatas()
+    metadatas = chunk_metadatas()
     if args == ["migrate"]:
         store.migrate(metadatas)
     else:
