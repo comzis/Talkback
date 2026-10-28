@@ -30,12 +30,15 @@ in-container embed/rerank models were not loaded (host stayed up).
 when the collection count changes or after ingest/delete. Soak test:
 `scripts/soak_api_memory.py` (200 questions; RSS at start, every 50, and end).
 
-After the fix, a 50-question soak on the same stack stayed flat:
+After the fix, `scripts/soak_api_memory.py --count 200` stayed flat:
 
 | Sample | `rag_api_service` RSS |
 |---|---|
-| start (warm BM25 + library cache) | 508.5 MiB |
-| after 50 | 517.6 MiB |
+| start (warm BM25 + library cache) | 510.8 MiB |
+| after 50 | 513.6 MiB |
+| after 100 | 513.8 MiB |
+| after 150 | 513.5 MiB |
+| after 200 | 513.2 MiB |
 
 Fixed caches: BM25 11834 docs, library index 14 files, docstore 0, no
 in-container embed/rerank weights.
