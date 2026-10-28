@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_live_eval as evalmod  # noqa: E402
+
 MAIN = ROOT / "tests" / "eval" / "questions.json"
 HELD = ROOT / "tests" / "eval" / "heldout.json"
 
