@@ -147,16 +147,15 @@ _USER_LINES = {
     },
     "search_unavailable": {
         "en": (
-            "Search is temporarily unavailable. The host embedder is down and "
-            "the backup model could not be loaded."
+            "Search is temporarily unavailable. The host embed/rerank service is down."
         ),
         "fr": (
-            "La recherche est temporairement indisponible. L'embedder hôte est "
-            "indisponible et le modèle de secours n'a pas pu être chargé."
+            "La recherche est temporairement indisponible. Le service "
+            "d'embed/rerank hôte est indisponible."
         ),
         "es": (
-            "La búsqueda no está disponible temporalmente. El embedder del host "
-            "está caído y no se pudo cargar el modelo de respaldo."
+            "La búsqueda no está disponible temporalmente. El servicio de "
+            "embed/rerank del host está caído."
         ),
     },
 }

@@ -366,8 +366,8 @@ def iter_answer(query: str, history=None, scope: str | None = None):
         )
         yield from _stream_prompt(prompt, 0.1, sources, query=query)
     except SearchUnavailable as exc:
-        # Host embed/rerank died and the container backup could not load. Tell
-        # the user clearly instead of answering as if the library was searched.
+        # Host embed/rerank is required on Mac and is down. Tell the user
+        # clearly instead of answering as if the library was searched.
         logger.warning("Search unavailable (scope=%r): %s", scope, exc)
         text = user_line("search_unavailable", query)
         yield {"event": "notice", "data": {"text": text}}

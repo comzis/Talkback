@@ -18,12 +18,12 @@ class HostUnreachable(Exception):
     """The configured host reranker did not accept a connection."""
 
 
-def _local_unavailable(exc: Exception) -> SearchUnavailable:
+def _host_required(exc: Exception | None = None) -> SearchUnavailable:
     err = SearchUnavailable(
-        "Search is temporarily unavailable. The host reranker is down and "
-        "the backup model could not be loaded."
+        "Search is temporarily unavailable. The host reranker is down."
     )
-    err.__cause__ = exc
+    if exc is not None:
+        err.__cause__ = exc
     return err
 
 
@@ -77,18 +77,15 @@ def _load():
             cache = str(model_cache_dir())
             device = _device()
             logger.info("Loading reranker %s from %s on %s", name, cache, device)
-            try:
-                talkback.rerank_tokenizer = AutoTokenizer.from_pretrained(
-                    name, cache_dir=cache, local_files_only=True
-                )
-                model = AutoModelForSequenceClassification.from_pretrained(
-                    name, cache_dir=cache, local_files_only=True
-                )
-                model.to(device)
-                model.eval()
-                talkback.rerank_model = model
-            except Exception as exc:
-                raise _local_unavailable(exc) from exc
+            talkback.rerank_tokenizer = AutoTokenizer.from_pretrained(
+                name, cache_dir=cache, local_files_only=True
+            )
+            model = AutoModelForSequenceClassification.from_pretrained(
+                name, cache_dir=cache, local_files_only=True
+            )
+            model.to(device)
+            model.eval()
+            talkback.rerank_model = model
     return talkback.rerank_model, talkback.rerank_tokenizer
 
 
@@ -148,7 +145,7 @@ def _warn_host_down(url: str) -> None:
         return
     get().rerank_host_warning_logged = True
     logger.warning(
-        "Host reranker at %s is unreachable. Scoring pairs in this container on CPU.",
+        "Host reranker at %s is unreachable. Library search needs that service.",
         url,
     )
 
@@ -162,8 +159,8 @@ def _host_recovered() -> None:
 def active_rerank() -> dict:
     """The reranker the next query will use.
 
-    A set RERANK_URL is probed. If that process is down, queries score pairs
-    in this container and this report says so.
+    A set RERANK_URL is probed. If that process is down, search is unavailable
+    (no in-container CPU fallback when a host URL is configured).
     """
     url = config.rerank_url()
     if not url:
@@ -172,8 +169,8 @@ def active_rerank() -> dict:
     if health is None:
         _warn_host_down(url)
         return {
-            "mode": "container",
-            "device": "cpu",
+            "mode": "unavailable",
+            "device": "",
             "url": url,
             "host": "unreachable",
         }
@@ -206,17 +203,14 @@ def rerank_nodes(query: str, nodes: list):
                 url,
                 {"query": query_text, "passages": passages, "max_length": limit},
             )
-        except HostUnreachable:
+        except HostUnreachable as exc:
             _warn_host_down(url)
-            scores, where = _local_scores(query_text, passages, limit)
-        else:
-            _host_recovered()
-            scores = [float(score) for score in payload["scores"]]
-            if len(scores) != len(nodes):
-                raise RuntimeError(
-                    "Host reranker returned a different number of scores."
-                )
-            where = str(payload.get("device") or url)
+            raise _host_required(exc) from exc
+        _host_recovered()
+        scores = [float(score) for score in payload["scores"]]
+        if len(scores) != len(nodes):
+            raise RuntimeError("Host reranker returned a different number of scores.")
+        where = str(payload.get("device") or url)
     else:
         scores, where = _local_scores(query_text, passages, limit)
     logger.info(

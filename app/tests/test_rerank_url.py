@@ -67,8 +67,9 @@ def test_remote_rerank_orders_scores_and_does_not_load_the_model(monkeypatch):
     assert seen["body"]["max_length"] == 512
 
 
-def test_unreachable_host_uses_the_container_and_warns_once(monkeypatch, caplog):
+def test_unreachable_host_raises_search_unavailable(monkeypatch, caplog):
     import retrieval.rerank as rerank
+    from store.search_errors import SearchUnavailable
 
     monkeypatch.setenv("RERANK_URL", "http://rerank.local")
     state.get().rerank_host_warning_logged = False
@@ -78,7 +79,11 @@ def test_unreachable_host_uses_the_container_and_warns_once(monkeypatch, caplog)
         lambda url, body: (_ for _ in ()).throw(rerank.HostUnreachable("down")),
     )
     monkeypatch.setattr(
-        rerank, "_local_scores", lambda query, passages, limit: ([1.5], "cpu")
+        rerank,
+        "_local_scores",
+        lambda query, passages, limit: (_ for _ in ()).throw(
+            AssertionError("local model used")
+        ),
     )
 
     class Node:
@@ -90,25 +95,23 @@ def test_unreachable_host_uses_the_container_and_warns_once(monkeypatch, caplog)
             return "passage"
 
     with caplog.at_level("WARNING"):
-        first = rerank.rerank_nodes("query", [Node()])
-        second = rerank.rerank_nodes("query", [Node()])
-    assert first[0].metadata["rerank_score"] == 1.5
-    assert second[0].metadata["rerank_score"] == 1.5
+        with pytest.raises(SearchUnavailable, match="host reranker is down"):
+            rerank.rerank_nodes("query", [Node()])
     warnings = [record for record in caplog.records if "unreachable" in record.message]
     assert len(warnings) == 1
 
 
-def test_active_rerank_reports_a_down_host_as_container(monkeypatch):
+def test_active_rerank_reports_a_down_host_as_unavailable(monkeypatch):
     import retrieval.rerank as rerank
 
     monkeypatch.setenv("RERANK_URL", "http://rerank.local")
     state.get().rerank_host_warning_logged = False
     monkeypatch.setattr(rerank, "_host_health", lambda url: None)
     report = rerank.active_rerank()
-    assert report["mode"] == "container"
+    assert report["mode"] == "unavailable"
     assert report["host"] == "unreachable"
     again = rerank.active_rerank()
-    assert again["mode"] == "container"
+    assert again["mode"] == "unavailable"
 
 
 def test_active_rerank_reports_the_host_device(monkeypatch):

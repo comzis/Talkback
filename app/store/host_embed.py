@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 from typing import Any
 
 import config
@@ -12,19 +11,17 @@ from store.search_errors import SearchUnavailable
 
 logger = logging.getLogger(__name__)
 
-_lock = threading.Lock()
-
 
 class HostUnreachable(Exception):
     """The configured host embedder did not accept a connection."""
 
 
-def _local_unavailable(exc: Exception) -> SearchUnavailable:
+def _host_required(exc: Exception | None = None) -> SearchUnavailable:
     err = SearchUnavailable(
-        "Search is temporarily unavailable. The host embedder is down and "
-        "the backup model could not be loaded."
+        "Search is temporarily unavailable. The host embedder is down."
     )
-    err.__cause__ = exc
+    if exc is not None:
+        err.__cause__ = exc
     return err
 
 
@@ -39,7 +36,7 @@ def _warn_host_down(url: str) -> None:
         return
     get().embed_host_warning_logged = True
     logger.warning(
-        "Host embedder at %s is unreachable. Embedding in this container on CPU.",
+        "Host embedder at %s is unreachable. Library search needs that service.",
         url,
     )
 
@@ -92,8 +89,8 @@ def active_embed() -> dict:
     if health is None:
         _warn_host_down(url)
         return {
-            "mode": "container",
-            "device": "cpu",
+            "mode": "unavailable",
+            "device": "",
             "url": url,
             "host": "unreachable",
         }
@@ -108,8 +105,25 @@ def active_embed() -> dict:
     }
 
 
+def _local_embed_model(model_name: str, batch: int):
+    """In-process HuggingFace embedder (Linux GPU server path when EMBED_URL is empty)."""
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
+    return HuggingFaceEmbedding(
+        model_name=model_name,
+        query_instruction=embeddings.query_instruction(model_name),
+        text_instruction=embeddings.text_instruction(model_name),
+        embed_batch_size=batch,
+    )
+
+
 def build_embed_model():
-    """Host-aware embedder when EMBED_URL is set; otherwise HuggingFace in-process."""
+    """Host embedder when EMBED_URL is set; otherwise HuggingFace in-process.
+
+    When EMBED_URL is set, a down host raises SearchUnavailable. There is no
+    in-container CPU fallback: Mac stacks need the host MPS service, and the
+    Linux server leaves EMBED_URL empty so this process uses the GPU directly.
+    """
     from llama_index.core.base.embeddings.base import BaseEmbedding
     from pydantic import Field, PrivateAttr
 
@@ -118,7 +132,7 @@ def build_embed_model():
     batch = config.embed_batch()
 
     class HostOrLocalEmbedding(BaseEmbedding):
-        """POST /embed on the host, with a lazy CPU fallback in this process."""
+        """POST /embed on the host, or HuggingFace when no host URL is set."""
 
         embed_endpoint: str = Field(default="")
         _local: Any = PrivateAttr(default=None)
@@ -140,25 +154,10 @@ def build_embed_model():
             return embeddings.embedded_passage(self.model_name, text)
 
         def _ensure_local(self):
-            with _lock:
-                if self._local is None:
-                    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-
-                    logger.info(
-                        "Loading in-process embedder %s on CPU", self.model_name
-                    )
-                    try:
-                        self._local = HuggingFaceEmbedding(
-                            model_name=self.model_name,
-                            query_instruction=self._query_instruction,
-                            text_instruction=self._text_instruction,
-                            embed_batch_size=self.embed_batch_size,
-                        )
-                    except Exception as exc:
-                        # Offline cache miss, OOM, or a hung download must not
-                        # become a silent general-knowledge answer.
-                        raise _local_unavailable(exc) from exc
-                return self._local
+            if self._local is None:
+                logger.info("Loading in-process embedder %s", self.model_name)
+                self._local = _local_embed_model(self.model_name, self.embed_batch_size)
+            return self._local
 
         def _embed_batch(
             self, texts: list[str], *, is_query: bool
@@ -172,12 +171,9 @@ def build_embed_model():
 
             try:
                 payload = _post_embeddings(self.embed_endpoint, prepared)
-            except HostUnreachable:
+            except HostUnreachable as exc:
                 _warn_host_down(self.embed_endpoint)
-                local = self._ensure_local()
-                if is_query:
-                    return [local.get_query_embedding(text) for text in texts]
-                return local.get_text_embedding_batch(texts)
+                raise _host_required(exc) from exc
 
             _host_recovered()
             vectors = payload["embeddings"]
