@@ -8,6 +8,7 @@ from typing import Any
 
 import config
 import store.embeddings as embeddings
+from store.search_errors import SearchUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,15 @@ _lock = threading.Lock()
 
 class HostUnreachable(Exception):
     """The configured host embedder did not accept a connection."""
+
+
+def _local_unavailable(exc: Exception) -> SearchUnavailable:
+    err = SearchUnavailable(
+        "Search is temporarily unavailable. The host embedder is down and "
+        "the backup model could not be loaded."
+    )
+    err.__cause__ = exc
+    return err
 
 
 def embed_url() -> str:
@@ -137,12 +147,17 @@ def build_embed_model():
                     logger.info(
                         "Loading in-process embedder %s on CPU", self.model_name
                     )
-                    self._local = HuggingFaceEmbedding(
-                        model_name=self.model_name,
-                        query_instruction=self._query_instruction,
-                        text_instruction=self._text_instruction,
-                        embed_batch_size=self.embed_batch_size,
-                    )
+                    try:
+                        self._local = HuggingFaceEmbedding(
+                            model_name=self.model_name,
+                            query_instruction=self._query_instruction,
+                            text_instruction=self._text_instruction,
+                            embed_batch_size=self.embed_batch_size,
+                        )
+                    except Exception as exc:
+                        # Offline cache miss, OOM, or a hung download must not
+                        # become a silent general-knowledge answer.
+                        raise _local_unavailable(exc) from exc
                 return self._local
 
         def _embed_batch(

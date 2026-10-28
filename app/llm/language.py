@@ -145,6 +145,20 @@ _USER_LINES = {
         "fr": "La bibliothèque ne couvre pas cela.",
         "es": "La biblioteca no cubre eso.",
     },
+    "search_unavailable": {
+        "en": (
+            "Search is temporarily unavailable. The host embedder is down and "
+            "the backup model could not be loaded."
+        ),
+        "fr": (
+            "La recherche est temporairement indisponible. L'embedder hôte est "
+            "indisponible et le modèle de secours n'a pas pu être chargé."
+        ),
+        "es": (
+            "La búsqueda no está disponible temporalmente. El embedder del host "
+            "está caído y no se pudo cargar el modelo de respaldo."
+        ),
+    },
 }
 
 

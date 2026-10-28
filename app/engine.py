@@ -69,6 +69,7 @@ from llm.language import (
     user_line,
 )
 from llm.templates import assistant_prompt, explanation_prompt
+from store.search_errors import SearchUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -364,6 +365,15 @@ def iter_answer(query: str, history=None, scope: str | None = None):
             history,
         )
         yield from _stream_prompt(prompt, 0.1, sources, query=query)
+    except SearchUnavailable as exc:
+        # Host embed/rerank died and the container backup could not load. Tell
+        # the user clearly instead of answering as if the library was searched.
+        logger.warning("Search unavailable (scope=%r): %s", scope, exc)
+        text = user_line("search_unavailable", query)
+        yield {"event": "notice", "data": {"text": text}}
+        yield {"event": "token", "data": {"text": text}}
+        yield {"event": "sources", "data": {"sources": []}}
+        yield {"event": "done", "data": {}}
     except Exception:
         # Log once here with the scope, then let the API layer shape the error.
         logger.exception("Query failed (scope=%r)", scope)
