@@ -103,4 +103,6 @@ services:
 # Ollama runs on the host at http://host.docker.internal:11434
 
 volumes:
+  # Explicit name so the SQLite status DB survives a compose project rename.
   talkback_status:
+    name: talkback_status
