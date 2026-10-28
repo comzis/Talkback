@@ -64,6 +64,7 @@ from llm.prompts import (
     passage_windows,
     retrieval_text,
     scrub_general_figures,
+    source_label,
     take_stream_piece,
     should_search_library,
     supporting_sources,
@@ -134,6 +135,41 @@ def init() -> None:
     threading.Thread(target=_warm_up, name="talkback-warmup", daemon=True).start()
 
 
+def _candidate_card(source: dict) -> dict:
+    """File and page only. Early cards do not carry the passage text."""
+    card = {
+        "number": int(source.get("number") or 0),
+        "source": source.get("source") or source.get("path") or "Document",
+        "path": source.get("path") or source.get("source") or "Document",
+        "label": source.get("label") or source_label(source),
+        "used": False,
+    }
+    page = source.get("page")
+    if page not in (None, ""):
+        card["page"] = str(page)
+    return card
+
+
+def _final_source_cards(
+    candidates: list[dict], used: list[dict], query: str, reply: str
+):
+    """Keep every retrieved card. Mark the ones the answer cited."""
+    used_by_number = {int(source["number"]): source for source in used}
+    cards = []
+    for candidate in candidates:
+        number = int(candidate.get("number") or 0)
+        cited = used_by_number.get(number)
+        if cited is None:
+            cards.append(_candidate_card(candidate))
+            continue
+        card = dict(cited)
+        card["used"] = True
+        card["label"] = card.get("label") or source_label(card)
+        card["text"] = display_excerpt(card.get("text") or "", query, reply)
+        cards.append(card)
+    return cards
+
+
 def _stream_prompt(
     prompt: str,
     temperature: float | None,
@@ -145,7 +181,8 @@ def _stream_prompt(
 
     A library reply is checked against the excerpts after the stream. If that
     check changes the wording, the correction is a footnote. Words already
-    sent stay. Citations use the checked wording.
+    sent stay. Citations use the checked wording. Every retrieved candidate
+    stays in the final sources list; unused ones are marked used=false.
     """
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
@@ -196,17 +233,14 @@ def _stream_prompt(
     if not used:
         logger.info("No citation survived the check")
         yield {"event": "notice", "data": {"text": outside_document_note(query)}}
-        if notes:
-            yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
-        yield {"event": "sources", "data": {"sources": []}}
-        yield {"event": "done", "data": {}}
-        return
     if notes:
         yield {"event": "footnote", "data": {"text": "\n".join(notes)}}
-    logger.info("Query cited %s", [source["source"] for source in used])
-    for source in used:
-        source["text"] = display_excerpt(source.get("text") or "", query, reply)
-    yield {"event": "sources", "data": {"sources": used}}
+    cards = _final_source_cards(sources, used, query, reply)
+    logger.info(
+        "Query cited %s",
+        [source["source"] for source in cards if source.get("used")],
+    )
+    yield {"event": "sources", "data": {"sources": cards}}
     yield {"event": "done", "data": {}}
 
 
@@ -286,6 +320,7 @@ def iter_answer(query: str, history=None, scope: str | None = None):
                 notice_for_general(query, history),
             )
             return
+        yield {"event": "status", "data": {"text": "Searching…"}}
         index = get_or_create_cached_index()
         indexed, _legacy, _incomplete = indexed_documents()
         library_files = sorted(indexed)
@@ -302,6 +337,12 @@ def iter_answer(query: str, history=None, scope: str | None = None):
         sources = [
             _source_record(node, number, query) for number, node in enumerate(nodes, 1)
         ]
+        candidates = [_candidate_card(source) for source in sources]
+        yield {
+            "event": "retrieved",
+            "data": {"sources": candidates, "count": len(candidates)},
+        }
+        yield {"event": "status", "data": {"text": "Writing answer…"}}
         prompt = explanation_prompt(
             query,
             library_files,

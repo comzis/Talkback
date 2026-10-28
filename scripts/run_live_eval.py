@@ -261,7 +261,8 @@ def judge(case: dict, events: list[dict]) -> list[str]:
     """Return the facts that failed. An empty list means the case passed."""
     problems = []
     answer = _answer(events)
-    sources = _sources(events)
+    # Early retrieved cards stay with used=false; only cited cards score the case.
+    sources = [source for source in _sources(events) if source.get("used", True)]
     notices = _notices(events)
     if case["path"] == "library":
         if case.get("notice") and case["notice"] in notices:
