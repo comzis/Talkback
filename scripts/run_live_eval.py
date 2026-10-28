@@ -369,8 +369,8 @@ def ask(
     history: list[dict] | None = None,
     timeout: float = 180,
     scope: str | None = None,
-) -> tuple[list[dict], float | None]:
-    """Return the events and the seconds until the first token event."""
+) -> tuple[list[dict], float | None, float | None]:
+    """Return events, seconds to first retrieved card, and seconds to first token."""
     body = {"query": query, "history": history or []}
     if scope:
         body["scope"] = scope
@@ -381,7 +381,8 @@ def ask(
         headers={"Content-Type": "application/json"},
     )
     started = time.perf_counter()
-    first: float | None = None
+    first_retrieved: float | None = None
+    first_token: float | None = None
     body = bytearray()
     with urllib.request.urlopen(request, timeout=timeout) as response:
         while True:
@@ -389,9 +390,11 @@ def ask(
             if not part:
                 break
             body.extend(part)
-            if first is None and b"event: token" in body:
-                first = time.perf_counter() - started
-    return parse_sse(body.decode()), first
+            if first_retrieved is None and b"event: retrieved" in body:
+                first_retrieved = time.perf_counter() - started
+            if first_token is None and b"event: token" in body:
+                first_token = time.perf_counter() - started
+    return parse_sse(body.decode()), first_retrieved, first_token
 
 
 def main() -> int:
@@ -432,19 +435,24 @@ def main() -> int:
                     if args.scope_file and parent.get("file")
                     else None
                 )
-                parent_events, _parent_first = ask(
+                parent_events, _parent_retrieved, _parent_first = ask(
                     args.base_url, parent["query"], scope=parent_scope
                 )
                 history = prior_turns(parent, parent_events)
             results.append(ask(args.base_url, case["query"], history, scope=scope))
-        runs = [events for events, _first in results]
-        firsts = [first for _events, first in results]
+        runs = [events for events, _retrieved, _first in results]
+        retrieveds = [retrieved for _events, retrieved, _first in results]
+        firsts = [first for _events, _retrieved, first in results]
         passed, lines = summarise(case, runs)
         missed += args.runs - passed
+        shown_retrieved = ", ".join(
+            "n/a" if value is None else f"{value:.1f}s" for value in retrieveds
+        )
         shown = ", ".join(
             "n/a" if first is None else f"{first:.1f}s" for first in firsts
         )
         lines.insert(1, f"  first word {shown}")
+        lines.insert(1, f"  first sources {shown_retrieved}")
         if scope:
             lines.insert(1, f"  scope {scope}")
         print("\n".join(lines))
