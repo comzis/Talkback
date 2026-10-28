@@ -11,7 +11,6 @@ import store.embeddings as embeddings
 
 logger = logging.getLogger(__name__)
 
-_host_warning_logged = False
 _lock = threading.Lock()
 
 
@@ -24,10 +23,11 @@ def embed_url() -> str:
 
 
 def _warn_host_down(url: str) -> None:
-    global _host_warning_logged
-    if _host_warning_logged:
+    from state import get
+
+    if get().embed_host_warning_logged:
         return
-    _host_warning_logged = True
+    get().embed_host_warning_logged = True
     logger.warning(
         "Host embedder at %s is unreachable. Embedding in this container on CPU.",
         url,
@@ -35,8 +35,9 @@ def _warn_host_down(url: str) -> None:
 
 
 def _host_recovered() -> None:
-    global _host_warning_logged
-    _host_warning_logged = False
+    from state import get
+
+    get().embed_host_warning_logged = False
 
 
 def _post_embeddings(url: str, texts: list[str]) -> dict:

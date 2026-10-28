@@ -3,6 +3,15 @@
 import pytest
 
 from support import load_rerank_host
+import state
+
+
+@pytest.fixture(autouse=True)
+def _process():
+    state.reset_for_tests()
+    state.activate()
+    yield
+    state.reset_for_tests()
 
 
 def _host_module():
@@ -20,7 +29,7 @@ def test_active_embed_reports_a_down_host_as_container(monkeypatch):
     import store.host_embed as host_embed
 
     monkeypatch.setenv("EMBED_URL", "http://embed.local")
-    host_embed._host_warning_logged = False
+    state.get().embed_host_warning_logged = False
     monkeypatch.setattr(host_embed, "_host_health", lambda url: None)
     report = host_embed.active_embed()
     assert report["mode"] == "container"
@@ -75,7 +84,7 @@ def test_unreachable_host_falls_back_once(monkeypatch, caplog):
     import store.host_embed as host_embed
 
     monkeypatch.setenv("EMBED_URL", "http://embed.local")
-    host_embed._host_warning_logged = False
+    state.get().embed_host_warning_logged = False
     monkeypatch.setattr(
         host_embed,
         "_post_embeddings",

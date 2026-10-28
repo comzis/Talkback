@@ -54,9 +54,6 @@ def _hide_from_models(node, keys: tuple[str, ...]) -> None:
             node.excluded_llm_metadata_keys.append(key)
 
 
-_heartbeat_stop: threading.Event | None = None
-
-
 def lock_holder() -> str:
     return f"{socket.gethostname()}:{os.getpid()}"
 
@@ -74,22 +71,22 @@ def _beat(holder: str, stop: threading.Event) -> None:
 
 
 def _start_heartbeat(holder: str) -> None:
-    global _heartbeat_stop
     _stop_heartbeat()
-    _heartbeat_stop = threading.Event()
+    stop = threading.Event()
+    get().heartbeat_stop = stop
     threading.Thread(
         target=_beat,
-        args=(holder, _heartbeat_stop),
+        args=(holder, stop),
         name="talkback-ingest-lock",
         daemon=True,
     ).start()
 
 
 def _stop_heartbeat() -> None:
-    global _heartbeat_stop
-    if _heartbeat_stop is not None:
-        _heartbeat_stop.set()
-        _heartbeat_stop = None
+    stop = get().heartbeat_stop
+    if stop is not None:
+        stop.set()
+        get().heartbeat_stop = None
 
 
 def start_reindex_schedule() -> None:
