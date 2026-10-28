@@ -1,17 +1,12 @@
 """RERANK_URL sends pairs to the host. An empty value keeps the local model."""
 
-import importlib.util
-from pathlib import Path
-
 import pytest
+
+from support import load_rerank_host
 
 
 def _host_module():
-    path = Path(__file__).resolve().parents[2] / "scripts" / "rerank_host.py"
-    spec = importlib.util.spec_from_file_location("rerank_host", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_rerank_host()
 
 
 def test_device_prefers_cuda_then_mps_then_cpu():
