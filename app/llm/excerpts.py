@@ -449,8 +449,8 @@ def _quote_example(sources: list[dict], query: str) -> str | None:
     return f"{title}. {' '.join(sentences)}{mark}"
 
 
-def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> str:
-    """Drop filters, commands, and numbers that the retrieved excerpts do not contain."""
+def _structured_library_reply(sources: list[dict], query: str) -> str | None:
+    """Return the numbered steps or quoted example when the query asks for one."""
     if asks_for_steps(query):
         walked = _steps_from_sources(sources, query)
         if walked:
@@ -459,14 +459,19 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
         quoted = _quote_example(sources, query)
         if quoted:
             return quoted
-    if not answer:
-        return answer
-    answer = _plain_reply(answer)
-    blob = _source_blob(sources)
-    text = answer
+    return None
+
+
+def _strip_unsupported_fences(text: str, blob: str) -> str:
+    """Remove fenced blocks whose contents the excerpts do not contain."""
     for match in list(_FENCE.finditer(text)):
         if _unsupported_fragment(match.group(1), blob):
             text = text.replace(match.group(0), "")
+    return text
+
+
+def _keep_supported_sentences(text: str, blob: str) -> str:
+    """Keep sentences that invent nothing and are not bare citation markers."""
     kept = []
     for line in re.split(r"\n+", text):
         for sentence in re.split(r"(?<!\d)(?<=[.!?])\s+(?=[A-Z])", line.strip()):
@@ -476,21 +481,48 @@ def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> s
             if re.fullmatch(r"(?:\[\d+\]\s*)+", sentence):
                 continue
             kept.append(sentence)
-    cleaned = "\n".join(kept).strip()
-    if not _shows_example(cleaned, blob):
-        cleaned = "\n".join(
-            sentence
-            for sentence in cleaned.split("\n")
-            if not _EXAMPLE_LEAD.match(sentence.strip())
-        ).strip()
-    if asks_for_example(query) and not _shows_example(cleaned, blob):
-        found = _quote_example(sources, query)
-        if found:
-            cleaned = found if not cleaned else f"{cleaned}\n{found}"
-        elif not cleaned:
-            cleaned = user_line("no_example", query)
-        else:
-            cleaned = f"{cleaned}\n{user_line('no_example', query)}"
+    return "\n".join(kept).strip()
+
+
+def _drop_ungrounded_example_leads(cleaned: str, blob: str) -> str:
+    """Drop "Here is..." lead-ins when no supported example remains."""
+    if _shows_example(cleaned, blob):
+        return cleaned
+    return "\n".join(
+        sentence
+        for sentence in cleaned.split("\n")
+        if not _EXAMPLE_LEAD.match(sentence.strip())
+    ).strip()
+
+
+def _append_example_if_needed(cleaned: str, sources: list[dict], query: str) -> str:
+    """Add a quoted example, or a no-example notice, when one was asked for."""
+    if not asks_for_example(query) or _shows_example(cleaned, _source_blob(sources)):
+        return cleaned
+    found = _quote_example(sources, query)
+    if found:
+        return found if not cleaned else f"{cleaned}\n{found}"
+    notice = user_line("no_example", query)
+    return notice if not cleaned else f"{cleaned}\n{notice}"
+
+
+def _or_no_detail(cleaned: str, query: str) -> str:
+    """Fall back to the no-detail line when only citations remain."""
     if not strip_citations(cleaned).strip():
         return user_line("no_detail", query)
     return cleaned
+
+
+def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> str:
+    """Drop filters, commands, and numbers that the retrieved excerpts do not contain."""
+    structured = _structured_library_reply(sources, query)
+    if structured:
+        return structured
+    if not answer:
+        return answer
+    blob = _source_blob(sources)
+    text = _strip_unsupported_fences(_plain_reply(answer), blob)
+    cleaned = _keep_supported_sentences(text, blob)
+    cleaned = _drop_ungrounded_example_leads(cleaned, blob)
+    cleaned = _append_example_if_needed(cleaned, sources, query)
+    return _or_no_detail(cleaned, query)
