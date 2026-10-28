@@ -166,14 +166,22 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
     engine._stream_deltas = stream_loudness
     library_events = events_for("What loudness target is required?")
     kinds = [event["event"] for event in library_events]
+    assert "status" in kinds and "retrieved" in kinds
     assert "token" in kinds and "sources" in kinds and kinds[-1] == "done"
+    assert kinds.index("retrieved") < kinds.index("token")
+    early = [
+        event["data"]["sources"]
+        for event in library_events
+        if event["event"] == "retrieved"
+    ][0]
+    assert early and "page" in early[0] and "text" not in early[0]
     cards = [
         source
         for event in library_events
         if event["event"] == "sources"
         for source in event["data"]["sources"]
     ]
-    assert cards and cards[0]["page"] == "16"
+    assert cards and cards[0]["page"] == "16" and cards[0]["used"] is True
 
     def retrieve_weak(index, query, files, scope=None):
         return [_Node("Target loudness is -23.0 LUFS.", 0.1)], False
@@ -190,11 +198,13 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
         if event["event"] == "notice"
     ]
     assert any("not from the documents" in notice for notice in notices)
-    assert not any(
-        event["data"].get("sources")
+    unused = [
+        source
         for event in threshold
         if event["event"] == "sources"
-    )
+        for source in event["data"].get("sources") or []
+    ]
+    assert unused and all(source.get("used") is False for source in unused)
 
     engine._retrieve_nodes = original_retrieve
 
