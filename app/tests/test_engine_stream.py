@@ -176,23 +176,26 @@ def test_correction_note_none_when_unchanged(monkeypatch):
     monkeypatch.setattr(
         engine, "ground_library_reply", lambda answer, sources, query="": answer + " "
     )
-    assert engine._library_correction_note("ok", [], "q") is None
+    assert engine._library_reply_and_correction("ok", [], "q") == ("ok", None)
 
 
 def test_correction_note_when_changed(monkeypatch):
     monkeypatch.setattr(
         engine, "ground_library_reply", lambda answer, sources, query="": "fixed"
     )
-    monkeypatch.setattr(engine, "user_line", lambda key, query: f"line:{key}")
-    assert engine._library_correction_note("bad", [], "q") == "line:no_detail"
+    reply, note = engine._library_reply_and_correction("bad", [], "q")
+    assert reply == "fixed"
+    assert note == engine.user_line("no_detail", "q")
+    assert "fixed" not in note
 
 
 def test_correction_note_empty_uses_no_detail_line(monkeypatch):
     monkeypatch.setattr(
         engine, "ground_library_reply", lambda answer, sources, query="": ""
     )
-    monkeypatch.setattr(engine, "user_line", lambda key, query: f"line:{key}")
-    assert engine._library_correction_note("bad", [], "q") == "line:no_detail"
+    reply, note = engine._library_reply_and_correction("bad", [], "q")
+    assert reply == ""
+    assert note == engine.user_line("no_detail", "q")
 
 
 def _tail(monkeypatch, used, note):
@@ -201,7 +204,7 @@ def _tail(monkeypatch, used, note):
     monkeypatch.setattr(
         engine, "_close_citations", lambda shown, supported, query="": supported
     )
-    return list(engine._iter_library_stream_tail("shown", note, [source], "q"))
+    return list(engine._iter_library_stream_tail("shown", "reply", note, [source], "q"))
 
 
 def test_tail_finalizes_citations_into_sources_text(monkeypatch):
