@@ -110,6 +110,31 @@ def test_unreachable_host_falls_back_once(monkeypatch, caplog):
     assert len(warnings) == 1
 
 
+def test_unreachable_host_without_backup_raises_search_unavailable(monkeypatch):
+    pytest.importorskip("llama_index")
+    import store.host_embed as host_embed
+    from store.search_errors import SearchUnavailable
+
+    monkeypatch.setenv("EMBED_URL", "http://embed.local")
+    monkeypatch.setattr(
+        host_embed,
+        "_post_embeddings",
+        lambda url, texts: (_ for _ in ()).throw(host_embed.HostUnreachable("down")),
+    )
+    model = host_embed.build_embed_model()
+    model._local = None
+
+    def boom(*_args, **_kwargs):
+        raise OSError("offline cache miss")
+
+    monkeypatch.setattr(
+        "llama_index.embeddings.huggingface.HuggingFaceEmbedding",
+        boom,
+    )
+    with pytest.raises(SearchUnavailable, match="temporarily unavailable"):
+        model.get_query_embedding("ping")
+
+
 def test_host_module_still_prefers_cuda_then_mps():
     host = _host_module()
     assert host.pick_device(True, True) == "cuda"

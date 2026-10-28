@@ -7,8 +7,9 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 venv="$root/.rerank-host"
-cache="$root/hf_cache/huggingface/hub"
-embed_cache="$root/hf_cache/llama_index"
+# Override when the model weights live outside this checkout (legacy worktree cache).
+cache="${RERANK_CACHE:-$root/hf_cache/huggingface/hub}"
+embed_cache="${EMBED_CACHE:-$root/hf_cache/llama_index}"
 python=${PYTHON:-}
 if [ -z "$python" ]; then
   if command -v python3.13 >/dev/null 2>&1; then
@@ -30,6 +31,12 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 export PYTORCH_ENABLE_MPS_FALLBACK=1
+
+# launchd KeepAlive restarts this script on crash. One line per start.
+mkdir -p "$root/logs"
+printf '%s rerank-host starting pid=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" \
+  >> "$root/logs/rerank-host-restarts.log"
+
 exec "$venv/bin/python" "$root/scripts/rerank_host.py" \
   --cache "$cache" \
   --embed-cache "$embed_cache" \

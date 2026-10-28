@@ -4,6 +4,9 @@ Docker on a Mac cannot see the Apple GPU, so the API calls this process the
 same way it calls Ollama. CUDA wins when it is present, then MPS, then CPU.
 A Linux GPU server should run these models inside the container on CUDA
 instead of starting this process.
+
+MPS is not safe for concurrent torch work from ThreadingHTTPServer. All GPU
+calls share one lock so embed and rerank never run at the same time.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import argparse
 import json
 import os
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 def pick_device(cuda: bool, mps: bool) -> str:
@@ -99,26 +102,41 @@ class _Embedder:
 
 
 class _Models:
-    """Reranker loads at start. Embedder loads on the first /embed call."""
+    """Reranker loads at start. Embedder loads on the first /embed call.
+
+    One lock covers every GPU call (load, score, embed) so ThreadingHTTPServer
+    cannot hand two Metal kernels to MPS at once.
+    """
 
     def __init__(self, rerank_cache: str, embed_cache: str) -> None:
         self.rerank_cache = rerank_cache
         self.embed_cache = embed_cache
+        self._gpu_lock = threading.Lock()
         self.scorer = _Scorer(rerank_cache)
         self._embedder: _Embedder | None = None
-        self._embed_lock = threading.Lock()
+
+    def _ensure_embedder_locked(self) -> _Embedder:
+        if self._embedder is None:
+            print("rerank-host loading embedder", flush=True)
+            self._embedder = _Embedder(self.embed_cache)
+            print(
+                f"rerank-host embedder ready device={self._embedder.device} "
+                f"model={self._embedder.name}",
+                flush=True,
+            )
+        return self._embedder
 
     def embedder(self) -> _Embedder:
-        with self._embed_lock:
-            if self._embedder is None:
-                print("rerank-host loading embedder", flush=True)
-                self._embedder = _Embedder(self.embed_cache)
-                print(
-                    f"rerank-host embedder ready device={self._embedder.device} "
-                    f"model={self._embedder.name}",
-                    flush=True,
-                )
-            return self._embedder
+        with self._gpu_lock:
+            return self._ensure_embedder_locked()
+
+    def scores(self, query: str, passages: list[str], limit: int) -> list[float]:
+        with self._gpu_lock:
+            return self.scorer.scores(query, passages, limit)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        with self._gpu_lock:
+            return self._ensure_embedder_locked().embed(texts)
 
 
 def _handler(models: _Models):
@@ -168,7 +186,7 @@ def _handler(models: _Models):
                     if not isinstance(passages, list) or not query:
                         raise ValueError("query and passages are required")
                     texts = [str(item) for item in passages]
-                    scores = models.scorer.scores(query, texts, limit)
+                    scores = models.scores(query, texts, limit)
                 except Exception as exc:
                     self._send(400, {"error": str(exc)})
                     return
@@ -188,8 +206,9 @@ def _handler(models: _Models):
                     if not isinstance(texts, list) or not texts:
                         raise ValueError("texts is required")
                     prepared = [str(item) for item in texts]
-                    embedder = models.embedder()
-                    vectors = embedder.embed(prepared)
+                    vectors = models.embed(prepared)
+                    embedder = models._embedder
+                    assert embedder is not None
                 except Exception as exc:
                     self._send(400, {"error": str(exc)})
                     return
@@ -232,10 +251,18 @@ def main() -> None:
         embed_cache = os.path.join(os.path.dirname(args.cache), "..", "llama_index")
         embed_cache = os.path.abspath(embed_cache)
     models = _Models(args.cache, embed_cache)
-    server = ThreadingHTTPServer((args.host, args.port), _handler(models))
+
+    # One accept/handle loop. MPS is not thread-safe across models even with a
+    # lock when ThreadingHTTPServer also races large response writes. A deep
+    # backlog keeps parallel API clients from getting RST while they wait.
+    class _Server(HTTPServer):
+        request_queue_size = 128
+
+    server = _Server((args.host, args.port), _handler(models))
     print(
         f"rerank-host listening on {args.host}:{args.port} "
-        f"rerank_device={models.scorer.device} embed_cache={embed_cache}",
+        f"rerank_device={models.scorer.device} embed_cache={embed_cache} "
+        f"server=single-thread backlog={server.request_queue_size}",
         flush=True,
     )
     server.serve_forever()

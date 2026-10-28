@@ -230,3 +230,27 @@ def test_stream_prompt_general_answer_short_circuits(monkeypatch):
     events = list(engine._stream_prompt("p", None, None, notice="n"))
     assert [e["event"] for e in events] == ["notice", "token", "sources", "done"]
     assert events[2]["data"] == {"sources": []}
+
+
+def test_iter_answer_reports_search_unavailable_instead_of_failing(monkeypatch):
+    from store.search_errors import SearchUnavailable
+
+    monkeypatch.setattr(engine, "wait_for_models", lambda: None)
+    monkeypatch.setattr(engine, "collection_count", lambda: 10)
+    monkeypatch.setattr(engine, "should_search_library", lambda search: True)
+    monkeypatch.setattr(
+        engine,
+        "get_or_create_cached_index",
+        lambda: (_ for _ in ()).throw(SearchUnavailable("down")),
+    )
+    events = list(engine.iter_answer("What loudness does the BBC document require?"))
+    assert [e["event"] for e in events] == [
+        "status",
+        "notice",
+        "token",
+        "sources",
+        "done",
+    ]
+    assert "temporarily unavailable" in events[1]["data"]["text"].lower()
+    assert events[2]["data"]["text"] == events[1]["data"]["text"]
+    assert events[3]["data"]["sources"] == []

@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 import config
+from store.search_errors import SearchUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,15 @@ _lock = threading.Lock()
 
 class HostUnreachable(Exception):
     """The configured host reranker did not accept a connection."""
+
+
+def _local_unavailable(exc: Exception) -> SearchUnavailable:
+    err = SearchUnavailable(
+        "Search is temporarily unavailable. The host reranker is down and "
+        "the backup model could not be loaded."
+    )
+    err.__cause__ = exc
+    return err
 
 
 def clears_threshold(score: float, threshold: float) -> bool:
@@ -67,15 +77,18 @@ def _load():
             cache = str(model_cache_dir())
             device = _device()
             logger.info("Loading reranker %s from %s on %s", name, cache, device)
-            talkback.rerank_tokenizer = AutoTokenizer.from_pretrained(
-                name, cache_dir=cache, local_files_only=True
-            )
-            model = AutoModelForSequenceClassification.from_pretrained(
-                name, cache_dir=cache, local_files_only=True
-            )
-            model.to(device)
-            model.eval()
-            talkback.rerank_model = model
+            try:
+                talkback.rerank_tokenizer = AutoTokenizer.from_pretrained(
+                    name, cache_dir=cache, local_files_only=True
+                )
+                model = AutoModelForSequenceClassification.from_pretrained(
+                    name, cache_dir=cache, local_files_only=True
+                )
+                model.to(device)
+                model.eval()
+                talkback.rerank_model = model
+            except Exception as exc:
+                raise _local_unavailable(exc) from exc
     return talkback.rerank_model, talkback.rerank_tokenizer
 
 

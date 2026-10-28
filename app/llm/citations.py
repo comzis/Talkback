@@ -81,33 +81,39 @@ def _strip_trailing_citation_dump(answer: str, allowed: set[int]) -> str:
     return text
 
 
-def finalize_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]:
-    """Keep markers inline once per sentence, drop dead ones, renumber cards 1..n."""
-    if not sources:
-        cleaned = re.sub(r"\s*\[\d+\]", "", answer or "")
-        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
-        return re.sub(r" {2,}", " ", cleaned).strip(), []
-
+def _citation_source_index(
+    sources: list[dict],
+) -> tuple[set[int], dict[int, dict]]:
+    """Allowed marker numbers and a mutable copy of each source card."""
     allowed = {int(source.get("number") or 0) for source in sources}
     by_old = {
         int(source["number"]): dict(source)
         for source in sources
         if int(source.get("number") or 0) in allowed
     }
-    order: list[int] = []
+    return allowed, by_old
 
-    def take_unique(numbers: list[int]) -> list[int]:
-        kept: list[int] = []
-        seen: set[int] = set()
-        for number in numbers:
-            if number not in allowed or number in seen:
-                continue
-            kept.append(number)
-            seen.add(number)
-            if number not in order:
-                order.append(number)
-        return kept
 
+def _take_unique_citation_marks(
+    numbers: list[int], *, allowed: set[int], order: list[int]
+) -> list[int]:
+    """Keep first occurrence of each allowed marker and extend cite order."""
+    kept: list[int] = []
+    seen: set[int] = set()
+    for number in numbers:
+        if number not in allowed or number in seen:
+            continue
+        kept.append(number)
+        seen.add(number)
+        if number not in order:
+            order.append(number)
+    return kept
+
+
+def _parse_cited_sentences(
+    answer: str, *, allowed: set[int], order: list[int]
+) -> list[tuple[str, list[int]]]:
+    """Split the answer into (body, marks) pairs with inline markers only."""
     answer = _strip_trailing_citation_dump(answer or "", allowed)
     sentences: list[tuple[str, list[int]]] = []
     for line in re.split(r"\n+", answer):
@@ -134,21 +140,44 @@ def finalize_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict
                     prev_body, prev_marks = sentences[-1]
                     sentences[-1] = (
                         prev_body,
-                        take_unique(prev_marks + lead_marks + marks),
+                        _take_unique_citation_marks(
+                            prev_marks + lead_marks + marks,
+                            allowed=allowed,
+                            order=order,
+                        ),
                     )
                 continue
             if lead_marks and sentences:
                 prev_body, prev_marks = sentences[-1]
-                sentences[-1] = (prev_body, take_unique(prev_marks + lead_marks))
-            sentences.append((body, take_unique(marks)))
+                sentences[-1] = (
+                    prev_body,
+                    _take_unique_citation_marks(
+                        prev_marks + lead_marks, allowed=allowed, order=order
+                    ),
+                )
+            sentences.append(
+                (
+                    body,
+                    _take_unique_citation_marks(marks, allowed=allowed, order=order),
+                )
+            )
+    return sentences
 
+
+def _citation_number_mapping(order: list[int], allowed: set[int]) -> dict[int, int]:
+    """Map old marker numbers to dense 1..n, appending uncited cards last."""
     mapping = {old: new for new, old in enumerate(order, start=1)}
-    # Uncited surviving cards stay at the end, in retrieve order.
     for number in sorted(allowed):
         if number not in mapping:
             mapping[number] = len(mapping) + 1
             order.append(number)
+    return mapping
 
+
+def _render_renumbered_answer(
+    sentences: list[tuple[str, list[int]]], mapping: dict[int, int]
+) -> str:
+    """Join sentence bodies with renumbered trailing markers."""
     lines = []
     for body, marks in sentences:
         if not marks:
@@ -163,13 +192,34 @@ def finalize_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict
             unique.append(mapped)
             seen.add(mapped)
         lines.append(body + "".join(f" [{number}]" for number in unique))
+    return "\n".join(lines).strip()
 
+
+def _renumber_source_cards(
+    order: list[int], by_old: dict[int, dict], mapping: dict[int, int]
+) -> list[dict]:
+    """Apply the new numbers onto copies of the surviving source cards."""
     renumbered = []
     for old in order:
         source = by_old[old]
         source["number"] = mapping[old]
         renumbered.append(source)
-    return "\n".join(lines).strip(), renumbered
+    return renumbered
+
+
+def finalize_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]:
+    """Keep markers inline once per sentence, drop dead ones, renumber cards 1..n."""
+    if not sources:
+        cleaned = re.sub(r"\s*\[\d+\]", "", answer or "")
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        return re.sub(r" {2,}", " ", cleaned).strip(), []
+
+    allowed, by_old = _citation_source_index(sources)
+    order: list[int] = []
+    sentences = _parse_cited_sentences(answer, allowed=allowed, order=order)
+    mapping = _citation_number_mapping(order, allowed)
+    text = _render_renumbered_answer(sentences, mapping)
+    return text, _renumber_source_cards(order, by_old, mapping)
 
 
 _FILE_TOKEN = re.compile(
