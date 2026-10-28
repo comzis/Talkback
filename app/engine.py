@@ -170,25 +170,9 @@ def _final_source_cards(
     return cards
 
 
-def _stream_prompt(
-    prompt: str,
-    temperature: float | None,
-    sources: list | None,
-    notice: str | None = None,
-    query: str = "",
-):
-    """Stream tokens as they arrive.
-
-    A library reply is checked against the excerpts after the stream. If that
-    check changes the wording, a short footnote notes it — the full grounded
-    text is never re-sent. Citation markers are finalized with the sources
-    event (inline, once per sentence, renumbered). Every retrieved candidate
-    stays in the final sources list; unused ones are marked used=false.
-    """
-    if notice:
-        yield {"event": "notice", "data": {"text": notice}}
+def _iter_streamed_token_events(prompt: str, temperature: float | None):
+    """Yield token events as the model streams. Returns the text shown."""
     parts: list[str] = []
-    library = sources is not None
     pending = ""
     general = None
     for delta in _stream_deltas(prompt, temperature):
@@ -211,17 +195,17 @@ def _stream_prompt(
     elif pending:
         parts.append(pending)
         yield {"event": "token", "data": {"text": pending}}
-    shown = "".join(parts).strip()
-    reply = shown
-    note = None
-    if library:
-        reply = ground_library_reply(shown, sources, query).strip()
-        note = correction_note(shown, reply or user_line("no_detail", query), query)
-    if sources is None:
-        logger.info("Query answered as assistant")
-        yield {"event": "sources", "data": {"sources": []}}
-        yield {"event": "done", "data": {}}
-        return
+    return "".join(parts).strip()
+
+
+def _library_correction_note(shown: str, sources: list, query: str) -> str | None:
+    """Check a library reply against the excerpts. A short note when it changed."""
+    reply = ground_library_reply(shown, sources, query).strip()
+    return correction_note(shown, reply or user_line("no_detail", query), query)
+
+
+def _iter_library_stream_tail(shown: str, note: str | None, sources: list, query: str):
+    """Yield the events that follow a streamed library answer."""
     used = _close_citations(shown, supporting_sources(shown, sources), query)
     display, used = finalize_citations(shown, used)
     if note:
@@ -236,6 +220,33 @@ def _stream_prompt(
     )
     yield {"event": "sources", "data": {"sources": cards, "text": display}}
     yield {"event": "done", "data": {}}
+
+
+def _stream_prompt(
+    prompt: str,
+    temperature: float | None,
+    sources: list | None,
+    notice: str | None = None,
+    query: str = "",
+):
+    """Stream tokens as they arrive.
+
+    A library reply is checked against the excerpts after the stream. If that
+    check changes the wording, a short footnote notes it — the full grounded
+    text is never re-sent. Citation markers are finalized with the sources
+    event (inline, once per sentence, renumbered). Every retrieved candidate
+    stays in the final sources list; unused ones are marked used=false.
+    """
+    if notice:
+        yield {"event": "notice", "data": {"text": notice}}
+    shown = yield from _iter_streamed_token_events(prompt, temperature)
+    if sources is None:
+        logger.info("Query answered as assistant")
+        yield {"event": "sources", "data": {"sources": []}}
+        yield {"event": "done", "data": {}}
+        return
+    note = _library_correction_note(shown, sources, query)
+    yield from _iter_library_stream_tail(shown, note, sources, query)
 
 
 def _citation_similarity(sentence: str, passage: str) -> float:

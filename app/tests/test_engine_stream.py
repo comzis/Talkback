@@ -125,3 +125,105 @@ def test_an_unchanged_library_answer_has_no_footnote(monkeypatch):
     )
     assert [event["event"] for event in events if event["event"] == "footnote"] == []
     assert seen["answer"] == "The level is -23.0 LUFS."
+
+
+def _drain(generator):
+    """Collect yielded events and the generator's return value."""
+    events = []
+    try:
+        while True:
+            events.append(next(generator))
+    except StopIteration as stop:
+        return events, stop.value
+
+
+def test_token_events_return_the_shown_text(monkeypatch):
+    monkeypatch.setattr(
+        engine, "_stream_deltas", lambda prompt, temperature: iter(["a ", "b"])
+    )
+    monkeypatch.setattr(engine, "take_stream_piece", lambda text: (text, "", False))
+    events, shown = _drain(engine._iter_streamed_token_events("p", 0.1))
+    assert [e["data"]["text"] for e in events] == ["a ", "b"]
+    assert shown == "a b"
+
+
+def test_token_events_flush_pending_text(monkeypatch):
+    monkeypatch.setattr(
+        engine, "_stream_deltas", lambda prompt, temperature: iter(["tail "])
+    )
+    monkeypatch.setattr(engine, "take_stream_piece", lambda text: ("", text, False))
+    events, shown = _drain(engine._iter_streamed_token_events("p", None))
+    assert [e["data"]["text"] for e in events] == ["tail "]
+    assert shown == "tail"
+
+
+def test_token_events_scrub_general_tail(monkeypatch):
+    monkeypatch.setattr(
+        engine, "_stream_deltas", lambda prompt, temperature: iter(["x", "y", "z"])
+    )
+
+    def piece(text):
+        return ("", text, True) if text == "x" else (text, "", False)
+
+    monkeypatch.setattr(engine, "take_stream_piece", piece)
+    monkeypatch.setattr(engine, "scrub_general_figures", lambda text: text.upper())
+    events, shown = _drain(engine._iter_streamed_token_events("p", None))
+    assert [e["data"]["text"] for e in events] == ["XYZ"]
+    assert shown == "XYZ"
+
+
+def test_correction_note_none_when_unchanged(monkeypatch):
+    monkeypatch.setattr(
+        engine, "ground_library_reply", lambda answer, sources, query="": answer + " "
+    )
+    assert engine._library_correction_note("ok", [], "q") is None
+
+
+def test_correction_note_when_changed(monkeypatch):
+    monkeypatch.setattr(
+        engine, "ground_library_reply", lambda answer, sources, query="": "fixed"
+    )
+    monkeypatch.setattr(engine, "user_line", lambda key, query: f"line:{key}")
+    assert engine._library_correction_note("bad", [], "q") == "line:no_detail"
+
+
+def test_correction_note_empty_uses_no_detail_line(monkeypatch):
+    monkeypatch.setattr(
+        engine, "ground_library_reply", lambda answer, sources, query="": ""
+    )
+    monkeypatch.setattr(engine, "user_line", lambda key, query: f"line:{key}")
+    assert engine._library_correction_note("bad", [], "q") == "line:no_detail"
+
+
+def _tail(monkeypatch, used, note):
+    source = {"number": 1, "source": "a.pdf", "text": "alpha", "page": "1"}
+    monkeypatch.setattr(engine, "supporting_sources", lambda shown, sources: used)
+    monkeypatch.setattr(
+        engine, "_close_citations", lambda shown, supported, query="": supported
+    )
+    return list(engine._iter_library_stream_tail("shown", note, [source], "q"))
+
+
+def test_tail_finalizes_citations_into_sources_text(monkeypatch):
+    used = [{"number": 1, "source": "a.pdf", "text": "alpha", "page": "1"}]
+    events = _tail(monkeypatch, used, None)
+    assert [e["event"] for e in events] == ["sources", "done"]
+    assert events[0]["data"]["sources"][0]["used"] is True
+    assert "text" in events[0]["data"]
+
+
+def test_tail_notice_and_footnote_when_nothing_cited(monkeypatch):
+    events = _tail(monkeypatch, [], "fixed")
+    assert [e["event"] for e in events] == ["footnote", "notice", "sources", "done"]
+    assert events[0]["data"]["text"] == "fixed"
+    assert events[2]["data"]["sources"][0]["used"] is False
+
+
+def test_stream_prompt_general_answer_short_circuits(monkeypatch):
+    monkeypatch.setattr(
+        engine, "_stream_deltas", lambda prompt, temperature: iter(["hi"])
+    )
+    monkeypatch.setattr(engine, "take_stream_piece", lambda text: (text, "", False))
+    events = list(engine._stream_prompt("p", None, None, notice="n"))
+    assert [e["event"] for e in events] == ["notice", "token", "sources", "done"]
+    assert events[2]["data"] == {"sources": []}
