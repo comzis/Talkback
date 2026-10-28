@@ -1,41 +1,44 @@
 # Talkback API memory
 
 Measured on the consolidated main-checkout stack (Docker Desktop, Mac host
-embed/rerank on MPS), 28 Oct 2026.
+embed/rerank on MPS).
 
 ## Steady state
 
 | Condition | `rag_api_service` RSS |
 |---|---|
-| Host embed/rerank up, after one BBC smoke query | ~1.1 GiB |
-| Host stopped (SearchUnavailable path, no local model load) | ~1.2 GiB |
+| Host embed/rerank up, after one BBC smoke query | ~0.5–1.1 GiB |
+| Host stopped (SearchUnavailable; no local model load) | ~same band |
 
-The in-container HuggingFace embedder and transformers reranker load **lazily
-and once** (`HostOrLocalEmbedding._ensure_local`, `retrieval.rerank._load`).
-They are not loaded when the host is healthy. When the host is down and the
-offline cache cannot satisfy a load, Talkback returns the
-`search_unavailable` notice instead of loading forever or answering as if the
-library had been searched.
+When `EMBED_URL` / `RERANK_URL` point at the host service, Talkback does **not**
+load HuggingFace embed or transformers rerank weights inside the API container.
+If the host is down, queries return the `search_unavailable` notice.
 
-## Growth during a live eval
+## Growth during a live eval (before fix)
 
-With the host up, `compare_talkback_models.py --runs 1` (main + held-out) was
-sampled every 30s via `docker stats` for ~30 minutes (60 samples):
+With the host up, `compare_talkback_models.py --runs 1` was sampled every 30s
+for ~30 minutes. RSS climbed from ~1.3 GiB to ~5.3 GiB. A later 20-query probe
+grew ~70 MiB per question.
 
-| Sample | Approx. wall time | `rag_api_service` RSS |
-|---|---|---|
-| 1 | start | 1.26 GiB |
-| 15 | ~7 min | ~2.5 GiB |
-| 30 | ~15 min | ~3.5 GiB |
-| 45 | ~22 min | ~4.3 GiB |
-| 60 | ~30 min | 5.24 GiB |
-| end (after tok/s sample) | ~34 min | 5.32 GiB |
+**Cause:** every library query called `indexed_documents()`, which pulled all
+~12k chunk metadatas from Chroma (~33 MiB pickle size) and classified them.
+Those short-lived allocations drove worker RSS up for the life of the process.
+BM25 and the LlamaIndex `VectorStoreIndex` were already cached once; the
+in-container embed/rerank models were not loaded (host stayed up).
 
-Earlier long ×3 parity runs on the same path reached ~8 GiB. That growth is
-**not** the in-container fallback models (host stayed up for the whole run).
-It tracks session length: Chroma/LlamaIndex retrieval state and Python heap
-retained across requests inside one uvicorn worker. Restarting the API
-container resets RSS to the steady-state band above.
+**Fix:** cache the classified library-path maps in process state and refresh
+when the collection count changes or after ingest/delete. Soak test:
+`scripts/soak_api_memory.py` (200 questions; RSS at start, every 50, and end).
+
+After the fix, a 50-question soak on the same stack stayed flat:
+
+| Sample | `rag_api_service` RSS |
+|---|---|
+| start (warm BM25 + library cache) | 508.5 MiB |
+| after 50 | 517.6 MiB |
+
+Fixed caches: BM25 11834 docs, library index 14 files, docstore 0, no
+in-container embed/rerank weights.
 
 ## Host process
 
@@ -45,11 +48,12 @@ combined while both are loaded). It is managed by launchd
 `com.talkback.rerank-host` with KeepAlive; restarts are logged in
 `logs/rerank-host-restarts.log`.
 
-## Practical guidance
+## Deploy notes
 
-- Keep `EMBED_URL` / `RERANK_URL` pointed at the host service for normal use.
-- Budget ~2 GiB for a warm API with host helpers, and expect several GiB more
-  during a long eval without a container restart.
-- Do not rely on the in-container fallback for production traffic; it is a
-  safety net and may refuse with `search_unavailable` when offline weights
-  are missing.
+- **Mac (this stack):** keep `EMBED_URL` / `RERANK_URL` on the host MPS
+  service. That service is required for library search.
+- **Linux GPU server:** leave those URLs empty so the container loads embed and
+  rerank on the machine GPU (in-process path).
+- There is no in-container CPU fallback when a host URL is configured: the
+  offline weight mount was incomplete, loads failed in seconds, and a working
+  CPU load would add several GiB to the API worker.
