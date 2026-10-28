@@ -7,6 +7,7 @@ import os
 import socket
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
@@ -294,179 +295,278 @@ def open_status() -> StatusStore:
     return store
 
 
+@dataclass(frozen=True)
+class IngestPlan:
+    """What one pass will embed, drop, and leave alone."""
+
+    embed_names: list[str]
+    drop_names: list[str]
+    on_disk: dict
+    by_key: dict
+    keep_names: list[str]
+
+
+def _plan_ingest_pass(source, status: StatusStore) -> IngestPlan:
+    """Compare the folder with the status file. This only reads, apart from the first migration."""
+    if status.empty():
+        status.migrate(chunk_metadatas())
+    items = source.list_items()
+    by_key = {item.id: item for item in items}
+    on_disk = {item.id: disk_signature(Path(item.location)) for item in items}
+    indexed, legacy_keys, incomplete_keys = status.planning_sets()
+    embed_names, drop_names = index_plan(on_disk, indexed, legacy_keys, incomplete_keys)
+    known = set(indexed) | set(legacy_keys) | set(incomplete_keys)
+    for name in source.deleted_ids(known):
+        if name not in drop_names:
+            drop_names.append(name)
+    return IngestPlan(
+        embed_names=embed_names,
+        drop_names=drop_names,
+        on_disk=on_disk,
+        by_key=by_key,
+        keep_names=sorted(set(indexed) - set(drop_names)),
+    )
+
+
+def _announce_plan(plan: IngestPlan) -> None:
+    get().ingestion_status["total_files"] = len(plan.embed_names)
+    get().ingestion_status["processed_files"] = 0
+    logger.info(
+        "Index plan: embed %s, drop %s, keep %s",
+        plan.embed_names,
+        plan.drop_names,
+        plan.keep_names,
+    )
+
+
+def _apply_planned_drops(status: StatusStore, source, drop_names: list[str]) -> None:
+    for name in drop_names:
+        delete_chunks_for_file(name)
+        status.forget(source.source_type, name)
+
+
+def _normalize_document_text(document) -> None:
+    """Repair extracted text spacing before the document is split into chunks."""
+    from llm.excerpts import normalize_extracted_text
+
+    text = document.get_content() if hasattr(document, "get_content") else None
+    if text is None:
+        text = getattr(document, "text", "") or ""
+    normalized = normalize_extracted_text(text)
+    if hasattr(document, "set_content"):
+        document.set_content(normalized)
+    else:
+        document.text = normalized
+
+
+def _tag_document(document, key_by_resolved: dict) -> None:
+    """Record the library key and file mtime on a freshly read document."""
+    file_path = Path(document.metadata.get("file_path", ""))
+    relative = key_by_resolved.get(file_path.resolve())
+    is_file = file_path.is_file()
+    if relative is None and is_file:
+        try:
+            relative = library_key(file_path, get().upload_dir)
+        except ValueError:
+            relative = file_path.name
+    if relative:
+        document.metadata["relative_path"] = relative
+    if is_file:
+        document.metadata["source_mtime"] = int(file_path.stat().st_mtime)
+
+
+def _read_documents_for_embed(source, embed_names: list[str], by_key: dict) -> list:
+    paths = [Path(by_key[name].location) for name in embed_names]
+    key_by_resolved = {path.resolve(): key for key, path in zip(embed_names, paths)}
+    documents = source.read([str(path) for path in paths])
+    for document in documents:
+        _normalize_document_text(document)
+        _tag_document(document, key_by_resolved)
+    return documents
+
+
+def _group_nodes_by_file(nodes) -> dict[str, list]:
+    nodes_by_file: dict[str, list] = {}
+    for node in nodes:
+        metadata = node.metadata or {}
+        key = metadata.get("relative_path") or metadata.get("file_name")
+        nodes_by_file.setdefault(key, []).append(node)
+    return nodes_by_file
+
+
+def _start_pass_status() -> float:
+    started = time.time()
+    get().ingestion_status["start_time"] = started
+    get().ingestion_status["status"] = "processing"
+    get().ingestion_status["message"] = "Checking the library..."
+    get().ingestion_status["progress"] = 10
+    _publish()
+    return started
+
+
+def _finish_unchanged(started: float, plan: IngestPlan) -> None:
+    count = len(plan.on_disk)
+    message = (
+        f"Kept {count} documents already in the library. Nothing new to add."
+        if plan.on_disk
+        else "Library is empty."
+    )
+    _finish_kept(started, message, count)
+    logger.info("Ingestion unchanged. %s files already indexed.", count)
+
+
+def _finish_unreadable(
+    status: StatusStore, source, started: float, plan: IngestPlan
+) -> None:
+    for name in plan.embed_names:
+        status.mark_failed(source.source_type, name, "No readable text")
+    _finish_kept(
+        started,
+        "No readable text in the new files. Existing documents were kept.",
+        len(plan.on_disk),
+    )
+    logger.info("Ingestion found no readable text in %s", plan.embed_names)
+
+
+def _announce_chunks(total: int, embed_names: list[str]) -> None:
+    get().ingestion_status["total"] = total
+    get().ingestion_status["current"] = 0
+    get().ingestion_status["message"] = (
+        f"Adding {total} chunks from {len(embed_names)} file(s)..."
+    )
+    logger.info("Adding %s chunks from %s", total, embed_names)
+
+
+def _insert_batches(
+    index, file_nodes: list, done: int, total: int, chunk_started: float, completed: int
+) -> int:
+    """Insert one file's chunks in batches. Returns the running chunk count."""
+    batch_size = config.embed_batch()
+    for offset in range(0, len(file_nodes), batch_size):
+        batch = file_nodes[offset : offset + batch_size]
+        index.insert_nodes(batch)
+        done += len(batch)
+        get().ingestion_status.update(
+            ingest_metrics(done, total, time.time() - chunk_started)
+        )
+        get().ingestion_status["status"] = "processing"
+        get().ingestion_status["processed_files"] = completed
+        get().ingestion_status["message"] = f"Embedded {done} of {total} new chunks"
+        _touch_resources()
+        _publish()
+    return done
+
+
+def _embed_planned_files(
+    index,
+    status: StatusStore,
+    source,
+    plan: IngestPlan,
+    nodes_by_file: dict[str, list],
+    total: int,
+    chunk_started: float,
+) -> None:
+    done = 0
+    completed_files = 0
+    for name in plan.embed_names:
+        file_nodes = nodes_by_file.get(name, [])
+        if not file_nodes:
+            status.mark_failed(source.source_type, name, "No readable text")
+            continue
+        status.mark_pending(source.source_type, name)
+        get().ingestion_status["current_file"] = name
+        done = _insert_batches(
+            index, file_nodes, done, total, chunk_started, completed_files
+        )
+        mark_file_complete(name)
+        status.mark_complete(
+            source.source_type, name, plan.on_disk[name], len(file_nodes)
+        )
+        completed_files += 1
+        get().ingestion_status["processed_files"] = completed_files
+
+
+def _complete_ingest_pass(
+    index, plan: IngestPlan, started: float, chunk_started: float, total: int
+) -> None:
+    elapsed = time.time() - chunk_started
+    speed = total / elapsed if elapsed > 0 else 0
+    get().cached_index = index
+    library_total = collection_count()
+    _note_indexed()
+    get().ingestion_status.update(
+        _fresh_status(
+            status="completed",
+            message=f"Added {total} chunks from {len(plan.embed_names)} file(s). Existing documents were kept.",
+            progress=100,
+            current=library_total,
+            total=library_total,
+            total_files=len(plan.on_disk),
+            processed_files=len(plan.embed_names),
+            chunks_per_second=round(speed, 2),
+            cpu_percent=get().ingestion_status["cpu_percent"],
+            memory_percent=get().ingestion_status["memory_percent"],
+            start_time=started,
+        )
+    )
+    _publish()
+    logger.info(
+        "Ingestion complete. Added %s chunks from %s. Library now has %s chunks.",
+        total,
+        plan.embed_names,
+        library_total,
+    )
+
+
+def _fail_ingest_pass(status: StatusStore | None) -> None:
+    """Mark the pass as failed. Call this from inside an except block."""
+    if status is not None:
+        status.fail_pending("Ingestion failed")
+    logger.exception("Ingestion failed")
+    get().ingestion_status["status"] = "error"
+    get().ingestion_status["message"] = "Ingestion failed"
+    get().ingestion_status["error"] = "Ingestion failed"
+    get().ingestion_status["progress"] = 0
+    get().ingestion_status["current_file"] = None
+    _publish()
+
+
 def _ingest_once() -> None:
     """Add new or changed files without dropping documents already indexed."""
     logger.info("Ingestion started for %s", get().upload_dir)
     status: StatusStore | None = None
     try:
         wait_for_models()
-        started = time.time()
-        get().ingestion_status["start_time"] = started
-        get().ingestion_status["status"] = "processing"
-        get().ingestion_status["message"] = "Checking the library..."
-        get().ingestion_status["progress"] = 10
-        _publish()
-
+        started = _start_pass_status()
         source = filesystem_source()
         status = open_status()
-        if status.empty():
-            status.migrate(chunk_metadatas())
-        items = source.list_items()
-        by_key = {item.id: item for item in items}
-        on_disk = {item.id: disk_signature(Path(item.location)) for item in items}
-        indexed, legacy_keys, incomplete_keys = status.planning_sets()
-        embed_names, drop_names = index_plan(
-            on_disk, indexed, legacy_keys, incomplete_keys
-        )
-        known = set(indexed) | set(legacy_keys) | set(incomplete_keys)
-        for name in source.deleted_ids(known):
-            if name not in drop_names:
-                drop_names.append(name)
-        get().ingestion_status["total_files"] = len(embed_names)
-        get().ingestion_status["processed_files"] = 0
-        logger.info(
-            "Index plan: embed %s, drop %s, keep %s",
-            embed_names,
-            drop_names,
-            sorted(set(indexed) - set(drop_names)),
-        )
-
-        for name in drop_names:
-            delete_chunks_for_file(name)
-            status.forget(source.source_type, name)
-
-        if not embed_names:
-            message = (
-                f"Kept {len(on_disk)} documents already in the library. Nothing new to add."
-                if on_disk
-                else "Library is empty."
-            )
-            _finish_kept(started, message, len(on_disk))
-            logger.info("Ingestion unchanged. %s files already indexed.", len(on_disk))
+        plan = _plan_ingest_pass(source, status)
+        _announce_plan(plan)
+        _apply_planned_drops(status, source, plan.drop_names)
+        if not plan.embed_names:
+            _finish_unchanged(started, plan)
             return
-
-        paths = [Path(by_key[name].location) for name in embed_names]
-        key_by_resolved = {path.resolve(): key for key, path in zip(embed_names, paths)}
-        documents = source.read([str(path) for path in paths])
-        from llm.prompts import normalize_extracted_text
-
-        for document in documents:
-            text = document.get_content() if hasattr(document, "get_content") else None
-            if text is None:
-                text = getattr(document, "text", "") or ""
-            normalized = normalize_extracted_text(text)
-            if hasattr(document, "set_content"):
-                document.set_content(normalized)
-            else:
-                document.text = normalized
-            file_path = Path(document.metadata.get("file_path", ""))
-            relative = key_by_resolved.get(file_path.resolve())
-            if relative is None and file_path.is_file():
-                try:
-                    relative = library_key(file_path, get().upload_dir)
-                except ValueError:
-                    relative = file_path.name
-            if relative:
-                document.metadata["relative_path"] = relative
-            if file_path.is_file():
-                document.metadata["source_mtime"] = int(file_path.stat().st_mtime)
-
+        documents = _read_documents_for_embed(source, plan.embed_names, plan.by_key)
         if not documents:
-            for name in embed_names:
-                status.mark_failed(source.source_type, name, "No readable text")
-            _finish_kept(
-                started,
-                "No readable text in the new files. Existing documents were kept.",
-                len(on_disk),
-            )
-            logger.info("Ingestion found no readable text in %s", embed_names)
+            _finish_unreadable(status, source, started, plan)
             return
-
         nodes = nodes_for_index(documents, source)
         total = len(nodes)
-        get().ingestion_status["total"] = total
-        get().ingestion_status["current"] = 0
-        get().ingestion_status["message"] = (
-            f"Adding {total} chunks from {len(embed_names)} file(s)..."
-        )
-        logger.info("Adding %s chunks from %s", total, embed_names)
-
+        _announce_chunks(total, plan.embed_names)
         index = VectorStoreIndex.from_vector_store(
             get().vector_store, storage_context=get().storage_context
         )
         chunk_started = time.time()
-        batch_size = config.embed_batch()
-        nodes_by_file: dict[str, list] = {}
-        for node in nodes:
-            key = (node.metadata or {}).get("relative_path") or (
-                node.metadata or {}
-            ).get("file_name")
-            nodes_by_file.setdefault(key, []).append(node)
-        done = 0
-        completed_files = 0
-        for name in embed_names:
-            file_nodes = nodes_by_file.get(name, [])
-            if not file_nodes:
-                status.mark_failed(source.source_type, name, "No readable text")
-                continue
-            status.mark_pending(source.source_type, name)
-            get().ingestion_status["current_file"] = name
-            for offset in range(0, len(file_nodes), batch_size):
-                batch = file_nodes[offset : offset + batch_size]
-                index.insert_nodes(batch)
-                done += len(batch)
-                get().ingestion_status.update(
-                    ingest_metrics(done, total, time.time() - chunk_started)
-                )
-                get().ingestion_status["status"] = "processing"
-                get().ingestion_status["processed_files"] = completed_files
-                get().ingestion_status["message"] = (
-                    f"Embedded {done} of {total} new chunks"
-                )
-                _touch_resources()
-                _publish()
-            mark_file_complete(name)
-            status.mark_complete(
-                source.source_type, name, on_disk[name], len(file_nodes)
-            )
-            completed_files += 1
-            get().ingestion_status["processed_files"] = completed_files
-
-        elapsed = time.time() - chunk_started
-        speed = total / elapsed if elapsed > 0 else 0
-        get().cached_index = index
-        library_total = collection_count()
-        _note_indexed()
-        get().ingestion_status.update(
-            _fresh_status(
-                status="completed",
-                message=f"Added {total} chunks from {len(embed_names)} file(s). Existing documents were kept.",
-                progress=100,
-                current=library_total,
-                total=library_total,
-                total_files=len(on_disk),
-                processed_files=len(embed_names),
-                chunks_per_second=round(speed, 2),
-                cpu_percent=get().ingestion_status["cpu_percent"],
-                memory_percent=get().ingestion_status["memory_percent"],
-                start_time=started,
-            )
-        )
-        _publish()
-        logger.info(
-            "Ingestion complete. Added %s chunks from %s. Library now has %s chunks.",
+        _embed_planned_files(
+            index,
+            status,
+            source,
+            plan,
+            _group_nodes_by_file(nodes),
             total,
-            embed_names,
-            library_total,
+            chunk_started,
         )
+        _complete_ingest_pass(index, plan, started, chunk_started, total)
     except Exception as exc:
-        if status is not None:
-            status.fail_pending("Ingestion failed")
-        logger.exception("Ingestion failed")
-        get().ingestion_status["status"] = "error"
-        get().ingestion_status["message"] = "Ingestion failed"
-        get().ingestion_status["error"] = "Ingestion failed"
-        get().ingestion_status["progress"] = 0
-        get().ingestion_status["current_file"] = None
-        _publish()
+        _fail_ingest_pass(status)
         logger.error("Ingestion failed: %s", exc)
