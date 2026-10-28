@@ -272,6 +272,7 @@ class StatusStore:
             conn.commit()
             return True
         except Exception:
+            # Roll back the open BEGIN IMMEDIATE so the lock is released, then re-raise.
             conn.rollback()
             raise
 
@@ -320,6 +321,7 @@ class StatusStore:
             )
             conn.commit()
         except Exception:
+            # Roll back the open BEGIN IMMEDIATE so the lock is released, then re-raise.
             conn.rollback()
             raise
 
@@ -342,6 +344,7 @@ class StatusStore:
             conn.commit()
             return None if row is None else str(row["kind"])
         except Exception:
+            # Roll back the open BEGIN IMMEDIATE so the lock is released, then re-raise.
             conn.rollback()
             raise
 

@@ -135,6 +135,7 @@ def start_initial_index() -> None:
             logger.info("Checking the library for files that are not fully indexed.")
             process_ingestion()
         except Exception:
+            # Background thread with no caller; log and let finally release the run.
             logger.exception("Initial index failed")
         finally:
             if started:
@@ -569,4 +570,4 @@ def _ingest_once() -> None:
         _complete_ingest_pass(index, plan, started, chunk_started, total)
     except Exception as exc:
         _fail_ingest_pass(status)
-        logger.error("Ingestion failed: %s", exc)
+        logger.error("Ingestion failed for %s: %s", get().upload_dir, exc)

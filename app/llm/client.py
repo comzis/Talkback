@@ -269,6 +269,8 @@ def _warm_up() -> None:
         get().chat.complete("ok")
         logger.info("Warm-up finished.")
     except Exception:
+        # Swallowed on purpose: this runs in a background thread. wait_for_models()
+        # reports the failure to callers because the models stay unset.
         logger.exception("Warm-up failed")
     finally:
         get().models_ready.set()

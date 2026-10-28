@@ -164,8 +164,11 @@ async def query_index(request: QueryRequest):
         return await asyncio.to_thread(
             engine.answer_query, request.query, request.history, request.scope
         )
-    except Exception:
-        raise HTTPException(status_code=500, detail="The query could not be completed.")
+    except Exception as e:
+        logger.exception("Query failed")
+        raise HTTPException(
+            status_code=500, detail="The query could not be completed."
+        ) from e
 
 
 @app.post("/query/stream")
@@ -185,6 +188,7 @@ async def query_stream(request: QueryRequest):
                 payload = json.dumps(event["data"], ensure_ascii=False)
                 yield f"event: {event['event']}\ndata: {payload}\n\n"
         except Exception:
+            # Headers are already sent, so report the failure as an SSE error event.
             logger.exception("Streamed query failed")
             yield 'event: error\ndata: {"detail": "The query could not be completed."}\n\n'
 
@@ -258,6 +262,7 @@ async def get_system_status():
                 }
             )
     except Exception:
+        # Status page must still render; record the failure as an alarm instead.
         status["llm"]["status"] = "error"
         logger.exception("Failed to check LLM status")
         status["llm"]["error"] = "The language model could not be reached."
@@ -276,6 +281,7 @@ async def get_system_status():
         status["database"]["connected"] = True
         status["database"]["collection_count"] = collection_count
     except Exception:
+        # Status page must still render; record the failure as an alarm instead.
         status["database"]["status"] = "offline"
         status["database"]["connected"] = False
         logger.exception("Database connection error")
@@ -340,11 +346,11 @@ async def get_file_types():
             "total_files": len(files),
             "total_size": sum(f["size"] for f in files),
         }
-    except Exception:
+    except Exception as e:
         logger.exception("Error getting file types")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
-        )
+        ) from e
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -400,11 +406,11 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         logger.exception("Error during file upload")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
-        )
+        ) from e
 
 
 @app.delete("/files/{filename:path}")
@@ -432,9 +438,11 @@ async def delete_uploaded_file(filename: str):
     try:
         file_path.unlink()
         removed = engine.delete_chunks_for_file(relative)
-    except Exception:
+    except Exception as e:
         logger.exception("Failed to delete %s", relative)
-        raise HTTPException(status_code=500, detail="The file could not be deleted.")
+        raise HTTPException(
+            status_code=500, detail="The file could not be deleted."
+        ) from e
 
     return {"deleted": relative, "chunks_removed": removed}
 
@@ -480,11 +488,11 @@ async def list_uploaded_files():
                 for file_type in ["document", "code", "data", "image", "other"]
             },
         }
-    except Exception:
-        logger.exception("Error listing files")
+    except Exception as e:
+        logger.exception("Error listing files in %s", get().upload_dir)
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
-        )
+        ) from e
 
 
 @app.get("/llm/models")
@@ -526,11 +534,12 @@ async def list_llm_models():
                     status_code=response.status_code,
                     detail="Failed to fetch models from Ollama",
                 )
-    except Exception:
+    except Exception as e:
+        # Existing behavior: an upstream HTTPException is also reported as 500.
         logger.exception("Error listing LLM models")
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
-        )
+        ) from e
 
 
 @app.post("/llm/select")
@@ -586,11 +595,11 @@ async def select_llm_model(request: LLMSelectRequest):
                 )
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("Error selecting LLM model")
+    except Exception as e:
+        logger.exception("Error selecting LLM model %s", request.model)
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
-        )
+        ) from e
 
 
 @app.post("/llm/pull")
@@ -627,7 +636,8 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
                             if line:
                                 logger.info(f"Ollama pull: {line}")
             except Exception:
-                logger.exception("Error pulling model")
+                # Background task: no client is waiting, so log and stop.
+                logger.exception("Error pulling model %s", request.model)
 
         background_tasks.add_task(pull_model)
 
@@ -636,11 +646,11 @@ async def pull_llm_model(request: LLMPullRequest, background_tasks: BackgroundTa
             "model": request.model,
             "status": "pulling",
         }
-    except Exception:
-        logger.exception("Error initiating model pull")
+    except Exception as e:
+        logger.exception("Error initiating model pull for %s", request.model)
         raise HTTPException(
             status_code=500, detail="The request could not be completed."
-        )
+        ) from e
 
 
 @app.get("/llm/status")
@@ -683,6 +693,7 @@ async def get_llm_status():
                     "response_time_ms": round(response_time, 2),
                 }
     except Exception:
+        # Any failure (network, bad JSON, config) means offline; callers expect a dict.
         logger.exception("Error checking LLM status")
         return {
             "status": "offline",
