@@ -18,6 +18,10 @@ import re
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app"))
+from sources.filesystem import is_hidden  # noqa: E402
+
 _TEXT_EXT = {
     ".txt",
     ".md",
@@ -99,14 +103,6 @@ _RULES: list[tuple[str, re.Pattern[str]]] = [
         ),
     ),
 ]
-
-
-def is_hidden(path: Path, root: Path) -> bool:
-    try:
-        relative = path.relative_to(root)
-    except ValueError:
-        relative = path
-    return any(part.startswith(".") for part in relative.parts)
 
 
 def readable_text(path: Path) -> str | None:

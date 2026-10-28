@@ -27,16 +27,17 @@ MAIN = Path("/tmp/questions.json")
 HELD = Path("/tmp/heldout.json")
 
 
-def fp(node):
-    m = node.metadata or {}
+def file_page(node):
+    """(relative_path_or_name, page_label) for a retrieved node."""
+    metadata = node.metadata or {}
     return (
-        m.get("relative_path") or m.get("file_name") or "?",
-        str(m.get("page_label") or m.get("page_number") or ""),
+        metadata.get("relative_path") or metadata.get("file_name") or "?",
+        str(metadata.get("page_label") or metadata.get("page_number") or ""),
     )
 
 
-def fmt(x):
-    return x if x is not None else "miss"
+def rank_or_miss(rank):
+    return rank if rank is not None else "miss"
 
 
 def main() -> None:
@@ -72,7 +73,7 @@ def main() -> None:
             t0 = time.perf_counter()
             raw = index.as_retriever(similarity_top_k=100).retrieve(q)
             first_word_samples.append(("vec", time.perf_counter() - t0))
-            ranked = [fp(n) for n in raw]
+            ranked = [file_page(n) for n in raw]
             v20 = first_hit(ranked[:20], want, list(pages))
             v50 = first_hit(ranked[:50], want, list(pages))
             v100 = first_hit(ranked, want, list(pages))
@@ -88,13 +89,13 @@ def main() -> None:
                     if config.rerank_enabled()
                     else raw[:rerank_k]
                 )
-                rr = first_hit([fp(n) for n in ordered], want, list(pages))
-                rr_disp = fmt(rr)
+                rr = first_hit([file_page(n) for n in ordered], want, list(pages))
+                rr_disp = rank_or_miss(rr)
 
             t_pipe = time.perf_counter()
             nodes, boosted = _retrieve_nodes(index, q, lib)
             first_word_samples.append(("pipe", time.perf_counter() - t_pipe))
-            pipe = first_hit([fp(n) for n in nodes], want, list(pages))
+            pipe = first_hit([file_page(n) for n in nodes], want, list(pages))
 
             if boosted and named:
                 pinned = _retrieve_named(index, q, named, rerank_k)
@@ -102,9 +103,9 @@ def main() -> None:
 
                 merged = _merge_candidates(raw[:rerank_k], pinned, rerank_k)
                 ord2 = _order_nodes(merged, q) if merged else []
-                before = first_hit([fp(n) for n in ord2], want, list(pages))
+                before = first_hit([file_page(n) for n in ord2], want, list(pages))
                 kept = _keep(ord2, config.retrieve_per_file(), config.retrieve_limit())
-                after = first_hit([fp(n) for n in kept], want, list(pages))
+                after = first_hit([file_page(n) for n in kept], want, list(pages))
                 cap_rm = "yes" if before and not after else "no"
             else:
                 before = rr
@@ -173,8 +174,8 @@ def main() -> None:
 
             print(
                 f"{suite:8} {case['id'][:26]:26} {str(bool(named)):5} "
-                f"{fmt(v20):>4} {fmt(v50):>4} {fmt(v100):>4} {str(rr_disp):>10} "
-                f"{fmt(pipe):>4} {cap_rm:6} {cite:12} {note[:40]}"
+                f"{rank_or_miss(v20):>4} {rank_or_miss(v50):>4} {rank_or_miss(v100):>4} {str(rr_disp):>10} "
+                f"{rank_or_miss(pipe):>4} {cap_rm:6} {cite:12} {note[:40]}"
             )
 
     from collections import defaultdict

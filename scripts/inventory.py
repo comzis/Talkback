@@ -20,65 +20,21 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# Keep these sets aligned with app/sources/filesystem.get_file_type.
-_DOC = {".pdf", ".doc", ".docx", ".odt", ".txt", ".md", ".rst", ".rtf", ".epub"}
-_PRES = {".pptx", ".ppt", ".odp"}
-_CODE = {
-    ".py",
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    ".java",
-    ".cpp",
-    ".c",
-    ".h",
-    ".go",
-    ".rs",
-    ".php",
-    ".rb",
-    ".swift",
-    ".kt",
-    ".sh",
-    ".bash",
-    ".zsh",
-    ".yaml",
-    ".yml",
-    ".html",
-    ".css",
-    ".scss",
-    ".less",
-}
-_DATA = {".xlsx", ".xls", ".csv", ".json", ".xml"}
-_IMAGE = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"}
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app"))
+from sources.filesystem import (  # noqa: E402
+    get_file_type,
+    is_hidden,
+    is_macos_metadata,
+)
+
 # A PDF with fewer extractable characters per page is treated as a scan.
 _SCAN_CHARS_PER_PAGE = 40
 _SCAN_MIN_CHARS = 80
 
 
-def is_hidden(path: Path, root: Path) -> bool:
-    try:
-        relative = path.relative_to(root)
-    except ValueError:
-        relative = path
-    return any(part.startswith(".") for part in relative.parts)
-
-
-def is_macos_metadata(path: Path) -> bool:
-    return path.name == ".DS_Store" or path.name.startswith("._")
-
-
 def file_kind(path: Path) -> str:
-    ext = path.suffix.lower()
-    if ext in _DOC or ext in _PRES:
-        return "document"
-    if ext in _CODE:
-        return "code"
-    if ext in _DATA:
-        return "data"
-    if ext in _IMAGE:
-        return "image"
-    return "other"
+    return get_file_type(path.name)
 
 
 def walk_files(root: Path) -> list[Path]:
@@ -135,8 +91,8 @@ def is_scan_pdf(path: Path) -> bool | None:
     return (chars / pages) < _SCAN_CHARS_PER_PAGE
 
 
-def fate(path: Path, root: Path) -> str:
-    """index, index_poorly, or skip."""
+def fate(path: Path, root: Path, scan: bool | None = False) -> str:
+    """index, index_poorly, or skip. Pass scan from is_scan_pdf for PDFs."""
     if is_hidden(path, root) or is_macos_metadata(path):
         return "skip"
     if path.stat().st_size == 0:
@@ -146,12 +102,8 @@ def fate(path: Path, root: Path) -> str:
         return "index_poorly"
     if kind == "other":
         return "skip"
-    if path.suffix.lower() == ".pdf":
-        scan = is_scan_pdf(path)
-        if scan is True:
-            return "index_poorly"
-        if scan is None:
-            return "index_poorly"
+    if path.suffix.lower() == ".pdf" and scan is not False:
+        return "index_poorly"
     if kind in {"code", "data"}:
         return "index_poorly"
     return "index"
@@ -174,15 +126,16 @@ def inventory(root: Path) -> dict:
         total_size += size
         ext = path.suffix.lower() or "(none)"
         by_ext[ext] += 1
-        decision = fate(path, root)
+        kind = file_kind(path)
         scan = is_scan_pdf(path) if path.suffix.lower() == ".pdf" else False
+        decision = fate(path, root, scan=scan)
         if scan is True:
             scans.append(rel)
         by_fate[decision].append(
             {
                 "path": rel,
                 "size": size,
-                "kind": file_kind(path),
+                "kind": kind,
                 "scan_pdf": scan is True,
             }
         )
