@@ -251,6 +251,7 @@ def main() -> None:
         embed_cache = os.path.join(os.path.dirname(args.cache), "..", "llama_index")
         embed_cache = os.path.abspath(embed_cache)
     models = _Models(args.cache, embed_cache)
+
     # One accept/handle loop. MPS is not thread-safe across models even with a
     # lock when ThreadingHTTPServer also races large response writes. A deep
     # backlog keeps parallel API clients from getting RST while they wait.
