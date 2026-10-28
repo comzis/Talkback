@@ -41,7 +41,7 @@ def ranked_places(index, query: str, library_files: list[str], top_k: int):
     Rank is the similarity score. The prose-versus-link reorder and the trim to
     four excerpts happen later, when an answer is built.
     """
-    from llm.prompts import named_library_files
+    from llm.followups import named_library_files
     from retrieval.search import _merge_candidates, _retrieve_named
 
     global_nodes = index.as_retriever(similarity_top_k=top_k).retrieve(query)

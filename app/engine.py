@@ -52,24 +52,23 @@ from retrieval.search import (
     _retrieve_nodes,
     _source_record,
 )
-from llm.prompts import (
-    notice_for_general,
-    user_line,
-    assistant_prompt,
+from llm.citations import (
     correction_note,
-    display_excerpt,
     finalize_citations,
-    ground_library_reply,
-    explanation_prompt,
-    outside_document_note,
     passage_windows,
-    retrieval_text,
-    scrub_general_figures,
     source_label,
-    take_stream_piece,
-    should_search_library,
     supporting_sources,
 )
+from llm.excerpts import display_excerpt, ground_library_reply
+from llm.followups import retrieval_text, should_search_library
+from llm.language import (
+    notice_for_general,
+    outside_document_note,
+    scrub_general_figures,
+    take_stream_piece,
+    user_line,
+)
+from llm.templates import assistant_prompt, explanation_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +264,7 @@ def _citation_similarity(sentence: str, passage: str) -> float:
 
 
 def _close_citations(answer: str, sources: list, query: str = ""):
-    from llm.prompts import keep_close_citations
+    from llm.citations import keep_close_citations
 
     def score(sentence, passage):
         value = _citation_similarity(sentence, passage)

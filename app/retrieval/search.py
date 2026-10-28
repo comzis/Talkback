@@ -9,13 +9,9 @@ from llama_index.core import VectorStoreIndex
 
 import config
 from ingestion.plan import balance_matches
-from llm.prompts import (
-    asks_for_example,
-    asks_for_steps,
-    named_library_files,
-    prompt_passage,
-    source_label,
-)
+from llm.citations import source_label
+from llm.excerpts import prompt_passage
+from llm.followups import asks_for_example, asks_for_steps, named_library_files
 from retrieval.rerank import best_rerank_score, rerank_nodes
 
 logger = logging.getLogger(__name__)
