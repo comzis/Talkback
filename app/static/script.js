@@ -471,23 +471,6 @@ function setMessageBody(messageId, text, sources, questionId) {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
 
-function consumeSseBuffer(buffer, onEvent) {
-    const parts = buffer.split('\n\n');
-    const rest = parts.pop();
-    parts.forEach(part => {
-        if (!part.trim()) return;
-        let eventName = 'message';
-        const dataLines = [];
-        part.split('\n').forEach(line => {
-            if (line.startsWith('event:')) eventName = line.slice(6).trim();
-            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-        });
-        if (!dataLines.length) return;
-        onEvent(eventName, JSON.parse(dataLines.join('\n')));
-    });
-    return rest;
-}
-
 function priorTurns() {
     const turns = [];
     elements.chatMessages.querySelectorAll('.message').forEach((message) => {
@@ -539,8 +522,8 @@ async function sendMessage() {
     const controller = new AbortController();
     activeAnswer = controller;
     elements.sendBtn.textContent = 'Stop';
-    let streamed = '';
-    let sawToken = false;
+    const { consumeSseBuffer, applyStreamEvent, initialStreamState } = window.TalkbackStream;
+    let stream = initialStreamState();
 
     try {
         const response = await fetch('/query/stream', {
@@ -566,16 +549,13 @@ async function sendMessage() {
             const step = await reader.read();
             buffer += decoder.decode(step.value || new Uint8Array(), { stream: !step.done });
             buffer = consumeSseBuffer(buffer, (eventName, data) => {
+                stream = applyStreamEvent(stream, eventName, data);
                 if (eventName === 'status') {
-                    showStatus(messageId, data.text || '');
+                    showStatus(messageId, stream.status);
                 } else if (eventName === 'notice') {
-                    showNotice(messageId, data.text || '');
+                    showNotice(messageId, stream.notice);
                 } else if (eventName === 'retrieved') {
-                    const count = Number(data.count) || (data.sources || []).length;
-                    showStatus(
-                        messageId,
-                        `${count} passage${count === 1 ? '' : 's'} found`
-                    );
+                    showStatus(messageId, stream.status);
                     const questionBody = document
                         .getElementById(questionId)
                         ?.querySelector('.message-body');
@@ -585,35 +565,24 @@ async function sendMessage() {
                         });
                     }
                 } else if (eventName === 'token') {
-                    if (!sawToken) streamed = '';
-                    sawToken = true;
-                    streamed += data.text || '';
-                    setMessageBody(messageId, streamed);
+                    setMessageBody(messageId, stream.streamed);
                 } else if (eventName === 'footnote') {
-                    showFootnote(messageId, data.text || '');
+                    showFootnote(messageId, stream.footnote);
                 } else if (eventName === 'sources') {
-                    if (typeof data.text === 'string') {
-                        streamed = data.text;
-                    }
-                    setMessageBody(
-                        messageId,
-                        streamed,
-                        data.sources || [],
-                        questionId
-                    );
+                    setMessageBody(messageId, stream.streamed, stream.sources, questionId);
                 } else if (eventName === 'error') {
-                    setMessageBody(messageId, data.detail || 'The query could not be completed.');
+                    setMessageBody(messageId, stream.error);
                 }
             });
             if (step.done) break;
         }
     } catch (error) {
         if (error.name === 'AbortError') {
-            setMessageBody(messageId, sawToken ? streamed : 'Stopped.');
-        } else if (!sawToken) {
+            setMessageBody(messageId, stream.sawToken ? stream.streamed : 'Stopped.');
+        } else if (!stream.sawToken) {
             await answerWithoutStream(query, messageId);
         } else {
-            setMessageBody(messageId, streamed || ('Error: ' + error.message));
+            setMessageBody(messageId, stream.streamed || ('Error: ' + error.message));
         }
     } finally {
         activeAnswer = null;
