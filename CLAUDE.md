@@ -19,13 +19,13 @@ checkout's `.env`). Docs, embeddings, and chat stay on this machine — see
 - On this Mac, embedding and reranking run in a separate host process
   (`scripts/rerank_host.py`, launchd service `com.talkback.rerank-host`,
   `127.0.0.1:11435`, Apple MPS) instead of inside the container — set via
-  `RERANK_URL` / `EMBED_URL` in `.env`. On master, if that host process is
-  down, the container currently falls back to loading embed/rerank on CPU
-  (logged once per outage). PR #26 removes that fallback — once merged, a
-  down host instead returns a `search_unavailable` notice, since the offline
-  image doesn't carry CPU weights for a working fallback. On a Linux GPU
-  server, `RERANK_URL`/`EMBED_URL` are left unset and the container runs
-  embed/rerank in-process on CUDA.
+  `RERANK_URL` / `EMBED_URL` in `.env`. If that host process is down, queries
+  return a `search_unavailable` notice rather than silently falling back to
+  CPU in-container — the offline image doesn't carry CPU weights for a
+  working fallback. On a Linux GPU server, `RERANK_URL`/`EMBED_URL` are left
+  unset and the container runs embed/rerank in-process on CUDA; see
+  [docs/server-setup.md](docs/server-setup.md) for that path (tested with
+  mock models only so far).
 - Key app modules (under `app/`):
   - `main.py` — process entry point; just re-exports the FastAPI app.
   - `api/app.py` — builds the FastAPI app, mounts static files, wires routers.
