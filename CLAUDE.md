@@ -19,14 +19,49 @@ checkout's `.env`). Docs, embeddings, and chat stay on this machine — see
 - On this Mac, embedding and reranking run in a separate host process
   (`scripts/rerank_host.py`, launchd service `com.talkback.rerank-host`,
   `127.0.0.1:11435`, Apple MPS) instead of inside the container — set via
-  `RERANK_URL` / `EMBED_URL` in `.env`. If that host process is down, queries
-  return a `search_unavailable` notice rather than silently falling back to
-  CPU in-container (see commit `9dc55b6`). On a Linux GPU server those URLs
-  are left unset and the container runs embed/rerank in-process on CUDA.
-- Key app modules: `app/main.py` (HTTP API), `app/engine.py` (Chroma,
-  ingestion, retrieval, answers), `app/prompts.py` (when to search, citation
-  rules), `app/library.py` (file add/replace/remove), `app/config.py`
-  (settings).
+  `RERANK_URL` / `EMBED_URL` in `.env`. On master, if that host process is
+  down, the container currently falls back to loading embed/rerank on CPU
+  (logged once per outage). PR #26 removes that fallback — once merged, a
+  down host instead returns a `search_unavailable` notice, since the offline
+  image doesn't carry CPU weights for a working fallback. On a Linux GPU
+  server, `RERANK_URL`/`EMBED_URL` are left unset and the container runs
+  embed/rerank in-process on CUDA.
+- Key app modules (under `app/`):
+  - `main.py` — process entry point; just re-exports the FastAPI app.
+  - `api/app.py` — builds the FastAPI app, mounts static files, wires routers.
+  - `api/deps.py` — helpers shared by routers.
+  - `api/schemas.py` — request/response models.
+  - `api/routers/query.py` — `POST /query` and `/query/stream`.
+  - `api/routers/ingest.py` — ingestion endpoints (indexer process embeds).
+  - `api/routers/library.py` — list/upload/delete and file-type stats.
+  - `api/routers/llm.py` — model list/select/pull/status.
+  - `api/routers/system.py` — health, system status/resources, chat page.
+  - `engine.py` — Chroma, embeddings, ingestion, grounded answers.
+  - `state.py` — the one process-wide state object; routes and jobs share it.
+  - `config.py` — model, embedding, and timeout settings.
+  - `llm/client.py` — chat client (Ollama/vLLM).
+  - `llm/templates.py` — prompt templates for citation/assistant/explanation replies.
+  - `llm/prompts.py` — re-exports the public prompt-text API from the modules below.
+  - `llm/language.py` — notices, question-language detection, general-knowledge labelling.
+  - `llm/followups.py` — conversation history, continuation cues, library routing.
+  - `llm/citations.py` — finalizing citation markers, token support checks, similarity pruning.
+  - `llm/excerpts.py` — excerpt display, PDF spacing repair, grounding checks.
+  - `retrieval/search.py` — searches the library, balances matches across files.
+  - `retrieval/bm25.py` — in-memory BM25 over the Chroma collection (hybrid retrieval).
+  - `retrieval/rerank.py` — cross-encoder rerank (local model, loads on first use).
+  - `retrieval/recall.py` — locates which retrieved page holds a fact (no chat model).
+  - `store/chroma.py` — Chroma collection, cached index, chunk deletes.
+  - `store/embeddings.py` — embedding-model identity and e5 prefixes.
+  - `store/host_embed.py` — optional host embedder client (empty `EMBED_URL` keeps in-process).
+  - `store/status_db.py` — SQLite file-status table (what's indexed/pending).
+  - `store/search_errors.py` — shared error types for when search can't run safely.
+  - `ingestion/pipeline.py` — incremental ingest, status payload, re-index timer.
+  - `ingestion/plan.py` — decides which library files to add/update/leave indexed.
+  - `ingestion/progress.py` — pure progress math for ingestion.
+  - `ingestion/worker.py` — runs the indexer in its own process (`docker compose` `indexer` service).
+  - `sources/base.py` — the interface every library source must implement.
+  - `sources/filesystem.py` — the mounted folder as a source (paths, hidden files, read-only).
+  - `static/` — chat UI (`index.html`, `script.js`, `style.css`, `stream_events.js`).
 
 ## Working rules
 

@@ -157,14 +157,18 @@ On a Mac the compose file builds as UID `502` and GID `20` unless you pass other
 ```
 Talkback/
 ├── app/
-│   ├── main.py           # HTTP API and the Talkback page
-│   ├── engine.py         # Chroma, ingestion, retrieval, answers
-│   ├── prompts.py        # When to search, and how a citation is kept
-│   ├── library.py        # Which files to add, replace, or leave indexed
-│   ├── files.py          # Safe filenames and the library listing
+│   ├── main.py           # Process entry point; re-exports the FastAPI app
+│   ├── api/              # FastAPI app, routers (query, ingest, library, llm, system), schemas, deps
+│   ├── engine.py         # Chroma, embeddings, ingestion, grounded answers
+│   ├── state.py          # The one process-wide state object
 │   ├── config.py         # Model, embedding, and timeout settings
+│   ├── llm/              # Chat client, prompt templates, language, follow-ups, citations, excerpts
+│   ├── retrieval/        # Search, BM25, rerank, recall
+│   ├── store/            # Chroma, embeddings, host embed client, status DB, search errors
+│   ├── ingestion/        # Incremental-ingest pipeline, plan, progress, worker process
+│   ├── sources/          # Library source interface and the filesystem source
 │   ├── static/           # Chat UI
-│   ├── tests/            # Library plan, prompts, and citation checks
+│   ├── tests/            # Unit tests (plan, prompts, citations, retrieval, etc.)
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── data/                 # Library files (gitignored)
