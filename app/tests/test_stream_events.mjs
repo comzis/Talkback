@@ -63,6 +63,21 @@ test('notice, status, retrieved and error events', () => {
     assert.equal(state.error, 'boom');
 });
 
+test('search_unavailable surfaces as a clear notice, not the generic error path', () => {
+    // Mirrors the event sequence engine.py emits when the host embed/rerank
+    // service is down: notice + token carry the same clear sentence, and no
+    // error event is ever sent for this case.
+    let state = initialStreamState();
+    const text = 'Search is temporarily unavailable. The host embed/rerank service is down.';
+    state = applyStreamEvent(state, 'notice', { text });
+    state = applyStreamEvent(state, 'token', { text });
+    state = applyStreamEvent(state, 'sources', { sources: [] });
+    assert.equal(state.notice, text);
+    assert.equal(state.streamed, text);
+    assert.deepEqual(state.sources, []);
+    assert.equal(state.error, '');
+});
+
 test('SSE buffer framing keeps an incomplete trailing chunk', () => {
     const seen = [];
     const onEvent = (name, data) => seen.push([name, data]);
