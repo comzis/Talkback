@@ -86,7 +86,18 @@ def test_twenty_mixed_requests_never_overlap_gpu_work():
 
     # Threading server proves the GPU lock serialises work even if HTTP is
     # concurrent. Production uses HTTPServer (single accept loop).
-    server = ThreadingHTTPServer(("127.0.0.1", 0), host._handler(models))
+    #
+    # The default accept backlog (`request_queue_size`, 5) is too shallow for
+    # 20 simultaneous client connections: the OS resets connections past the
+    # backlog, so the client sees ConnectionResetError before the GPU lock is
+    # ever exercised. Production's `rerank_host.py` widens this to 128 for
+    # the same reason ("A deep backlog keeps parallel API clients from
+    # getting RST while they wait.") — match it here so the test actually
+    # reaches the lock instead of failing on the transport.
+    class _Server(ThreadingHTTPServer):
+        request_queue_size = 128
+
+    server = _Server(("127.0.0.1", 0), host._handler(models))
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
