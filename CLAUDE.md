@@ -130,3 +130,51 @@ docker compose up -d --build rag-api   # after a Python/UI change
 docker compose logs -f rag-api
 docker compose ps
 ```
+
+## Guardrails
+
+- Do not read or copy files under `data/`, `chroma_data/`, `hf_cache/`,
+  `tests/eval/local/`, or `.env`. They hold library documents and local config.
+- Do not edit `tests/eval/heldout.json` or `tests/eval/heldout.sha256`.
+- Do not write expected answers for eval rows. Engineers write them from the
+  documents (`docs/eval-authoring.md`).
+- Do not add outbound network calls or telemetry. `OFFLINE_MODE` must keep
+  blocking them. Ports stay on `127.0.0.1`.
+- The app takes its chat model only from `OLLAMA_MODEL`. Do not add a fallback
+  or default model name under `app/`. Pilot models must be Apache 2.0 or MIT.
+
+## How work flows
+
+1. `/grill-with-docs`: align on the change, one round of questions at a time,
+   until the design is settled. Terms go into `GLOSSARY.md`, hard-to-reverse
+   decisions into `docs/adr/`.
+2. `/to-spec`: the agreed design becomes a GitHub issue. Specs are not kept as
+   files in the repo.
+3. `/to-tickets`: the spec becomes vertical-slice issues with blocking edges,
+   each labelled `ready-for-agent` or `ready-for-human`.
+4. Implement one ticket per fresh session, test first: a failing test, then
+   the code, then refactor. Open a PR that references the ticket. Review the
+   diff in a new session, not the one that wrote it.
+5. QA by hand: run the stack, ask real questions, and file what you find as
+   new issues.
+
+Use `/grill-me` instead of step 1 for a question that is not about the code.
+A small fix with no design question (a doc correction, a one-line bug) can
+skip steps 1 to 3, but still gets an issue and a PR.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `comzis/Talkback`, through the `gh` CLI. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five labels; `ready-for-agent` means AFK, `ready-for-human` means a
+person must do or check it. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created when
+first needed. See `docs/agents/domain.md`.
