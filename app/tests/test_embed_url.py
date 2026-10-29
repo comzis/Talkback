@@ -25,14 +25,14 @@ def test_blank_embed_url_stays_in_process(monkeypatch):
     assert config.embed_url() == ""
 
 
-def test_active_embed_reports_a_down_host_as_container(monkeypatch):
+def test_active_embed_reports_a_down_host_as_unavailable(monkeypatch):
     import store.host_embed as host_embed
 
     monkeypatch.setenv("EMBED_URL", "http://embed.local")
     state.get().embed_host_warning_logged = False
     monkeypatch.setattr(host_embed, "_host_health", lambda url: None)
     report = host_embed.active_embed()
-    assert report["mode"] == "container"
+    assert report["mode"] == "unavailable"
     assert report["host"] == "unreachable"
 
 
@@ -79,9 +79,10 @@ def test_host_embed_batch_posts_prepared_texts(monkeypatch):
     assert seen["texts"] == ["a", "b"]
 
 
-def test_unreachable_host_falls_back_once(monkeypatch, caplog):
+def test_unreachable_host_raises_search_unavailable(monkeypatch, caplog):
     pytest.importorskip("llama_index")
     import store.host_embed as host_embed
+    from store.search_errors import SearchUnavailable
 
     monkeypatch.setenv("EMBED_URL", "http://embed.local")
     state.get().embed_host_warning_logged = False
@@ -90,49 +91,12 @@ def test_unreachable_host_falls_back_once(monkeypatch, caplog):
         "_post_embeddings",
         lambda url, texts: (_ for _ in ()).throw(host_embed.HostUnreachable("down")),
     )
-
-    class Local:
-        def get_text_embedding_batch(self, texts):
-            return [[1.0] for _ in texts]
-
-        def get_query_embedding(self, text):
-            return [1.0]
-
     model = host_embed.build_embed_model()
-    model._local = Local()
-
     with caplog.at_level("WARNING"):
-        first = model.get_text_embedding_batch(["a"])
-        second = model.get_text_embedding_batch(["b"])
-    assert first == [[1.0]]
-    assert second == [[1.0]]
+        with pytest.raises(SearchUnavailable, match="host embedder is down"):
+            model.get_query_embedding("ping")
     warnings = [record for record in caplog.records if "unreachable" in record.message]
     assert len(warnings) == 1
-
-
-def test_unreachable_host_without_backup_raises_search_unavailable(monkeypatch):
-    pytest.importorskip("llama_index")
-    import store.host_embed as host_embed
-    from store.search_errors import SearchUnavailable
-
-    monkeypatch.setenv("EMBED_URL", "http://embed.local")
-    monkeypatch.setattr(
-        host_embed,
-        "_post_embeddings",
-        lambda url, texts: (_ for _ in ()).throw(host_embed.HostUnreachable("down")),
-    )
-    model = host_embed.build_embed_model()
-    model._local = None
-
-    def boom(*_args, **_kwargs):
-        raise OSError("offline cache miss")
-
-    monkeypatch.setattr(
-        "llama_index.embeddings.huggingface.HuggingFaceEmbedding",
-        boom,
-    )
-    with pytest.raises(SearchUnavailable, match="temporarily unavailable"):
-        model.get_query_embedding("ping")
 
 
 def test_host_module_still_prefers_cuda_then_mps():

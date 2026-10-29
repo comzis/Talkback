@@ -63,6 +63,9 @@ const elements = {
     dbLight: document.getElementById('dbLight'),
     ingestionStatus: document.getElementById('ingestionStatus'),
     ingestionLight: document.getElementById('ingestionLight'),
+    searchStatus: document.getElementById('searchStatus'),
+    searchDetail: document.getElementById('searchDetail'),
+    searchLight: document.getElementById('searchLight'),
     llmStatus: document.getElementById('llmStatus'),
     llmModel: document.getElementById('llmModel'),
     llmLight: document.getElementById('llmLight'),
@@ -933,6 +936,21 @@ async function checkSystemStatus() {
             elements.rerankMode.textContent = `Rerank · ${mode}${device}${down}`;
         }
 
+        // Search (host embed/rerank) status
+        if (elements.searchStatus) {
+            const searchDown =
+                data.embed?.host === 'unreachable' || data.rerank?.host === 'unreachable';
+            elements.searchStatus.textContent = searchDown ? 'Search service offline' : 'Online';
+            setTrafficLight(elements.searchLight, searchDown ? 'red' : 'green');
+            if (elements.searchDetail) {
+                elements.searchDetail.textContent = searchDown
+                    ? 'Host embed/rerank unreachable'
+                    : data.rerank?.mode === 'host'
+                      ? 'Host embed/rerank'
+                      : 'In-container embed/rerank';
+            }
+        }
+
         // LLM Status
         if (data.llm?.available) {
             elements.llmStatus.textContent = 'Ready';
@@ -956,6 +974,7 @@ async function checkSystemStatus() {
         setTrafficLight(elements.apiLight, 'red');
         setTrafficLight(elements.dbLight, 'red');
         setTrafficLight(elements.llmLight, 'red');
+        setTrafficLight(elements.searchLight, 'red');
     }
 }
 

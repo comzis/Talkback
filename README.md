@@ -42,7 +42,7 @@ scripts/uninstall-rerank-host.sh
 
 Install Docker Engine and the Docker Compose plugin, and install Ollama on the host so it can use the machine's GPU. Build as the user that owns the library folder. The Mac default of UID `502` will not match a typical server account.
 
-On a Linux GPU server, do not start the Mac host service. Rebuild the API image with a CUDA torch wheel instead of the CPU wheel in the Dockerfile, and leave `RERANK_URL` and `EMBED_URL` unset. The container then runs the reranker and the embedding model on the NVIDIA GPU. The host service exists because Docker Desktop on a Mac cannot see the Apple GPU.
+On a Linux GPU server, do not start the Mac host service. Rebuild the API image with a CUDA torch wheel instead of the CPU wheel in the Dockerfile, and leave `RERANK_URL` and `EMBED_URL` unset. The container then runs the reranker and the embedding model on the NVIDIA GPU. The host service exists because Docker Desktop on a Mac cannot see the Apple GPU. See [docs/server-setup.md](docs/server-setup.md) for the exact Dockerfile and compose changes this path needs — it has only been tested with mock models so far, not a real GPU.
 
 ```bash
 docker compose build --build-arg UID="$(id -u)" --build-arg GID="$(id -g)"

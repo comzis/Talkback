@@ -38,6 +38,52 @@ async def get_system_resources():
     }
 
 
+@router.get("/system/memory")
+def get_system_memory():
+    """Process RSS and the fixed caches that used to grow per query."""
+    import os
+    from pathlib import Path
+
+    from llama_index.core import Settings
+
+    talkback = get()
+    rss_bytes = 0
+    status_path = Path("/proc/self/status")
+    if status_path.is_file():
+        for line in status_path.read_text().splitlines():
+            if line.startswith("VmRSS:"):
+                rss_bytes = int(line.split()[1]) * 1024
+                break
+    bm25 = talkback.bm25
+    library = talkback.library_index
+    index = talkback.cached_index
+    docstore_len = None
+    if index is not None:
+        docstore = getattr(index, "docstore", None)
+        docs = getattr(docstore, "docs", None) if docstore is not None else None
+        if docs is not None:
+            docstore_len = len(docs)
+    local_loaded = False
+    try:
+        embed = Settings.embed_model
+        local_loaded = getattr(embed, "_local", None) is not None
+    except Exception:
+        # Warm-up may not have finished; the snapshot still reports RSS.
+        local_loaded = False
+    return {
+        "pid": os.getpid(),
+        "rss_bytes": rss_bytes,
+        "rss_miB": round(rss_bytes / (1024 * 1024), 1),
+        "bm25_docs": len(bm25.documents),
+        "bm25_count": bm25.count,
+        "library_index_count": library.count,
+        "library_files": len(library.complete or {}),
+        "docstore_len": docstore_len,
+        "rerank_loaded": talkback.rerank_model is not None,
+        "embed_local_loaded": local_loaded,
+    }
+
+
 @router.get("/system/status")
 async def get_system_status():
     """
@@ -128,7 +174,15 @@ async def get_system_status():
             {
                 "type": "warning",
                 "component": "rerank",
-                "message": "Host reranker is unreachable. Scoring pairs in the container.",
+                "message": "Host reranker is unreachable. Library search is unavailable.",
+            }
+        )
+    if status["embed"].get("host") == "unreachable":
+        status["alarms"].append(
+            {
+                "type": "warning",
+                "component": "embed",
+                "message": "Host embedder is unreachable. Library search is unavailable.",
             }
         )
 

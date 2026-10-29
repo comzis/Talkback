@@ -23,6 +23,20 @@ class Bm25Cache:
         self.count = -1
 
 
+class LibraryIndexCache:
+    """Classified library paths from Chroma metadata.
+
+    A full metadata pull is tens of MiB. Rebuilding it on every query made RSS
+    climb for the life of the worker; refresh when the collection changes.
+    """
+
+    def __init__(self) -> None:
+        self.count = -1
+        self.complete: dict[str, tuple] | None = None
+        self.legacy: set[str] | None = None
+        self.incomplete: set[str] | None = None
+
+
 class Talkback:
     """Process state that used to live in module globals."""
 
@@ -42,6 +56,7 @@ class Talkback:
         self.chat = None
         self.heartbeat_stop: threading.Event | None = None
         self.bm25 = Bm25Cache()
+        self.library_index = LibraryIndexCache()
         self.rerank_model = None
         self.rerank_tokenizer = None
         self.rerank_host_warning_logged = False

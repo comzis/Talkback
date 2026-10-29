@@ -86,6 +86,13 @@ def chunk_metadatas() -> list:
     return stored.get("metadatas") or []
 
 
+def invalidate_library_index() -> None:
+    """Drop the classified-path cache (after ingest, delete, or rebuild)."""
+    from state import LibraryIndexCache
+
+    get().library_index = LibraryIndexCache()
+
+
 def get_or_create_cached_index() -> VectorStoreIndex:
     if get().cached_index is not None:
         return get().cached_index
@@ -131,15 +138,35 @@ def replace_vector_collection() -> None:
             collection.delete(ids=ids[offset : offset + 500])
         logger.info("Cleared %s vectors from rag_collection", len(ids))
     get().cached_index = None
+    invalidate_library_index()
     _remember_collection(collection)
 
 
 def indexed_documents() -> tuple[dict[str, tuple], set[str], set[str]]:
-    """Return complete signatures, legacy paths, and files still missing a finished marker."""
+    """Return complete signatures, legacy paths, and files still missing a finished marker.
+
+    The classified maps are cached for the current collection count so a query
+    does not re-download every chunk's metadata.
+    """
     if get().chroma_collection is None or collection_count() == 0:
+        invalidate_library_index()
         return {}, set(), set()
+    cache = get().library_index
+    current = collection_count()
+    if (
+        cache.complete is not None
+        and cache.legacy is not None
+        and cache.incomplete is not None
+        and cache.count == current
+    ):
+        return cache.complete, cache.legacy, cache.incomplete
     stored = get().chroma_collection.get(include=["metadatas"])
-    return classify_stored_chunks(stored.get("metadatas") or [])
+    complete, legacy, incomplete = classify_stored_chunks(stored.get("metadatas") or [])
+    cache.complete = complete
+    cache.legacy = legacy
+    cache.incomplete = incomplete
+    cache.count = current
+    return complete, legacy, incomplete
 
 
 def delete_chunks_for_file(relative_path: str) -> int:
@@ -158,6 +185,7 @@ def delete_chunks_for_file(relative_path: str) -> int:
     if ids:
         get().chroma_collection.delete(ids=list(ids))
     get().cached_index = None
+    invalidate_library_index()
     return len(ids)
 
 
@@ -179,3 +207,4 @@ def mark_file_complete(relative_path: str) -> None:
             ids=ids[offset : offset + 100],
             metadatas=metas[offset : offset + 100],
         )
+    invalidate_library_index()
