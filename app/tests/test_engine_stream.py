@@ -109,11 +109,7 @@ def test_no_surviving_citation_shows_the_outside_note(monkeypatch):
     notices = [event["data"]["text"] for event in events if event["event"] == "notice"]
     assert notices == ["This answer is not from the documents and may not match them."]
     sources = [event for event in events if event["event"] == "sources"]
-    cards = sources[0]["data"]["sources"]
-    assert len(cards) == 1
-    assert cards[0]["used"] is False
-    assert cards[0]["source"] == "a.pdf"
-    assert "text" not in cards[0]
+    assert sources[0]["data"]["sources"] == []
 
 
 def test_an_unchanged_library_answer_has_no_footnote(monkeypatch):
@@ -219,7 +215,51 @@ def test_tail_notice_and_footnote_when_nothing_cited(monkeypatch):
     events = _tail(monkeypatch, [], "fixed")
     assert [e["event"] for e in events] == ["footnote", "notice", "sources", "done"]
     assert events[0]["data"]["text"] == "fixed"
-    assert events[2]["data"]["sources"][0]["used"] is False
+    assert events[2]["data"]["sources"] == []
+
+
+def test_tail_shows_only_cited_candidates_numbered_to_match_the_text(monkeypatch):
+    """The sources event must carry only the candidates the answer actually
+    cited (c.pdf and e.pdf here, not a/b/d/f.pdf), numbered 1..n to match
+    finalize_citations' renumbered markers in the displayed text exactly,
+    with each excerpt windowed by display_excerpt and used explicitly True.
+    """
+    candidates = [
+        {"number": 1, "source": "a.pdf", "text": "aaa", "page": "1"},
+        {"number": 2, "source": "b.pdf", "text": "bbb", "page": "1"},
+        {"number": 3, "source": "c.pdf", "text": "ccc", "page": "1"},
+        {"number": 4, "source": "d.pdf", "text": "ddd", "page": "1"},
+        {"number": 5, "source": "e.pdf", "text": "eee", "page": "1"},
+        {"number": 6, "source": "f.pdf", "text": "fff", "page": "1"},
+    ]
+    # The model actually cited original candidates 3 and 5.
+    shown = "Alpha fact [3]. Beta fact [5]."
+    supported = [
+        {"number": 3, "source": "c.pdf", "text": "ccc", "page": "1"},
+        {"number": 5, "source": "e.pdf", "text": "eee", "page": "1"},
+    ]
+    monkeypatch.setattr(engine, "supporting_sources", lambda shown, sources: supported)
+    monkeypatch.setattr(
+        engine, "_close_citations", lambda shown, supported, query="": supported
+    )
+    monkeypatch.setattr(
+        engine, "display_excerpt", lambda text, query, reply: f"windowed:{text}"
+    )
+
+    events = list(engine._iter_library_stream_tail(shown, shown, None, candidates, "q"))
+    sources_event = next(e for e in events if e["event"] == "sources")
+    cards = sources_event["data"]["sources"]
+    displayed_text = sources_event["data"]["text"]
+
+    # Only the two cited candidates appear -- a.pdf/b.pdf/d.pdf/f.pdf are gone.
+    assert [card["source"] for card in cards] == ["c.pdf", "e.pdf"]
+    # Renumbered 1..n, matching the markers finalize_citations rewrote into the text.
+    assert [card["number"] for card in cards] == [1, 2]
+    assert "[1]" in displayed_text and "[2]" in displayed_text
+    assert "[3]" not in displayed_text and "[5]" not in displayed_text
+    # Excerpt text goes through the display_excerpt window, not the raw chunk.
+    assert [card["text"] for card in cards] == ["windowed:ccc", "windowed:eee"]
+    assert all(card["used"] is True for card in cards)
 
 
 def test_stream_prompt_general_answer_short_circuits(monkeypatch):

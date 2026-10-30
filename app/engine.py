@@ -151,22 +151,19 @@ def _candidate_card(source: dict) -> dict:
     return card
 
 
-def _final_source_cards(
-    candidates: list[dict], used: list[dict], query: str, reply: str
-):
-    """Keep every retrieved card. Mark the ones the answer cited."""
-    used_by_number = {int(source["number"]): source for source in used}
+def _final_source_cards(used: list[dict], query: str, reply: str):
+    """Build the final cards straight from finalize_citations' cited sources.
+
+    Each card already carries the dense 1..n number finalize_citations
+    assigned, which matches the `[n]` markers rewritten into the displayed
+    text, so no matching against the original retrieval candidates is done.
+    """
     cards = []
-    for candidate in candidates:
-        number = int(candidate.get("number") or 0)
-        cited = used_by_number.get(number)
-        if cited is None:
-            cards.append(_candidate_card(candidate))
-            continue
-        card = dict(cited)
-        card["used"] = True
+    for source in used:
+        card = dict(source)
         card["label"] = card.get("label") or source_label(card)
         card["text"] = display_excerpt(card.get("text") or "", query, reply)
+        card["used"] = True
         cards.append(card)
     return cards
 
@@ -223,7 +220,7 @@ def _iter_library_stream_tail(
     if not used:
         logger.info("No citation survived the check")
         yield {"event": "notice", "data": {"text": outside_document_note(query)}}
-    cards = _final_source_cards(sources, used, query, display)
+    cards = _final_source_cards(used, query, display)
     logger.info(
         "Query cited %s",
         [source["source"] for source in cards if source.get("used")],
@@ -244,8 +241,8 @@ def _stream_prompt(
     A library reply is checked against the excerpts after the stream. If that
     check changes the wording, a short footnote notes it — the full grounded
     text is never re-sent. Citation markers are finalized with the sources
-    event (inline, once per sentence, renumbered). Every retrieved candidate
-    stays in the final sources list; unused ones are marked used=false.
+    event (inline, once per sentence, renumbered). Only the sources the
+    answer actually cites reach the final sources list.
     """
     if notice:
         yield {"event": "notice", "data": {"text": notice}}
