@@ -366,20 +366,18 @@ function sourceHeading(source) {
     return source.label || source.path || source.source || 'Unknown';
 }
 
-function appendSources(parent, sources, { provisional = false } = {}) {
+function appendSources(parent, sources) {
     parent.querySelectorAll('.message-sources').forEach((node) => node.remove());
     if (!sources || !sources.length) return;
     const sourcesEl = document.createElement('div');
     sourcesEl.className = 'message-sources';
-    if (provisional) sourcesEl.classList.add('sources-provisional');
     const title = document.createElement('div');
     title.className = 'sources-title';
-    title.textContent = provisional ? 'Passages found' : 'Sources';
+    title.textContent = 'Sources';
     sourcesEl.appendChild(title);
     sources.forEach((source, index) => {
-        const used = provisional || source.used !== false;
         const item = document.createElement('div');
-        item.className = used ? 'source-item' : 'source-item source-unused';
+        item.className = 'source-item';
         const number = document.createElement('div');
         number.className = 'source-number';
         number.textContent = String(source.number || index + 1);
@@ -388,12 +386,7 @@ function appendSources(parent, sources, { provisional = false } = {}) {
         const name = document.createElement('strong');
         name.textContent = sourceHeading(source);
         sourceText.appendChild(name);
-        if (!used) {
-            const mark = document.createElement('span');
-            mark.className = 'source-unused-mark';
-            mark.textContent = ' searched, not used';
-            sourceText.appendChild(mark);
-        } else if (source.text) {
+        if (source.text) {
             const excerpt = document.createElement('span');
             const snippet = source.text.length > 500 ? `${source.text.slice(0, 500)}…` : source.text;
             excerpt.textContent = ` ${snippet}`;
@@ -559,14 +552,6 @@ async function sendMessage() {
                     showNotice(messageId, stream.notice);
                 } else if (eventName === 'retrieved') {
                     showStatus(messageId, stream.status);
-                    const questionBody = document
-                        .getElementById(questionId)
-                        ?.querySelector('.message-body');
-                    if (questionBody) {
-                        appendSources(questionBody, data.sources || [], {
-                            provisional: true,
-                        });
-                    }
                 } else if (eventName === 'token') {
                     setMessageBody(messageId, stream.streamed);
                 } else if (eventName === 'footnote') {
