@@ -199,9 +199,10 @@ def _iter_streamed_token_events(prompt: str, temperature: float | None):
 def _library_reply_and_correction(
     shown: str, sources: list, query: str
 ) -> tuple[str, str | None]:
-    """Check a library reply. The note is None when the visible text is unchanged."""
-    reply = ground_library_reply(shown, sources, query).strip()
-    note = correction_note(shown, reply or user_line("no_detail", query), query)
+    """Check a library reply. The note is None when nothing was actually dropped."""
+    reply, dropped = ground_library_reply(shown, sources, query)
+    reply = reply.strip()
+    note = correction_note(dropped, reply or user_line("no_detail", query), query)
     return reply, note
 
 

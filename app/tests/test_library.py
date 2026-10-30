@@ -92,7 +92,7 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("icmp.type", opening)
         reached = prompts.explanation_prompt("Quel filtre ?", ["wire.pdf"], [passage])
         self.assertIn(fact, reached)
-        grounded_fact = prompts.ground_library_reply(
+        grounded_fact, _dropped = prompts.ground_library_reply(
             f"The filter is {fact}. [1]",
             [{"number": 1, "text": passage}],
             "Quel filtre ?",
@@ -239,7 +239,7 @@ not tcp.analysis.duplicate_ack and not tcp.analysis.retransmission
             "that cont ain a byte sequence of 0x90, perhaps because certain malware uses this sequence: "
             "udp[8:4]==90:90:90:03"
         )
-        grounded = prompts.ground_library_reply(
+        grounded, dropped = prompts.ground_library_reply(
             invented,
             [{"number": 1, "source": "wire.pdf", "text": chunk}],
             "Give an example",
@@ -248,11 +248,12 @@ not tcp.analysis.duplicate_ack and not tcp.analysis.retransmission
         self.assertTrue(grounded.startswith("Example 1: UDP Packets"))
         self.assertIn("udp[8:4]==90:90:90:03", grounded)
         self.assertIn("contain", grounded)
+        self.assertEqual(dropped, [])
         linked = (
             "Example 1: UDP Packets Suppose that you want to view UDP packets. "
             "http://packetlife.net/filters.pdf udp[8:4]==90:90:90:03"
         )
-        without_links = prompts.ground_library_reply(
+        without_links, _dropped = prompts.ground_library_reply(
             "invented", [{"number": 1, "text": linked}], "Give an example"
         )
         self.assertNotIn("http", without_links)
@@ -262,7 +263,7 @@ not tcp.analysis.duplicate_ack and not tcp.analysis.retransmission
             "The following example shows ICMP Protocol Unreachable or Source Quench error messages. "
             "(icmp.type == 3 && icmp.code == 2) || (icmp.type == 4 && icmp.code == 0)"
         )
-        steps = prompts.ground_library_reply(
+        steps, _dropped = prompts.ground_library_reply(
             "1. **Identify areas of concern:** Look at performance.\nLet me know if you have any other questions.",
             [{"number": 1, "text": icmp}],
             "Give a detailed explanation of each step for the operator",
@@ -274,12 +275,14 @@ not tcp.analysis.duplicate_ack and not tcp.analysis.retransmission
         self.assertNotIn("Let me know", steps)
         kept_filter = "Use the filter `udp[8:4]==90:90:90:03`. [1]"
         udp = [{"number": 1, "text": "Filters only. udp[8:4]==90:90:90:03"}]
-        quoted = prompts.ground_library_reply(kept_filter, udp, "Give an example")
+        quoted, _dropped = prompts.ground_library_reply(
+            kept_filter, udp, "Give an example"
+        )
         self.assertIn("udp[8:4]", quoted)
         self.assertNotIn("worked example", quoted)
         invented_code = "Examine ICMP packets. Use filters for ICMP Type 3, Code 2."
         icmp = [{"number": 1, "text": "Example 2 discusses ICMP Protocol Unreachable."}]
-        steps = prompts.ground_library_reply(
+        steps, _dropped = prompts.ground_library_reply(
             invented_code,
             icmp,
             "Give a detailed explanation of each step for the operator",
@@ -293,7 +296,9 @@ not tcp.analysis.duplicate_ack and not tcp.analysis.retransmission
                 "text": "Wireshark is an open-source protocol analyser. It supports over 1100 protocols.",
             }
         ]
-        self.assertEqual(prompts.ground_library_reply(overview, about), overview)
+        reply, dropped = prompts.ground_library_reply(overview, about)
+        self.assertEqual(reply, overview)
+        self.assertEqual(dropped, [])
         self.assertIn(
             "Number the steps",
             prompts.explanation_prompt(

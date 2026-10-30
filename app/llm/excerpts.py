@@ -462,37 +462,46 @@ def _structured_library_reply(sources: list[dict], query: str) -> str | None:
     return None
 
 
-def _strip_unsupported_fences(text: str, blob: str) -> str:
+def _strip_unsupported_fences(text: str, blob: str) -> tuple[str, list[str]]:
     """Remove fenced blocks whose contents the excerpts do not contain."""
+    dropped = []
     for match in list(_FENCE.finditer(text)):
         if _unsupported_fragment(match.group(1), blob):
             text = text.replace(match.group(0), "")
-    return text
+            dropped.append(match.group(1).strip())
+    return text, dropped
 
 
-def _keep_supported_sentences(text: str, blob: str) -> str:
+def _keep_supported_sentences(text: str, blob: str) -> tuple[str, list[str]]:
     """Keep sentences that invent nothing and are not bare citation markers."""
     kept = []
+    dropped = []
     for line in re.split(r"\n+", text):
         for sentence in re.split(r"(?<!\d)(?<=[.!?])\s+(?=[A-Z])", line.strip()):
             sentence = sentence.strip()
-            if not sentence or _sentence_invents(sentence, blob):
+            if not sentence:
+                continue
+            if _sentence_invents(sentence, blob):
+                dropped.append(sentence)
                 continue
             if re.fullmatch(r"(?:\[\d+\]\s*)+", sentence):
                 continue
             kept.append(sentence)
-    return "\n".join(kept).strip()
+    return "\n".join(kept).strip(), dropped
 
 
-def _drop_ungrounded_example_leads(cleaned: str, blob: str) -> str:
+def _drop_ungrounded_example_leads(cleaned: str, blob: str) -> tuple[str, list[str]]:
     """Drop "Here is..." lead-ins when no supported example remains."""
     if _shows_example(cleaned, blob):
-        return cleaned
-    return "\n".join(
-        sentence
-        for sentence in cleaned.split("\n")
-        if not _EXAMPLE_LEAD.match(sentence.strip())
-    ).strip()
+        return cleaned, []
+    kept = []
+    dropped = []
+    for sentence in cleaned.split("\n"):
+        if _EXAMPLE_LEAD.match(sentence.strip()):
+            dropped.append(sentence.strip())
+        else:
+            kept.append(sentence)
+    return "\n".join(kept).strip(), dropped
 
 
 def _append_example_if_needed(cleaned: str, sources: list[dict], query: str) -> str:
@@ -513,16 +522,25 @@ def _or_no_detail(cleaned: str, query: str) -> str:
     return cleaned
 
 
-def ground_library_reply(answer: str, sources: list[dict], query: str = "") -> str:
-    """Drop filters, commands, and numbers that the retrieved excerpts do not contain."""
+def ground_library_reply(
+    answer: str, sources: list[dict], query: str = ""
+) -> tuple[str, list[str]]:
+    """Drop filters, commands, and numbers that the retrieved excerpts do not contain.
+
+    Returns the grounded text and a report of what was actually removed (an
+    unsupported fence, sentence, or technical token). The report is empty
+    when the only differences from the raw answer are cosmetic — markdown
+    stripped, whitespace or indentation normalized.
+    """
     structured = _structured_library_reply(sources, query)
     if structured:
-        return structured
+        return structured, []
     if not answer:
-        return answer
+        return answer, []
     blob = _source_blob(sources)
-    text = _strip_unsupported_fences(_plain_reply(answer), blob)
-    cleaned = _keep_supported_sentences(text, blob)
-    cleaned = _drop_ungrounded_example_leads(cleaned, blob)
+    text, fence_drops = _strip_unsupported_fences(_plain_reply(answer), blob)
+    cleaned, sentence_drops = _keep_supported_sentences(text, blob)
+    cleaned, lead_drops = _drop_ungrounded_example_leads(cleaned, blob)
     cleaned = _append_example_if_needed(cleaned, sources, query)
-    return _or_no_detail(cleaned, query)
+    cleaned = _or_no_detail(cleaned, query)
+    return cleaned, fence_drops + sentence_drops + lead_drops

@@ -43,49 +43,55 @@ class StructuredReplyTests(unittest.TestCase):
 class StripFencesTests(unittest.TestCase):
     def test_removes_unsupported_fence(self):
         text = "Run this.\n```\nrm -rf /\n```\nDone."
-        self.assertEqual(
-            excerpts._strip_unsupported_fences(text, BLOB), "Run this.\n\nDone."
-        )
+        cleaned, dropped = excerpts._strip_unsupported_fences(text, BLOB)
+        self.assertEqual(cleaned, "Run this.\n\nDone.")
+        self.assertEqual(dropped, ["rm -rf /"])
 
     def test_keeps_supported_fence(self):
         text = "Use:\n```\nevent.type == login_failed\n```"
-        self.assertEqual(excerpts._strip_unsupported_fences(text, BLOB), text)
+        cleaned, dropped = excerpts._strip_unsupported_fences(text, BLOB)
+        self.assertEqual(cleaned, text)
+        self.assertEqual(dropped, [])
 
 
 class KeepSentencesTests(unittest.TestCase):
     def test_drops_inventing_sentence(self):
         text = "Logins are listed. Use `secret_flag` to hide them."
-        self.assertEqual(
-            excerpts._keep_supported_sentences(text, BLOB), "Logins are listed."
-        )
+        cleaned, dropped = excerpts._keep_supported_sentences(text, BLOB)
+        self.assertEqual(cleaned, "Logins are listed.")
+        self.assertEqual(dropped, ["Use `secret_flag` to hide them."])
 
     def test_keeps_supported_sentence(self):
         text = "Use `event.type == login_failed` to narrow the list."
-        self.assertEqual(excerpts._keep_supported_sentences(text, BLOB), text)
+        cleaned, dropped = excerpts._keep_supported_sentences(text, BLOB)
+        self.assertEqual(cleaned, text)
+        self.assertEqual(dropped, [])
 
     def test_drops_bare_citation_markers(self):
-        self.assertEqual(
-            excerpts._keep_supported_sentences("Logins are listed.\n[1] [2]", BLOB),
-            "Logins are listed.",
+        cleaned, dropped = excerpts._keep_supported_sentences(
+            "Logins are listed.\n[1] [2]", BLOB
         )
+        self.assertEqual(cleaned, "Logins are listed.")
+        self.assertEqual(dropped, [])
 
     def test_empty_input(self):
-        self.assertEqual(excerpts._keep_supported_sentences("", BLOB), "")
+        cleaned, dropped = excerpts._keep_supported_sentences("", BLOB)
+        self.assertEqual(cleaned, "")
+        self.assertEqual(dropped, [])
 
 
 class ExampleLeadTests(unittest.TestCase):
     def test_drops_lead_without_example(self):
         cleaned = "Here is the filter.\nLogins are listed."
-        self.assertEqual(
-            excerpts._drop_ungrounded_example_leads(cleaned, BLOB),
-            "Logins are listed.",
-        )
+        result, dropped = excerpts._drop_ungrounded_example_leads(cleaned, BLOB)
+        self.assertEqual(result, "Logins are listed.")
+        self.assertEqual(dropped, ["Here is the filter."])
 
     def test_keeps_lead_when_example_is_shown(self):
         cleaned = "Here is the filter.\nUse `event.type == login_failed` now."
-        self.assertEqual(
-            excerpts._drop_ungrounded_example_leads(cleaned, BLOB), cleaned
-        )
+        result, dropped = excerpts._drop_ungrounded_example_leads(cleaned, BLOB)
+        self.assertEqual(result, cleaned)
+        self.assertEqual(dropped, [])
 
 
 class AppendExampleTests(unittest.TestCase):
@@ -141,20 +147,55 @@ class OrNoDetailTests(unittest.TestCase):
 
 class GroundLibraryReplyTests(unittest.TestCase):
     def test_empty_answer_passes_through(self):
-        self.assertEqual(excerpts.ground_library_reply("", SOURCES, "q"), "")
+        reply, dropped = excerpts.ground_library_reply("", SOURCES, "q")
+        self.assertEqual(reply, "")
+        self.assertEqual(dropped, [])
 
     def test_structured_reply_wins(self):
         query = "show an example"
-        self.assertEqual(
-            excerpts.ground_library_reply("anything", SOURCES, query),
-            excerpts._quote_example(SOURCES, query),
-        )
+        reply, dropped = excerpts.ground_library_reply("anything", SOURCES, query)
+        self.assertEqual(reply, excerpts._quote_example(SOURCES, query))
+        self.assertEqual(dropped, [])
 
     def test_invented_content_is_removed(self):
-        reply = excerpts.ground_library_reply(
+        reply, dropped = excerpts.ground_library_reply(
             "Logins are listed. Use `secret_flag` to hide them.", SOURCES, "q"
         )
         self.assertEqual(reply, "Logins are listed.")
+        self.assertEqual(dropped, ["Use `secret_flag` to hide them."])
+
+    def test_cosmetic_only_change_has_empty_drop_report(self):
+        """Stripped bold and fence indentation lost, nothing unsupported removed."""
+        shown = (
+            "**Use** the filter `event.type == login_failed` and then:\n"
+            "```yaml\n"
+            "- name: Configure\n"
+            "  hosts: routers\n"
+            "```"
+        )
+        sources = [
+            {
+                "text": (
+                    "Use event.type == login_failed and then:\n"
+                    "- name: Configure\n"
+                    "  hosts: routers"
+                )
+            }
+        ]
+        _reply, dropped = excerpts.ground_library_reply(shown, sources, "q")
+        self.assertEqual(dropped, [])
+
+    def test_real_drop_has_non_empty_drop_report(self):
+        """An unsupported fenced block is actually removed."""
+        shown = (
+            "Here is the filter.\n"
+            "Use `event.type == login_failed` to narrow the list.\n"
+            "```\n"
+            "rm -rf /\n"
+            "```"
+        )
+        _reply, dropped = excerpts.ground_library_reply(shown, SOURCES, "q")
+        self.assertEqual(dropped, ["rm -rf /"])
 
 
 if __name__ == "__main__":
