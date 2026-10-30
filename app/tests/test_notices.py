@@ -312,6 +312,81 @@ def test_the_sentence_next_to_the_marker_is_the_one_compared():
     assert "SRT" not in sentence
 
 
+def test_a_marker_after_a_closing_fence_attaches_to_the_fenced_block():
+    answer = (
+        "Here is an example Ansible configuration for a router:\n\n"
+        "```yaml\n"
+        "hosts.ini:\n"
+        "[routers]\n"
+        "router1 ansible_host=192.168.1.1\n\n"
+        "configure_router.yml:\n"
+        "- hosts: routers\n"
+        "  tasks:\n"
+        "    - ios_config:\n"
+        "        lines:\n"
+        "          - no ip http server\n"
+        "```\n"
+        "[1]"
+    )
+    sentence = prompts.citing_sentence(answer, 1)
+    assert sentence != "```"
+    assert sentence.strip()
+    assert "ios_config" in sentence
+    assert "configure_router.yml" in sentence
+
+
+def test_a_fenced_citation_survives_when_the_passage_matches():
+    passage = (
+        "hosts.ini:\n[routers]\nrouter1 ansible_host=192.168.1.1\n\n"
+        "configure_router.yml:\n- hosts: routers\n  tasks:\n"
+        "    - ios_config:\n        lines:\n          - no ip http server"
+    )
+    answer = (
+        "Here is an example Ansible configuration for a router:\n\n"
+        "```yaml\n"
+        "hosts.ini:\n"
+        "[routers]\n"
+        "router1 ansible_host=192.168.1.1\n\n"
+        "configure_router.yml:\n"
+        "- hosts: routers\n"
+        "  tasks:\n"
+        "    - ios_config:\n"
+        "        lines:\n"
+        "          - no ip http server\n"
+        "```\n"
+        "[1]"
+    )
+    sources = [
+        {
+            "number": 1,
+            "text": passage,
+            "page": "6",
+            "source": "Ansible_Network_Automation.pdf",
+        }
+    ]
+
+    def overlap_score(sentence, text):
+        shared = set(sentence.casefold().split()) & set(text.casefold().split())
+        return 1.0 if shared else 0.0
+
+    kept = prompts.keep_close_citations(answer, sources, overlap_score)
+    assert [item["page"] for item in kept] == ["6"]
+
+
+def test_a_fenced_citation_still_drops_when_the_passage_does_not_match():
+    unrelated_passage = "Live programmes shall measure -23.0 LUFS with a tolerance."
+    answer = (
+        "```yaml\nhosts.ini:\n[routers]\nrouter1 ansible_host=192.168.1.1\n```\n[1]"
+    )
+    sources = [{"number": 1, "text": unrelated_passage, "page": "16"}]
+
+    def overlap_score(sentence, text):
+        shared = set(sentence.casefold().split()) & set(text.casefold().split())
+        return 1.0 if shared else 0.0
+
+    assert prompts.keep_close_citations(answer, sources, overlap_score) == []
+
+
 def test_a_general_remark_loses_its_measurements():
     raw = (
         "The excerpts are about television. From general knowledge: "
