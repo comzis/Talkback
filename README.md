@@ -195,6 +195,8 @@ python -m pytest
 
 The API image has LlamaIndex, so the skipped tests can run there. `scripts/test_in_container.sh` starts a one-off container from that image and mounts the tests in. The running API can stay up.
 
+`app/tests/test_inventory.py::test_demo_pdfs_index_well_when_present` is opt-in and reports as skipped unless `TALKBACK_DEMO_PDF_DIR` is set to a folder containing exactly the three named demo PDFs (`TechnicalDeliveryStandardsBBCLive.pdf`, `Ansible_Network_Automation_1744044240.pdf`, `Traffic_analysis_with_wireshark_1746771119.pdf`) and nothing else.
+
 ## API
 
 - `GET /` serves the Talkback page

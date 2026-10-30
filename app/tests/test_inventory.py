@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests" / "fixtures" / "inventory"
-DEMO = Path("/Users/comzis/TalkbackDemo")
 SCRIPT = ROOT / "scripts" / "inventory.py"
+
+TALKBACK_DEMO_PDF_DIR = "TALKBACK_DEMO_PDF_DIR"
 
 
 def _run(folder: Path) -> dict:
@@ -49,9 +53,16 @@ def test_inventory_cli_prints_json():
 
 
 def test_demo_pdfs_index_well_when_present():
-    if not DEMO.is_dir():
-        return
-    data = _run(DEMO)
+    """Opt-in: set TALKBACK_DEMO_PDF_DIR to a folder containing exactly the
+    three named demo PDFs (and nothing else) to run this test. Unset, it
+    reports as skipped rather than silently passing with no assertions run.
+    """
+    demo_dir = os.environ.get(TALKBACK_DEMO_PDF_DIR)
+    if not demo_dir:
+        pytest.skip(
+            f"{TALKBACK_DEMO_PDF_DIR} is not set; skipping demo PDF inventory check"
+        )
+    data = _run(Path(demo_dir))
     assert data["file_count"] == 3
     assert data["scan_pdfs"] == []
     names = {item["path"] for item in data["index"]}
