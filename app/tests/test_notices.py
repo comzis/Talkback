@@ -387,6 +387,30 @@ def test_a_fenced_citation_still_drops_when_the_passage_does_not_match():
     assert prompts.keep_close_citations(answer, sources, overlap_score) == []
 
 
+def test_a_bracketed_index_inside_code_is_not_a_citation_marker():
+    answer = (
+        "See the array index below. [1]\n\n"
+        "```python\nitems[3]  # fetch the fourth element\n```"
+    )
+    assert prompts.citing_sentence(answer, 3) == ""
+    sources = [
+        {
+            "number": 1,
+            "source": "a.pdf",
+            "text": "list index example items",
+            "page": "1",
+        },
+        {
+            "number": 3,
+            "source": "c.pdf",
+            "text": "python items fetch the fourth element list",
+            "page": "9",
+        },
+    ]
+    kept = prompts.keep_close_citations(answer, sources, lambda sentence, text: 0.9)
+    assert [item["number"] for item in kept] == [1]
+
+
 def test_a_general_remark_loses_its_measurements():
     raw = (
         "The excerpts are about television. From general knowledge: "
