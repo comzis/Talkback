@@ -458,16 +458,35 @@ def citing_sentence(answer: str, number: int) -> str:
 
     A marker that sits after the full stop, or alone on the next line, still
     belongs to that sentence. A draft with no full stops is scored a line at
-    a time, so a trailing marker is not compared with the whole draft.
+    a time, so a trailing marker is not compared with the whole draft. A
+    fenced code block (matching `_split_on_code_fences`) is one atomic unit,
+    so a marker alone on the line right after its closing fence attaches to
+    the fenced content, not the bare delimiter. A `[n]`-shaped token inside
+    the code itself (list indexing, JSON) is not a marker: a code block can
+    only pick up a source number through a marker-only line merged onto it
+    from after its closing fence, so only that merged-on text is searched.
     """
-    parts = re.split(r"(?<=[.!?])\s+|\n+", (answer or "").strip())
-    merged: list[str] = []
-    for part in parts:
-        if merged and re.fullmatch(r"(?:\[\d+\]\s*)+", part):
-            merged[-1] = f"{merged[-1]} {part}"
-        else:
-            merged.append(part)
-    hits = [part for part in merged if re.search(rf"\[{number}\]", part)]
+    bodies: list[str] = []
+    searched: list[str] = []
+    for is_code, segment in _split_on_code_fences((answer or "").strip()):
+        if is_code:
+            bodies.append(segment)
+            searched.append("")
+            continue
+        for part in re.split(r"(?<=[.!?])\s+|\n+", segment.strip()):
+            if not part:
+                continue
+            if bodies and re.fullmatch(r"(?:\[\d+\]\s*)+", part):
+                bodies[-1] = f"{bodies[-1]} {part}"
+                searched[-1] = f"{searched[-1]} {part}".strip()
+            else:
+                bodies.append(part)
+                searched.append(part)
+    hits = [
+        body
+        for body, marks in zip(bodies, searched)
+        if re.search(rf"\[{number}\]", marks)
+    ]
     return _CITATION.sub("", " ".join(hits)).strip()
 
 
