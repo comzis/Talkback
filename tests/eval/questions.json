@@ -295,5 +295,18 @@
       "ios_facts"
     ]
   ]
+},
+{
+  "id": "ansible-config-example",
+  "query": "give me example of ansible config file",
+  "path": "library",
+  "file": "Ansible_Network_Automation_1744044240.pdf",
+  "page": "6",
+  "answer_contains": [
+    "ios_config"
+  ],
+  "card_contains": [
+    "configure_router.yml"
+  ]
 }
 ]
