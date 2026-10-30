@@ -110,13 +110,47 @@ def _take_unique_citation_marks(
     return kept
 
 
+_CODE_FENCE = re.compile(r"```.*?```", re.DOTALL)
+
+
+def _split_on_code_fences(text: str) -> list[tuple[bool, str]]:
+    """Split text into (is_code, segment) pieces; fenced code keeps its exact text."""
+    pieces: list[tuple[bool, str]] = []
+    pos = 0
+    for match in _CODE_FENCE.finditer(text):
+        if match.start() > pos:
+            pieces.append((False, text[pos : match.start()]))
+        pieces.append((True, match.group(0)))
+        pos = match.end()
+    if pos < len(text):
+        pieces.append((False, text[pos:]))
+    return pieces
+
+
 def _parse_cited_sentences(
     answer: str, *, allowed: set[int], order: list[int]
 ) -> list[tuple[str, list[int]]]:
-    """Split the answer into (body, marks) pairs with inline markers only."""
+    """Split the answer into (body, marks) pairs with inline markers only.
+
+    A fenced code block is kept as a single, untouched piece: no line
+    stripping, no marker extraction, and no sentence splitting inside it.
+    """
     answer = _strip_trailing_citation_dump(answer or "", allowed)
     sentences: list[tuple[str, list[int]]] = []
-    for line in re.split(r"\n+", answer):
+    for is_code, segment in _split_on_code_fences(answer):
+        if is_code:
+            sentences.append((segment, []))
+            continue
+        sentences.extend(_parse_prose_sentences(segment, allowed=allowed, order=order))
+    return sentences
+
+
+def _parse_prose_sentences(
+    text: str, *, allowed: set[int], order: list[int]
+) -> list[tuple[str, list[int]]]:
+    """Sentence-split one code-fence-free segment into (body, marks) pairs."""
+    sentences: list[tuple[str, list[int]]] = []
+    for line in re.split(r"\n+", text):
         line = line.strip()
         if not line:
             continue
@@ -210,9 +244,15 @@ def _renumber_source_cards(
 def finalize_citations(answer: str, sources: list[dict]) -> tuple[str, list[dict]]:
     """Keep markers inline once per sentence, drop dead ones, renumber cards 1..n."""
     if not sources:
-        cleaned = re.sub(r"\s*\[\d+\]", "", answer or "")
-        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
-        return re.sub(r" {2,}", " ", cleaned).strip(), []
+        pieces = []
+        for is_code, segment in _split_on_code_fences(answer or ""):
+            if is_code:
+                pieces.append(segment)
+                continue
+            cleaned = re.sub(r"\s*\[\d+\]", "", segment)
+            cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+            pieces.append(re.sub(r" {2,}", " ", cleaned))
+        return "".join(pieces).strip(), []
 
     allowed, by_old = _citation_source_index(sources)
     order: list[int] = []
