@@ -7,12 +7,14 @@ pytest.importorskip("torch")
 import engine
 
 
-def _events(monkeypatch, deltas, grounded, supported):
+def _events(monkeypatch, deltas, grounded, supported, dropped=()):
     monkeypatch.setattr(
         engine, "_stream_deltas", lambda prompt, temperature: iter(deltas)
     )
     monkeypatch.setattr(
-        engine, "ground_library_reply", lambda answer, sources, query="": grounded
+        engine,
+        "ground_library_reply",
+        lambda answer, sources, query="": (grounded, list(dropped)),
     )
     seen = {}
 
@@ -38,6 +40,7 @@ def test_a_changed_library_answer_stays_on_screen(monkeypatch):
         ["The level ", "is -99 LUFS."],
         "The level is -23.0 LUFS.",
         [{"number": 1, "source": "a.pdf", "text": "alpha", "page": "1"}],
+        dropped=["The level is -99 LUFS."],
     )
     tokens = [event["data"]["text"] for event in events if event["event"] == "token"]
     assert tokens == ["The level ", "is -99 LUFS."]
@@ -65,7 +68,7 @@ def test_a_french_question_still_calls_the_model(monkeypatch):
     monkeypatch.setattr(
         engine,
         "ground_library_reply",
-        lambda answer, sources, query="": answer,
+        lambda answer, sources, query="": (answer, []),
     )
     monkeypatch.setattr(
         engine,
@@ -168,16 +171,20 @@ def test_token_events_scrub_general_tail(monkeypatch):
     assert shown == "XYZ"
 
 
-def test_correction_note_none_when_unchanged(monkeypatch):
+def test_correction_note_none_when_nothing_dropped(monkeypatch):
     monkeypatch.setattr(
-        engine, "ground_library_reply", lambda answer, sources, query="": answer + " "
+        engine,
+        "ground_library_reply",
+        lambda answer, sources, query="": (answer + " ", []),
     )
     assert engine._library_reply_and_correction("ok", [], "q") == ("ok", None)
 
 
-def test_correction_note_when_changed(monkeypatch):
+def test_correction_note_when_something_dropped(monkeypatch):
     monkeypatch.setattr(
-        engine, "ground_library_reply", lambda answer, sources, query="": "fixed"
+        engine,
+        "ground_library_reply",
+        lambda answer, sources, query="": ("fixed", ["bad"]),
     )
     reply, note = engine._library_reply_and_correction("bad", [], "q")
     assert reply == "fixed"
@@ -187,7 +194,7 @@ def test_correction_note_when_changed(monkeypatch):
 
 def test_correction_note_empty_uses_no_detail_line(monkeypatch):
     monkeypatch.setattr(
-        engine, "ground_library_reply", lambda answer, sources, query="": ""
+        engine, "ground_library_reply", lambda answer, sources, query="": ("", ["bad"])
     )
     reply, note = engine._library_reply_and_correction("bad", [], "q")
     assert reply == ""

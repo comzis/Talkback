@@ -42,22 +42,22 @@ def cited_source_indexes(text: str) -> list[int]:
     return indexes
 
 
-def correction_note(shown: str, reply: str, query: str = "") -> str | None:
-    """Short footnote when grounding changed the reply. Never the full text again."""
-    if not reply or _same_answer_body(shown, reply):
+def correction_note(dropped: list[str], reply: str, query: str = "") -> str | None:
+    """Short footnote when grounding actually dropped content. Never the full text again.
+
+    Fires only when ``dropped`` (``ground_library_reply``'s report of the
+    fences, sentences, or technical tokens it removed) is non-empty. It used
+    to decide this by diffing the grounded text against the raw answer, but
+    a purely cosmetic difference — markdown stripped, whitespace or
+    indentation normalized, nothing actually removed — tripped that diff and
+    produced a false footnote. Keying off the drop report instead of a text
+    diff is the fix for that.
+    """
+    if not dropped:
         return None
     if reply in {user_line("no_detail", query), user_line("no_example", query)}:
         return reply
     return user_line("no_detail", query)
-
-
-def _same_answer_body(left: str, right: str) -> bool:
-    """True when two replies match after citations and whitespace are ignored."""
-
-    def norm(text: str) -> str:
-        return re.sub(r"\s+", " ", strip_citations(text or "")).strip().casefold()
-
-    return norm(left) == norm(right)
 
 
 def _strip_trailing_citation_dump(answer: str, allowed: set[int]) -> str:

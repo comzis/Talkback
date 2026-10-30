@@ -7,13 +7,14 @@ import llm.prompts as prompts
 
 class DisplayCitationTests(unittest.TestCase):
     def test_correction_note_is_short_never_the_full_reply(self):
-        shown = "The level is -99 LUFS. [1]"
         reply = "The level is -23.0 LUFS. [1]"
-        note = prompts.correction_note(shown, reply, "What loudness?")
+        note = prompts.correction_note(
+            ["The level is -99 LUFS. [1]"], reply, "What loudness?"
+        )
         self.assertIsNotNone(note)
         self.assertEqual(note, prompts.user_line("no_detail", "What loudness?"))
         self.assertNotIn("-23.0", note)
-        self.assertIsNone(prompts.correction_note(reply, reply, "What loudness?"))
+        self.assertIsNone(prompts.correction_note([], reply, "What loudness?"))
 
     def test_finalize_citations_drops_dead_markers_and_renumbers(self):
         answer = (
