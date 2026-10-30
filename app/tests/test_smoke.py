@@ -204,7 +204,7 @@ def test_app_starts_with_a_fake_chat_client_and_memory_store(monkeypatch, tmp_pa
         if event["event"] == "sources"
         for source in event["data"].get("sources") or []
     ]
-    assert unused and all(source.get("used") is False for source in unused)
+    assert unused == []
 
     engine._retrieve_nodes = original_retrieve
 
