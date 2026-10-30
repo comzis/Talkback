@@ -1184,19 +1184,6 @@ body {
     line-height: 1.5;
 }
 
-.source-item.source-unused {
-    opacity: 0.55;
-}
-
-.source-item.source-unused .source-number {
-    background: rgba(255, 255, 255, 0.2);
-}
-
-.source-unused-mark {
-    color: var(--text-tertiary);
-    font-style: italic;
-}
-
 .message.user .message-sources {
     max-width: min(480px, 85%);
 }
