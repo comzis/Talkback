@@ -53,6 +53,79 @@ class DisplayCitationTests(unittest.TestCase):
         self.assertEqual(text, "Stable matching is taught early. [1] [2]")
         self.assertEqual([card["number"] for card in cards], [1, 2])
 
+    def test_finalize_citations_keeps_fenced_code_indentation_no_sources(self):
+        answer = (
+            "Here is an example.\n\n"
+            "```yaml\n"
+            "- name: Configure\n"
+            "  hosts: routers\n"
+            "\n"
+            "  tasks:\n"
+            "    - name: Set hostname\n"
+            "```\n"
+        )
+        text, cards = prompts.finalize_citations(answer, [])
+        self.assertEqual(cards, [])
+        self.assertEqual(
+            text,
+            "Here is an example.\n\n"
+            "```yaml\n"
+            "- name: Configure\n"
+            "  hosts: routers\n"
+            "\n"
+            "  tasks:\n"
+            "    - name: Set hostname\n"
+            "```",
+        )
+
+    def test_finalize_citations_keeps_fenced_code_indentation_with_cited_source(self):
+        answer = (
+            "Here is an example [1].\n\n"
+            "```yaml\n"
+            "- name: Configure\n"
+            "  hosts: routers\n"
+            "\n"
+            "  tasks:\n"
+            "    - name: Set hostname\n"
+            "```"
+        )
+        sources = [
+            {"number": 1, "source": "a.yml", "text": "ansible playbook", "page": "1"}
+        ]
+        text, cards = prompts.finalize_citations(answer, sources)
+        self.assertEqual(
+            text,
+            "Here is an example. [1]\n"
+            "```yaml\n"
+            "- name: Configure\n"
+            "  hosts: routers\n"
+            "\n"
+            "  tasks:\n"
+            "    - name: Set hostname\n"
+            "```",
+        )
+        self.assertEqual([card["number"] for card in cards], [1])
+
+    def test_finalize_citations_leaves_marker_look_alike_inside_code_block(self):
+        answer = (
+            "See the array index below. [1]\n\n"
+            "```python\n"
+            "items[3]  # fetch the fourth element\n"
+            "```"
+        )
+        sources = [
+            {"number": 1, "source": "a.py", "text": "index example", "page": "1"}
+        ]
+        text, cards = prompts.finalize_citations(answer, sources)
+        self.assertEqual(
+            text,
+            "See the array index below. [1]\n"
+            "```python\n"
+            "items[3]  # fetch the fourth element\n"
+            "```",
+        )
+        self.assertEqual([card["number"] for card in cards], [1])
+
     def test_greeting_assistant_turns_do_not_enter_history(self):
         history = [
             {"role": "user", "content": "hello"},
