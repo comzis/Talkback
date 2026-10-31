@@ -152,9 +152,10 @@ docker compose ps
    files in the repo.
 3. `/to-tickets`: the spec becomes vertical-slice issues with blocking edges,
    each labelled `ready-for-agent` or `ready-for-human`.
-4. Implement one ticket per fresh session, test first: a failing test, then
-   the code, then refactor. Open a PR that references the ticket. Review the
-   diff in a new session, not the one that wrote it.
+4. `/implement <N>`: one ticket per fresh session. It branches, works test
+   first (`tdd`), reviews its own diff in fresh sub-agents (`code-review`),
+   and opens a PR. It never merges. A person reads the diff before merging;
+   for a risky change, run `code-review` again from a new session.
 5. QA by hand: run the stack, ask real questions, and file what you find as
    new issues.
 
