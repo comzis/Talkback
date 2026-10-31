@@ -1,10 +1,10 @@
 # Third-party skills
 
-The skills in this folder are adapted from [mattpocock/skills](https://github.com/mattpocock/skills) at commit `59db609` (27 Oct 2026), under the MIT licence below.
+The skills in this folder are adapted from [mattpocock/skills](https://github.com/mattpocock/skills) at commit `59db609` (27 Oct 2026), under the MIT licence below. `grilling` was re-synced to commit `a496f55` (29 Oct 2026); the other skills had no upstream changes between those commits.
 
 | Skill | Source in that repo | Changes |
 | --- | --- | --- |
-| `grilling` | `skills/productivity/grilling` | None |
+| `grilling` | `skills/productivity/grilling` | None (synced to `a496f55`: fact-finding sub-agents start with a fresh context window) |
 | `grill-me` | `skills/productivity/grill-me` | None |
 | `grill-with-docs` | `skills/engineering/grill-with-docs` | None |
 | `domain-modeling` | `skills/engineering/domain-modeling` | None |
